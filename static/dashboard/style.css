@@ -1,0 +1,55 @@
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f4f6fb;
+    margin: 0;
+    color: #222;
+}
+.dashboard-container {
+    max-width: 1200px;
+    margin: 40px auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    padding: 32px;
+}
+header h1 {
+    margin: 0 0 24px 0;
+    font-size: 2.5rem;
+    color: #2a3a5e;
+}
+nav ul {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 32px 0;
+}
+nav a {
+    text-decoration: none;
+    color: #2a3a5e;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+nav a:hover, nav a.active {
+    background: #e3e8f7;
+}
+.dashboard-section {
+    display: none;
+}
+.dashboard-section.active {
+    display: block;
+    animation: fadeIn 0.3s;
+}
+.card {
+    background: #e3e8f7;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 16px 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

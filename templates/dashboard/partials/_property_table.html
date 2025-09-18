@@ -1,0 +1,66 @@
+<div style="width:100%;margin-top:32px;" id="property-table-fragment">
+    <div class="property-table-container" style="padding:24px;background:#f7f9fc;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03);">
+        <h2 style="margin-bottom:16px;">Unique Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
+        <div style="overflow-x:auto;overflow-y:auto;max-height:400px;">
+            <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.04);">
+            <thead>
+                <tr style="background:#e3e8f7;">
+                    <th style="padding:8px 12px;">Property Number</th>
+                    <th style="padding:8px 12px;">Property Name</th>
+                    <th style="padding:8px 12px;">Investor</th>
+                    <th style="padding:8px 12px;">Regional Manager</th>
+                    <th style="padding:8px 12px;">Regional Director</th>
+                    <th style="padding:8px 12px;">Asst Manager</th>
+                    <th style="padding:8px 12px;">Total Units</th>
+                    <th style="padding:8px 12px;">Occupied Units</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in properties %}
+                <tr>
+                    <td style="padding:8px 12px;">{{ row.property_number }}</td>
+                    <td style="padding:8px 12px;">{{ row.property_name }}</td>
+                    <td style="padding:8px 12px;">{{ row.investor }}</td>
+                    <td style="padding:8px 12px;">{{ row.regional_area_manager }}</td>
+                    <td style="padding:8px 12px;">{{ row.regional_director }}</td>
+                    <td style="padding:8px 12px;">{{ row.asst_manager }}</td>
+                    <td style="padding:8px 12px;">{{ row.total_units }}</td>
+                    <td style="padding:8px 12px;">{{ row.occupied_units }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" style="text-align:center;padding:16px;">No data available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div style="margin-top:16px;text-align:center;">
+            {% if properties.has_other_pages %}
+                <nav aria-label="Table pagination">
+                    <ul style="display:inline-flex;list-style:none;padding:0;">
+                        {% if properties.has_previous %}
+                            <li><a href="?page={{ properties.previous_page_number }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">Previous</a></li>
+                        {% endif %}
+                        {% for num in properties.paginator.page_range %}
+                            {% if num == 1 and properties.number > 4 %}
+                                <li><a href="?page=1" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">1</a></li>
+                                <li><span style="padding:8px 12px;margin:0 4px;">...</span></li>
+                            {% elif num == properties.number or num == properties.number|add:'-1' or num == properties.number|add:'1' %}
+                                {% if properties.number == num %}
+                                    <li><span style="padding:8px 12px;margin:0 4px;background:#4f6bed;color:#fff;border-radius:4px;">{{ num }}</span></li>
+                                {% else %}
+                                    <li><a href="?page={{ num }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">{{ num }}</a></li>
+                                {% endif %}
+                            {% elif num == properties.paginator.num_pages and properties.number < properties.paginator.num_pages|add:'-3' %}
+                                <li><span style="padding:8px 12px;margin:0 4px;">...</span></li>
+                                <li><a href="?page={{ properties.paginator.num_pages }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">{{ properties.paginator.num_pages }}</a></li>
+                            {% endif %}
+                        {% endfor %}
+                        {% if properties.has_next %}
+                            <li><a href="?page={{ properties.next_page_number }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">Next</a></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>

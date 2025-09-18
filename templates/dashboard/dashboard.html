@@ -1,0 +1,1691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Property Analytics – Olympus</title>
+
+<style>
+/* Responsive sidebar using padding when drawer is open to keep content in viewport */
+.main.drawer-open {
+    padding-left: 340px;
+    width: 100vw;
+    box-sizing: border-box;
+    transition: padding-left 0.3s;
+}
+/* Remove individual margin adjustments to prevent double adjustment */
+.main.drawer-open .sidebar {
+    margin-left: 0;
+}
+.main.drawer-open .charts-container {
+    margin-left: 0;
+}
+.main.drawer-open .summary-charts-container {
+    margin-left: 0;
+}
+.main.drawer-open .property-table-container {
+    margin-left: 0;
+}
+/* Fallback for individual container adjustments (when outside main container) */
+.charts-container.drawer-open {
+    padding-left: 340px;
+    width: 100%;
+    box-sizing: border-box;
+    transition: padding-left 0.3s;
+}
+.summary-charts-container.drawer-open {
+    padding-left: 340px;
+    width: 100%;
+    box-sizing: border-box;
+    transition: padding-left 0.3s;
+}
+/* Adjust parent div of property table instead of the container itself */
+div[style*="width:100%"].drawer-open {
+    padding-left: 340px;
+    box-sizing: border-box;
+    transition: padding-left 0.3s;
+}
+/* Ensure nested property-table-container doesn't get double adjustment */
+.property-table-container {
+    margin-left: 0 !important;
+}
+/* Ensure proper spacing adjustments */
+@media (max-width: 1200px) {
+    .main.drawer-open {
+        padding-left: 280px;
+    }
+    .charts-container.drawer-open,
+    .summary-charts-container.drawer-open,
+    div[style*="width:100%"].drawer-open {
+        padding-left: 280px;
+    }
+}
+/* User profile and logout */
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-left: 24px;
+}
+.profile-pic {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #59E6F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: bold;
+    font-size: 1.2em;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.profile-name {
+    color: var(--nav-text);
+    font-weight: 600;
+    font-size: 1.1em;
+}
+.logout-btn {
+    background: #3FE0F0;
+    color: #0B3A3F;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-left: 8px;
+}
+.logout-btn:hover {
+    background: #2A474B;
+    color: #fff;
+}
+:root{
+    /* Olympus look */
+    --topbar-h:140px;                 /* same bar height as olympusproperty.com */
+    --nav-bg:#1F3639; --nav-text:#F7FAFC; --nav-hover:#2A474B;
+    --aqua:#59E6F6;
+
+    --page-bg:#F3F6F8; --card-bg:#FFFFFF; --border:#E5E7EB; --text:#0F172A; --muted:#64748B;
+    --radius:14px; --gap:22px;
+}
+html,body{height:100%} *{box-sizing:border-box}
+body{margin:0;background:var(--page-bg);color:var(--text);font:22px/1.5 Inter,system-ui,Segoe UI,Arial}
+
+/* ===== TOP BAR ===== */
+.topbar{position:sticky;top:0;z-index:70;background:var(--nav-bg);color:var(--nav-text);width:100%;
+                box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.topbar-inner{height:var(--topbar-h);padding:0 28px;display:flex;align-items:center;gap:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:32px;white-space:nowrap}
+.brand svg{width:30px;height:30px;flex:0 0 30px}
+
+/* HAMBURGER (MENU) */
+.hamburger{
+    width:44px;height:44px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;
+    position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-right:6px;
+}
+.hamburger .bar{position:absolute;width:22px;height:2px;background:var(--nav-text);transition:.25s}
+.hamburger .bar:nth-child(1){transform:translateY(-6px)}
+.hamburger .bar:nth-child(2){transform:translateY(0)}
+.hamburger .bar:nth-child(3){transform:translateY(6px)}
+.hamburger.open .bar:nth-child(1){transform:rotate(45deg)}
+.hamburger.open .bar:nth-child(2){opacity:0}
+.hamburger.open .bar:nth-child(3){transform:rotate(-45deg)}
+
+/* topbar nav placeholder (dropdowns removed) */
+.nav{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.topbar-link{
+    color:var(--nav-text);text-decoration:none;padding:8px 10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;display:inline-block;
+}
+.topbar-link:hover{background:rgba(79,107,237,0.06);color:#fff}
+
+/* Export (replaces Important News) */
+.export-btn{
+    margin-left:auto;background:#3FE0F0;color:#0B3A3F;border:none;border-radius:6px;
+    text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:10px 16px;cursor:pointer
+}
+
+/* ===== FILTER PANE (LEFT) ===== */
+.filter-toggle-btn{
+    width:44px;height:44px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:transparent;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;margin-right:8px;color:var(--nav-text);
+}
+.filter-toggle-floating{
+    position:fixed;left:20px;top:calc(var(--topbar-h) + 18px);width:56px;height:56px;border-radius:50%;
+    background:var(--aqua);color:#053033;display:flex;align-items:center;justify-content:center;z-index:90;
+    box-shadow:0 8px 24px rgba(9,45,47,0.12);border:2px solid rgba(255,255,255,0.9);cursor:pointer;font-size:20px
+}
+.filter-toggle-floating{transition:left .28s ease, transform .18s}
+
+/* When filter pane is open, move the floating toggle to sit at the edge of the pane */
+.filter-open .filter-toggle-floating{left:calc(320px + 20px);transform:translateX(0)}
+@media (max-width:1200px){
+    .filter-open .filter-toggle-floating{left:calc(260px + 20px)}
+}
+
+/* Period segmented control */
+.period-mode-btn{cursor:pointer}
+.period-mode-btn[aria-pressed="true"]{background:#eef6fb}
+
+/* When drawer opens, move the floating toggle to the drawer edge */
+.drawer-open .filter-toggle-floating{left:calc(340px + 20px)}
+@media (max-width:1200px){
+    .drawer-open .filter-toggle-floating{left:calc(280px + 20px)}
+}
+
+/* If both drawer and filter are open prefer the larger offset (drawer) */
+.drawer-open.filter-open .filter-toggle-floating{left:calc(340px + 20px) !important}
+@media (max-width:1200px){
+    .drawer-open.filter-open .filter-toggle-floating{left:calc(280px + 20px) !important}
+}
+.filter-pane{
+    position:fixed;left:0;top:var(--topbar-h);bottom:0;width:320px;
+    /* Slightly cooler, subtly tinted background to separate from page bg */
+    background: linear-gradient(180deg, #ffffff 0%, #eefafc 100%);
+    /* branded divider and aqua-tinted shadow for subtle emphasis */
+    border-right: 1px solid rgba(11,58,63,0.06);
+    /* use a faint aqua glow blended with a soft dark shadow to match brand */
+    box-shadow: 6px 0 40px rgba(89,230,246,0.06), 2px 0 18px rgba(9,45,47,0.06);
+    transform:translateX(-100%);transition:transform .28s ease-in-out;z-index:80;padding:18px;overflow:auto;
+}
+.filter-pane.open{transform:translateX(0)}
+.filter-pane h3{margin:0 0 12px;color:#0B3A3F}
+.filter-section{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px}
+.filter-actions{display:flex;gap:8px;align-items:center}
+.filter-close{margin-left:auto;background:none;border:none;padding:8px;border-radius:8px;cursor:pointer;color:#4f6bed}
+
+/* When filter pane is open, use padding and width to keep content within viewport */
+.filter-open .main{padding-left:320px;width:100vw;box-sizing:border-box;transition:padding-left .28s}
+.filter-open .charts-container{padding-left:320px;width:100%;box-sizing:border-box;transition:padding-left .28s}
+div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;transition:padding-left .28s}
+/* Ensure the property table and its wrapper shift when filter pane is open to avoid overlap */
+.filter-open .property-table-container{padding-left:320px !important;box-sizing:border-box;transition:padding-left .28s}
+.filter-open div[style*="width:100%"] > .property-table-container{padding-left:320px !important}
+@media (max-width:1200px){
+    .filter-open .main,.filter-open .charts-container,div[style*="width:100%"].filter-open{padding-left:260px}
+    .filter-open .property-table-container{padding-left:260px !important}
+}
+
+/* Overlay / shadow over main UI when filter pane is open */
+.filter-open .main::before{
+    content: '';
+    position:fixed;
+    left:320px; /* start at the edge of the filter pane */
+    top:var(--topbar-h);
+    bottom:0;
+    right:0;
+    pointer-events:none; /* allow clicks through */
+    /* solid dim to uniformly de-emphasize main UI when filter is open */
+    background: rgba(3,11,12,0.28);
+    z-index:70;
+    transition:opacity .28s;
+    opacity:1;
+}
+@media (max-width:1200px){
+    .filter-open .main::before{ left:260px }
+}
+
+/* When filter pane is open, reduce KPI card min-width so they shrink instead of wrapping */
+.filter-open .card.kpi {
+    min-width: 200px;
+    flex: 1 1 200px;
+}
+@media (max-width: 1200px) {
+    .filter-open .card.kpi {
+        min-width: 180px;
+        flex: 1 1 180px;
+    }
+}
+
+/* When drawer is open, also reduce KPI card min-width */
+.drawer-open .card.kpi {
+    min-width: 180px;
+    flex: 1 1 180px;
+}
+@media (max-width: 1200px) {
+    .drawer-open .card.kpi {
+        min-width: 160px;
+        flex: 1 1 160px;
+    }
+}
+
+/* When both are open, use smallest size */
+.drawer-open.filter-open .card.kpi,
+.filter-open .drawer-open .card.kpi {
+    min-width: 160px !important;
+    flex: 1 1 160px !important;
+}
+@media (max-width: 1200px) {
+    .drawer-open.filter-open .card.kpi,
+    .filter-open .drawer-open .card.kpi {
+        min-width: 140px !important;
+        flex: 1 1 140px !important;
+    }
+}
+/* If both drawer and filter are open, prefer the larger offset (drawer 340px) to avoid double-shift */
+.drawer-open.filter-open .main,
+.filter-open .main.drawer-open,
+.drawer-open.filter-open .charts-container,
+.filter-open .charts-container.drawer-open,
+.drawer-open.filter-open div[style*="width:100%"],
+.filter-open div[style*="width:100%"].drawer-open{
+    padding-left: 340px !important;
+    width: 100vw !important;
+    box-sizing: border-box;
+}
+@media (max-width:1200px){
+    .drawer-open.filter-open .main,
+    .filter-open .main.drawer-open,
+    .drawer-open.filter-open .charts-container,
+    .filter-open .charts-container.drawer-open,
+    .drawer-open.filter-open div[style*="width:100%"],
+    .filter-open div[style*="width:100%"].drawer-open{
+        padding-left: 280px !important;
+    }
+}
+
+/* ===== OVERLAY MENU (like Olympus mobile/mega menu) ===== */
+.overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
+.drawer{
+    position:absolute;left:0;top:0;bottom:0;width:340px;background:var(--nav-bg);color:var(--nav-text);
+    transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:18px 18px 24px 18px;
+    overflow:auto;
+}
+.drawer.open{transform:translateX(0)}
+.overlay.open{display:block}
+.drawer .big-item{
+    display:block;color:#E9F2F5;text-decoration:none;font-size:22px;font-weight:800;letter-spacing:.06em;
+    padding:14px 8px;border-radius:6px;text-transform:uppercase
+}
+.drawer .big-item:hover{background:#2A474B}
+
+/* ===== MAIN (bigger left column) ===== */
+
+.main {
+    width: 100vw;
+    min-height: 100px;
+    padding: 20px 0 0 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.sidebar{
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-self: start;
+    position: sticky;
+    top: calc(var(--topbar-h) + 14px);
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: center;
+}
+.card.kpi {
+    flex: 1 1 260px;
+    min-width: 260px;
+    max-width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+@media (max-width: 1200px) {
+    .sidebar {
+        gap: 8px;
+    }
+    .card.kpi {
+        min-width: 260px;
+    }
+}
+@media (max-width: 900px) {
+    .sidebar {
+        gap: 6px;
+    }
+    .card.kpi {
+        min-width: 260px;
+    }
+}
+@media (max-width: 600px) {
+    .sidebar {
+        flex-direction: column;
+        gap: 10px;
+        position: static;
+        width: 100%;
+    }
+    .card.kpi {
+        min-width: 100%;
+        width: 100%;
+    }
+}
+.card.kpi {
+    min-width: 260px;
+    flex: 0 1 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 14px}
+.kpi .label{font-size:22px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .value{font-size:32px;line-height:1.1;font-weight:700;margin-top:4px}
+
+.section{margin-bottom:var(--gap)}
+.section-title{font-weight:700;margin:2px 0 8px;color:#0B3A3F}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+@media (max-width:900px){.grid-2{grid-template-columns:1fr}}
+
+.chart-card{background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius);padding:12px;height:360px}
+/* Responsive chart container and canvas */
+.charts-container {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    margin-bottom: 32px;
+    justify-content: center;
+    align-items: center;
+}
+.chart-card {
+    background: var(--card-bg);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    height: 360px;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    flex: 1 1 340px;
+    min-width: 260px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+.chart-card canvas {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: 2/1;
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+}
+@media (max-width: 1200px) {
+    .charts-container {
+        gap: 18px;
+    }
+    .chart-card {
+        min-width: 220px;
+        height: 260px;
+    }
+}
+@media (max-width: 900px) {
+    .charts-container {
+        gap: 12px;
+    }
+    .chart-card {
+        min-width: 180px;
+        height: 200px;
+    }
+}
+@media (max-width: 600px) {
+    .charts-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+    .chart-card {
+        min-width: 100%;
+        height: 160px;
+        flex: 1 1 100%;
+    }
+}
+
+.empty{height:360px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
+    color:var(--muted);background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius)}
+
+.selected-period {
+    background: #4f6bed;
+    color: #fff;
+}
+.unselected-period {
+    background: none;
+    color: #DEE6EA;
+}
+
+.focus-visible{outline:2px solid #3FE0F0;outline-offset:2px}
+.highlight-search {
+    background: #ffe066;
+    color: #0B3A3F;
+    border-radius: 3px;
+    padding: 0 2px;
+    font-weight: 600;
+}
+
+/* Loading overlay (used when Apply/Clear triggers navigation while backend processes) */
+.loading-overlay{
+    position:fixed;inset:0;background:rgba(3,11,12,0.45);display:none;align-items:center;justify-content:center;z-index:1100;
+}
+.loading-box{background:rgba(255,255,255,0.98);padding:18px 22px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:10px;box-shadow:0 8px 40px rgba(2,6,8,0.35)}
+.loading-spinner{width:56px;height:56px;border-radius:50%;border:6px solid rgba(11,58,63,0.08);border-top-color:#59E6F6;animation:spin 1s linear infinite}
+.loading-text{font-weight:700;color:#052F30}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+
+<body>
+    <!-- Loading overlay shown when backend is processing filters -->
+    <div id="loadingOverlay" class="loading-overlay" role="status" aria-hidden="true">
+        <div class="loading-box">
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <div class="loading-text">Applying filters…</div>
+        </div>
+    </div>
+    <!-- ===== TOP BAR ===== -->
+    <div class="topbar">
+        <div class="topbar-inner">
+            <!-- Hamburger -->
+            <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="overlay">
+                <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+            </button>
+
+            <!-- Filter toggle (was here but now floating) -->
+
+            <!-- Brand -->
+            <div class="brand">
+                <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <circle cx="32" cy="32" r="19" stroke="#59E6F6" stroke-width="2"/>
+                    <ellipse cx="32" cy="32" rx="26" ry="12" stroke="#59E6F6" stroke-width="2"/>
+                    <ellipse cx="32" cy="32" rx="12" ry="26" stroke="#59E6F6" stroke-width="2"/>
+                    <circle cx="32" cy="32" r="1.6" fill="#59E6F6"/>
+                </svg>
+                Olympus Property
+            </div>
+
+            <!-- “Menu” text next to brand as requested -->
+      
+
+            <!-- topbar nav: mirror of drawer items for quick access (keeps hamburger intact) -->
+            <nav class="nav" style="margin-top:12px;margin-left:24px;flex:1">
+                <a href="/dashboard" class="topbar-link">Dashboard</a>
+                <a href="#" class="topbar-link">Shout Outs</a>
+                <a href="#" class="topbar-link">Reports</a>
+                <a href="#" class="topbar-link">Settings</a>
+                <!-- Sign Out link removed: logout button already present in topbar -->
+            </nav>
+
+            
+
+            <!-- User profile and logout -->
+            <div class="user-profile">
+                <div class="profile-pic" title="{{ user.get_full_name|default:user.username }}">
+                    {{ user.first_name|default:user.username|slice:":1"|upper }}
+                </div>
+                <span class="profile-name">{{ user.get_full_name|default:user.username }}</span>
+                <form method="post" action="{% url 'logout' %}" id="logoutForm" style="display:inline;">
+                    {% csrf_token %}
+                    <button class="logout-btn" type="submit">Logout</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating filter toggle button (distinct from hamburger) -->
+    <button id="filterToggle" class="filter-toggle-floating" aria-label="Open filters" title="Open filters">🔎</button>
+
+    <!-- ===== OVERLAY MENU (acts like Olympus) ===== -->
+    <div class="overlay" id="overlay" aria-hidden="true">
+        <nav class="drawer" id="drawer" aria-label="Main Menu">
+            <a href="/dashboard" class="big-item">Dashboard</a>
+            <a href="#" class="big-item">Shout Outs</a>
+            <a href="#" class="big-item">Reports</a>
+            <a href="#" class="big-item">Settings</a>
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:14px 8px;">
+            <a href="#" class="big-item">Help & Support</a>
+            <a href="#" class="big-item">Sign Out</a>
+        </nav>
+    </div>
+
+        <!-- FILTER PANE (inserted) -->
+        <aside class="filter-pane" id="filterPane" aria-hidden="true">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                <h3 style="flex:1">Filters</h3>
+                <button class="filter-close" id="filterClose" aria-label="Close filters">&times;</button>
+            </div>
+            <div class="filter-section">
+                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Period</div>
+                <!-- Period mode toggle -->
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <button type="button" class="period-mode-btn" data-mode="year" style="flex:1;padding:8px;border-radius:8px;background:#eef6fb;border:1px solid var(--border);font-weight:700;">Year</button>
+                    <button type="button" class="period-mode-btn" data-mode="quarter" style="flex:1;padding:8px;border-radius:8px;background:transparent;border:1px solid var(--border);font-weight:700;">Quarter</button>
+                    <button type="button" class="period-mode-btn" data-mode="month" style="flex:1;padding:8px;border-radius:8px;background:transparent;border:1px solid var(--border);font-weight:700;">Month</button>
+                </div>
+
+                <form method="get" action="/dashboard" id="filter-period-form">
+                    <!-- Year select -->
+                    <select name="period_year" id="filterPeriodYear" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:block;">
+                        {% for year, data in period_options.items %}
+                            <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- Quarter select (hidden by default) -->
+                    <select name="period_quarter" id="filterPeriodQuarter" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;">
+                        {% for year, data in period_options.items %}
+                            {% for quarter, months in data.quarters.items %}
+                                <option value="{{ quarter }}-{{ year }}" data-year="{{ year }}">{{ quarter }} {{ year }}</option>
+                            {% endfor %}
+                        {% endfor %}
+                    </select>
+
+                    <!-- Month select (hidden by default) -->
+                    <select name="period_month" id="filterPeriodMonth" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;">
+                        {% for year, data in period_options.items %}
+                            {% for quarter, months in data.quarters.items %}
+                                {% for month in months %}
+                                    <!-- Attach data-year and data-quarter so we can filter options client-side -->
+                                    <option value="{{ month }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ month }} {{ year }}</option>
+                                {% endfor %}
+                            {% endfor %}
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+            <div class="filter-section">
+                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Investor</div>
+                <form method="get" action="/dashboard" id="filter-investor-form">
+                    <select name="investor" id="filterInvestor" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff">
+                        <option value="">All Investors</option>
+                        {% for inv in investors %}
+                            <option value="{{ inv }}" {% if inv == selected_investor %}selected{% endif %}>{{ inv }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+            <div class="filter-section">
+                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Regional Manager</div>
+                <form method="get" action="/dashboard" id="filter-regional-form">
+                    <select name="regional_manager" id="filterRegional" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff">
+                        <option value="">All Regional Managers</option>
+                        {% for rm in regional_managers %}
+                            <option value="{{ rm }}" {% if rm == selected_regional_manager %}selected{% endif %}>{{ rm }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+            <div class="filter-section">
+                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Community</div>
+                <form method="get" action="/dashboard" id="filter-community-form">
+                    <select name="community" id="filterCommunity" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff">
+                        <option value="">All Communities</option>
+                        {% for c in communities %}
+                            <option value="{{ c }}" {% if c == selected_community %}selected{% endif %}>{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+            <div class="filter-actions" style="margin-top:6px;">
+                <button type="button" id="applyFilters" class="logout-btn" style="background:#59E6F6;color:#063235;">Apply</button>
+                <button type="button" id="clearFilters" class="logout-btn" style="background:#E5E7EB;color:#0B3A3F;">Clear</button>
+            </div>
+        </aside>
+
+        <!-- ===== MAIN: only left panel ===== -->
+        <div class="main">
+                {% include 'dashboard/partials/_kpi_cards.html' %}
+        </div>
+        <div style="height:32px;"></div>
+
+        <!-- Modal for Total Units List -->
+        <div id="units-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+            <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+                <button onclick="closeUnitsModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
+                <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Units by Property <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
+                <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+                    <input id="units-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
+                    <span style="color:#4f6bed;font-size:20px;user-select:none;">&#128269;</span>
+                </div>
+                <div style="max-height:400px;overflow-y:auto;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="background:#e3e8f7;">
+                                <th style="padding:8px 12px;white-space:nowrap;">Sl No.</th>
+                                <th style="padding:8px 12px;">Property Name</th>
+                                <th style="padding:8px 12px;">Total Units</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in all_properties %}
+                            <tr class="units-row">
+                                <td style="padding:8px 12px;">{{ forloop.counter }}</td>
+                                <td style="padding:8px 12px;">{{ row.property_name }}</td>
+                                <td style="padding:8px 12px;">{{ row.total_units }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="charts-container" id="dashboard-charts">
+            <div class="chart-card">
+                <canvas id="chartRent"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartOccRev"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartRenewals"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartMoveOut"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartExpense"></canvas>
+            </div>
+        </div>
+            {% include 'dashboard/partials/_property_table.html' %}
+
+    <!-- ===== MENU / DROPDOWNS JS ===== -->
+    <script>
+    // Topbar dropdowns removed; no initialization required here.
+
+    // Hamburger / overlay drawer
+    const hamburger=document.getElementById('hamburger');
+    const overlay=document.getElementById('overlay');
+    const drawer=document.getElementById('drawer');
+    const sidebar=document.querySelector('.sidebar');
+
+    function setMenu(open){
+        hamburger.classList.toggle('open',open);
+        overlay.classList.toggle('open',open);
+        drawer.classList.toggle('open',open);
+    // Expose drawer-open at document level for layout consumption
+    document.documentElement.classList.toggle('drawer-open', open);
+        hamburger.setAttribute('aria-expanded',open);
+        overlay.setAttribute('aria-hidden',!open);
+        // Adjust main content when drawer is open
+        document.querySelector('.main').classList.toggle('drawer-open',open);
+        // Also adjust containers that are outside of .main
+        const chartsContainer = document.querySelector('.charts-container');
+        if (chartsContainer) chartsContainer.classList.toggle('drawer-open',open);
+        
+        // Adjust the parent div of property-table-container instead of the container itself
+        const propertyTableParent = document.querySelector('div[style*="width:100%"][style*="margin-top"]');
+        if (propertyTableParent) propertyTableParent.classList.toggle('drawer-open',open);
+    }
+    hamburger.addEventListener('click',e=>{e.stopPropagation();setMenu(!overlay.classList.contains('open'));});
+    overlay.addEventListener('click',e=>{ if(e.target===overlay) setMenu(false); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') setMenu(false); });
+
+    // Topbar signout link removed; logout form/button remains in topbar
+    </script>
+
+    <script>
+    // Filter pane toggle logic
+    (function(){
+        const filterToggle = document.getElementById('filterToggle');
+        const filterPane = document.getElementById('filterPane');
+        const filterClose = document.getElementById('filterClose');
+        const applyBtn = document.getElementById('applyFilters');
+        const clearBtn = document.getElementById('clearFilters');
+
+        function setFilter(open){
+            filterPane.classList.toggle('open', open);
+            document.documentElement.classList.toggle('filter-open', open);
+            filterPane.setAttribute('aria-hidden', !open);
+            // Accessibility: if closing the pane and a control inside has focus,
+            // move focus to the filter toggle so the focused element is not hidden
+            if(!open){
+                try{
+                    const active = document.activeElement;
+                    if(active && filterPane.contains(active)){
+                        // Move focus to the visible toggle and blur the inner element
+                        filterToggle.focus();
+                        if(typeof active.blur === 'function') active.blur();
+                    }
+                }catch(e){ console.warn('Focus transfer failed', e); }
+            }
+        }
+
+        if(filterToggle){ filterToggle.addEventListener('click', e=>{ e.stopPropagation(); setFilter(!filterPane.classList.contains('open')); }); }
+        if(filterClose){ filterClose.addEventListener('click', e=>{ e.stopPropagation(); setFilter(false); }); }
+
+        // Close on Escape
+        document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ if(filterPane.classList.contains('open')) setFilter(false) } });
+
+        // Period mode toggle logic (Year / Quarter / Month)
+        const periodModeBtns = document.querySelectorAll('.period-mode-btn');
+        const selYear = document.getElementById('filterPeriodYear');
+        const selQuarter = document.getElementById('filterPeriodQuarter');
+        const selMonth = document.getElementById('filterPeriodMonth');
+        let activeMode = 'year';
+
+        function setMode(mode){
+            activeMode = mode;
+            periodModeBtns.forEach(b=>{
+                b.style.background = (b.dataset.mode===mode)?'#eef6fb':'transparent';
+            });
+            // Show/hide selects
+            selYear.style.display = (mode==='year') ? 'block' : 'none';
+            selQuarter.style.display = (mode==='quarter') ? 'block' : 'none';
+            selMonth.style.display = (mode==='month') ? 'block' : 'none';
+        }
+        periodModeBtns.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+        // Initialize mode (if server provided a selection, auto-detect Year/Quarter/Month)
+        const initialSelectedPeriod = "{{ selected_period|default:'' }}";
+        const initialSelectedYear = "{{ selected_year|default:'' }}";
+
+        function detectAndInit(){
+            const p = (initialSelectedPeriod || '').trim();
+            if(p){
+                // Year only: 4 digits
+                if(/^\d{4}$/.test(p)){
+                    if(selYear.querySelector('option[value="'+p+'"]')) selYear.value = p;
+                    setMode('year');
+                    return;
+                }
+                // Quarter formats: Q1-2024, Q1 2024, Q1_2024
+                if(/^Q\d[-_ ]?\d{4}$/i.test(p) || /^Q\d$/i.test(p)){
+                    // Normalize to Qx-YYYY where possible
+                    const norm = p.replace(/[ _]/g,'-');
+                    for(const opt of selQuarter.options){ if(opt.value.toLowerCase() === norm.toLowerCase()){ selQuarter.value = opt.value; setMode('quarter'); return; } }
+                    // fallback: try to split
+                    const parts = p.split(/[-_ ]/);
+                    if(parts.length>=2){ const cand = parts[0] + '-' + parts[1]; for(const opt of selQuarter.options){ if(opt.value.toLowerCase()===cand.toLowerCase()){ selQuarter.value = opt.value; setMode('quarter'); return; } } }
+                }
+                // Month formats: Jan-2024 or January-2024
+                if(/^[A-Za-z]{3,9}[- ]\d{4}$/.test(p)){
+                    const normM = p.replace(/[ ]/g,'-');
+                    for(const opt of selMonth.options){ if(opt.value.toLowerCase() === normM.toLowerCase()){ selMonth.value = opt.value; setMode('month'); return; } }
+                    // fallback: try to find by year only
+                    setMode('month');
+                    return;
+                }
+            }
+            // fallback: try selected_year or default to year mode
+            if(initialSelectedYear && selYear.querySelector('option[value="'+initialSelectedYear+'"]')){
+                selYear.value = initialSelectedYear;
+            }
+            setMode('year');
+        }
+
+        detectAndInit();
+
+        // --- New: Filter quarter and month options by selected year/quarter ---
+        // Cache original options so we can rebuild filtered lists
+        const origQuarterOptions = Array.from(selQuarter.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year') }));
+        const origMonthOptions = Array.from(selMonth.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year'), quarter: opt.dataset ? opt.dataset.quarter : opt.getAttribute('data-quarter') }));
+
+        function rebuildQuarterOptionsForYear(year){
+            // Remove current options
+            selQuarter.innerHTML = '';
+            // Add only quarters that match this year
+            origQuarterOptions.forEach(o=>{
+                if(String(o.year) === String(year)){
+                    const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.text; opt.setAttribute('data-year', o.year); selQuarter.appendChild(opt);
+                }
+            });
+        }
+
+        function rebuildMonthOptionsForYearAndQuarter(year, quarter){
+            selMonth.innerHTML = '';
+            origMonthOptions.forEach(o=>{
+                if(String(o.year) === String(year) && (!quarter || String(o.quarter) === String(quarter))){
+                    const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.text; opt.setAttribute('data-year', o.year); opt.setAttribute('data-quarter', o.quarter); selMonth.appendChild(opt);
+                }
+            });
+        }
+
+        // When year changes, update quarter and month lists
+        selYear.addEventListener('change', function(){
+            const y = this.value;
+            rebuildQuarterOptionsForYear(y);
+            // Keep quarter selection valid; if quarter select now has options, select first
+            if(selQuarter.options.length) selQuarter.selectedIndex = 0;
+            // Rebuild months for selected year (no quarter filter)
+            rebuildMonthOptionsForYearAndQuarter(y, null);
+        });
+
+        // When quarter changes, update month list to show only months in that quarter/year
+        selQuarter.addEventListener('change', function(){
+            // quarter option values are like 'Q1-2024' so extract quarter and year
+            const parts = this.value.split(/[-_]/);
+            let q = parts[0];
+            let y = parts.length>1?parts[1]:selYear.value;
+            rebuildMonthOptionsForYearAndQuarter(y, q);
+            if(selMonth.options.length) selMonth.selectedIndex = 0;
+        });
+
+        // Call once on load to ensure lists reflect initial selected year
+        if(selYear.value){
+            rebuildQuarterOptionsForYear(selYear.value);
+            rebuildMonthOptionsForYearAndQuarter(selYear.value, null);
+        }
+
+        // --- Dependent dropdowns: investor -> regional -> community ---
+        try{
+            const invToRegional = JSON.parse('{{ inv_to_regional_json|escapejs }}');
+            const invRegToCommunities = JSON.parse('{{ inv_reg_to_communities_json|escapejs }}');
+            const selInv = document.getElementById('filterInvestor');
+            const selRegional = document.getElementById('filterRegional');
+            const selCommunity = document.getElementById('filterCommunity');
+
+            function rebuildRegionalForInvestor(inv){
+                // Clear
+                selRegional.innerHTML = '';
+                const opts = invToRegional[inv] || [];
+                const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Regional Managers'; selRegional.appendChild(allOpt);
+                opts.forEach(rm => { const o=document.createElement('option'); o.value=rm; o.textContent=rm; selRegional.appendChild(o); });
+            }
+
+            function rebuildCommunityForInvRegional(inv, rm){
+                selCommunity.innerHTML = '';
+                const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Communities'; selCommunity.appendChild(allOpt);
+                const key = (inv||'') + '|||' + (rm||'');
+                const opts = invRegToCommunities[key] || [];
+                opts.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; selCommunity.appendChild(o); });
+            }
+
+            // Initialize based on current selections
+            const initialInv = '{{ selected_investor|default:""|escapejs }}';
+            const initialRegional = '{{ selected_regional_manager|default:""|escapejs }}';
+            const initialCommunity = '{{ selected_community|default:""|escapejs }}';
+            if(initialInv){ selInv.value = initialInv; }
+            rebuildRegionalForInvestor(selInv.value);
+            if(initialRegional){ selRegional.value = initialRegional; }
+            rebuildCommunityForInvRegional(selInv.value, selRegional.value);
+            if(initialCommunity){ selCommunity.value = initialCommunity; }
+
+            selInv.addEventListener('change', function(){ rebuildRegionalForInvestor(this.value); rebuildCommunityForInvRegional(this.value, ''); });
+            selRegional.addEventListener('change', function(){ rebuildCommunityForInvRegional(selInv.value, this.value); });
+        }catch(e){ console.warn('Dependent dropdown init failed', e); }
+
+        // Apply: submit via GET preserving other params where possible
+        if(applyBtn){
+            applyBtn.addEventListener('click', function(){
+                const investor = document.getElementById('filterInvestor').value;
+                const regional = (document.getElementById('filterRegional') && document.getElementById('filterRegional').value) || '';
+                const community = (document.getElementById('filterCommunity') && document.getElementById('filterCommunity').value) || '';
+                const params = new URLSearchParams(window.location.search);
+                // Build period param based on activeMode and also provide explicit mode/year/quarter/month params
+                let periodValue = '';
+                // Clear any previous explicit keys to avoid stale values
+                params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month');
+                if(activeMode === 'year'){
+                    periodValue = selYear.value; // e.g. '2024'
+                    if(periodValue) params.set('period_year', periodValue);
+                } else if(activeMode === 'quarter'){
+                    periodValue = selQuarter.value; // e.g. 'Q1-2024'
+                    // also send quarter and year separately to make server-side routing easier
+                    if(periodValue){
+                        params.set('period_quarter', periodValue);
+                        // extract year from quarter value like 'Q1-2024'
+                        const yy = periodValue.split(/[-_]/).pop();
+                        if(yy) params.set('period_year', yy);
+                    }
+                } else if(activeMode === 'month'){
+                    periodValue = selMonth.value; // e.g. 'Jan-2024'
+                    if(periodValue){
+                        // month value already contains '-YYYY'
+                        params.set('period_month', periodValue);
+                        const yy = periodValue.split(/[-_]/).pop(); if(yy) params.set('period_year', yy);
+                    }
+                }
+                // Set canonical `period` param for backward compatibility
+                if(periodValue) params.set('period', periodValue); else params.delete('period');
+                // Also set explicit mode so backend can distinguish intent
+                params.set('period_mode', activeMode);
+
+                if(investor) params.set('investor', investor); else params.delete('investor');
+                if(regional) params.set('regional_manager', regional); else params.delete('regional_manager');
+                if(community) params.set('community', community); else params.delete('community');
+                // Close pane then show loading overlay and try AJAX fetch; fallback to navigation
+                setFilter(false);
+                const overlayEl = document.getElementById('loadingOverlay');
+                if(overlayEl){ overlayEl.querySelector('.loading-text').textContent = 'Applying filters…'; overlayEl.style.display = 'flex'; overlayEl.setAttribute('aria-hidden','false'); }
+                // Attempt AJAX fetch to avoid full reload
+                try{
+                    const url = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
+                    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                        .then(async (r)=>{
+                            if(!r.ok) throw new Error('Network response not ok: ' + r.status);
+                            const ct = r.headers.get('content-type') || '';
+                            if(ct.includes('application/json')) return r.json();
+                            // If server returned HTML/text, attempt to parse JSON safely
+                            const text = await r.text();
+                            try{ return JSON.parse(text); }catch(e){ throw new Error('Invalid JSON response: ' + text.slice(0,200)); }
+                        })
+                        .then(data=>{
+                            // Replace KPI cards and property table fragments
+                            const kpiContainer = document.querySelector('.sidebar');
+                            if(kpiContainer && data.kpi_html){ kpiContainer.outerHTML = data.kpi_html; }
+                            const propFrag = document.getElementById('property-table-fragment');
+                            if(propFrag && data.table_html){ propFrag.outerHTML = data.table_html; }
+                            // Update URL (pushState) and hide overlay
+                            window.history.pushState({}, '', url);
+                            if(overlayEl){ overlayEl.style.display = 'none'; overlayEl.setAttribute('aria-hidden','true'); }
+                            // Rebind click handlers for new KPI cards
+                            bindKpiCardHandlers();
+                        })
+                        .catch(async e=>{
+                            // Try to capture server response/body if available for debugging
+                            console.warn('AJAX apply failed, falling back to reload', e);
+                            try{
+                                // attempt to fetch raw body for more context
+                                const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                                const text = await resp.text();
+                                console.warn('Server response (first 200 chars):', text.slice(0,200));
+                            }catch(_){ /* ignore secondary failures */ }
+                            setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50);
+                        });
+                }catch(e){ setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50); }
+            });
+        }
+
+        // Ensure KPI card handlers can be rebound after AJAX replacement
+        function bindKpiCardHandlers(){
+            try{
+                const totalProps = document.getElementById('total-properties-card');
+                const totalUnits = document.getElementById('total-units-card');
+                if(totalProps){ totalProps.removeEventListener('click', openPropertyModal); totalProps.addEventListener('click', openPropertyModal); }
+                if(totalUnits){ totalUnits.removeEventListener('click', function(){}); totalUnits.addEventListener('click', function(){ document.getElementById('units-modal').style.display = 'flex'; }); }
+            }catch(e){ console.warn('bindKpiCardHandlers failed', e); }
+        }
+
+        if(clearBtn){
+            clearBtn.addEventListener('click', function(){
+                // Reset period selects and investor and remove period params from URL
+                selYear.selectedIndex = 0;
+                selQuarter.selectedIndex = 0;
+                selMonth.selectedIndex = 0;
+                document.getElementById('filterInvestor').selectedIndex = 0;
+                setMode('year');
+                const params = new URLSearchParams(window.location.search);
+                params.delete('period'); params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month'); params.delete('investor'); params.delete('regional_manager'); params.delete('community');
+                // Show overlay then attempt AJAX fetch to clear filters
+                const overlayEl = document.getElementById('loadingOverlay');
+                if(overlayEl){ overlayEl.querySelector('.loading-text').textContent = 'Clearing filters…'; overlayEl.style.display = 'flex'; overlayEl.setAttribute('aria-hidden','false'); }
+                try{
+                    const url = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
+                    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                        .then(async (r)=>{
+                            if(!r.ok) throw new Error('Network response not ok: ' + r.status);
+                            const ct = r.headers.get('content-type') || '';
+                            if(ct.includes('application/json')) return r.json();
+                            const text = await r.text();
+                            try{ return JSON.parse(text); }catch(e){ throw new Error('Invalid JSON response: ' + text.slice(0,200)); }
+                        })
+                        .then(data=>{
+                            const kpiContainer = document.querySelector('.sidebar');
+                            if(kpiContainer && data.kpi_html){ kpiContainer.outerHTML = data.kpi_html; }
+                            const propFrag = document.getElementById('property-table-fragment');
+                            if(propFrag && data.table_html){ propFrag.outerHTML = data.table_html; }
+                            window.history.pushState({}, '', url);
+                            if(overlayEl){ overlayEl.style.display = 'none'; overlayEl.setAttribute('aria-hidden','true'); }
+                            bindKpiCardHandlers();
+                        })
+                        .catch(async e=>{ console.warn('AJAX clear failed, falling back to reload', e); try{ const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const text = await resp.text(); console.warn('Server response (first 200 chars):', text.slice(0,200)); }catch(_){ } setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50); });
+                }catch(e){ setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50); }
+            });
+        }
+
+        // Clicking outside filter pane should close it
+        document.addEventListener('click', function(e){
+            if(filterPane && filterPane.classList.contains('open')){
+                const inside = filterPane.contains(e.target) || (filterToggle && filterToggle.contains(e.target));
+                if(!inside) setFilter(false);
+            }
+        });
+    })();
+    </script>
+
+    <!-- ===== Charts (robust load) ===== -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+    <script>
+    if(!window.Chart){
+        document.write('<script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"><\/script>');
+    }
+    </script>
+    <script>
+    function renderCharts(){
+        const months=['Aug-24','Sep-24','Oct-24','Nov-24','Dec-24','Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+
+        new Chart(document.getElementById('chartRent'),{
+            type:'line',
+            data:{labels:months,datasets:[
+                {label:'Effective',data:[1620,1585,1560,1540,1520,1500,1510,1530,1545,1568,1550],borderColor:'#0E555A',backgroundColor:'transparent',borderWidth:2,tension:.3},
+                {label:'Market',data:[1680,1660,1655,1650,1648,1650,1655,1660,1665,1670,1668],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+            scales:{y:{ticks:{callback:v=>'$'+v}}}}
+        });
+
+        new Chart(document.getElementById('chartOccRev'),{
+            type:'bar',
+            data:{labels:months,datasets:[
+                {type:'line',label:'Occupancy %',yAxisID:'yL',data:[95,97,96,95,96.5,94.8,95.2,96.8,95.8,96.1,94.7],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3},
+                {label:'Total Revenue (k$)',yAxisID:'yR',data:[340,352,349,344,346,343,345,350,347,348,343],backgroundColor:'#C69A58'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,
+                scales:{yL:{position:'left',ticks:{callback:v=>v+'%'}},yR:{position:'right',ticks:{callback:v=>'$'+v+'k'}}}}
+        });
+
+        const months6=['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+        new Chart(document.getElementById('chartRenewals'),{
+            type:'bar',
+            data:{labels:months6,datasets:[
+                {label:'Expirations',data:[22,20,26,28,27,29],backgroundColor:'#E5E7EB',borderColor:'#CBD5E1'},
+                {label:'Renewals',data:[10,9,12,11,13,13],backgroundColor:'#0E555A',borderColor:'#0E555A'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}
+        });
+
+        new Chart(document.getElementById('chartMoveOut'),{
+            type:'doughnut',
+            data:{labels:['Affordability','Dissatisfied','Home Purchase'],
+                datasets:[{data:[18,16,14],backgroundColor:['#0E555A','#C69A58','#93C5FD']}]},
+            options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right'}}}
+        });
+
+        const months6b=['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+        new Chart(document.getElementById('chartExpense'),{
+            type:'bar',
+            data:{labels:months6b,datasets:[
+                {label:'Controllable',data:[50,52,51,49,48,50],backgroundColor:'#0E555A'},
+                {label:'Non-Controllable',data:[38,40,41,39,37,39],backgroundColor:'#C69A58'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>'$'+v+'k'}}}}
+        });
+
+        // Summary Charts - Properties and Units Over Time (Yearly Growth)
+        const years = ['2021', '2022', '2023', '2024', '2025'];
+        const propertiesData = [8, 10, 12, 15, 17];
+        const unitsData = [280, 320, 400, 480, 535];
+        
+        // Make data globally accessible for modal
+        window.chartData = {
+            years: years,
+            propertiesData: propertiesData,
+            unitsData: unitsData
+        };
+        
+        // Calculate base and growth portions for properties
+        const propertiesBase = propertiesData.map((current, index) => {
+            if (index === 0) return current; // First year is entirely base
+            const previous = propertiesData[index - 1];
+            return Math.min(current, previous); // Base portion (blue)
+        });
+        
+        const propertiesGrowth = propertiesData.map((current, index) => {
+            if (index === 0) return 0; // No growth for first year
+            const previous = propertiesData[index - 1];
+            return Math.max(0, current - previous); // Growth portion (green)
+        });
+        
+        const propertiesDecline = propertiesData.map((current, index) => {
+            if (index === 0) return 0; // No decline for first year
+            const previous = propertiesData[index - 1];
+            return Math.max(0, previous - current); // Decline portion (red)
+        });
+
+        // Calculate base and growth portions for units
+        const unitsBase = unitsData.map((current, index) => {
+            if (index === 0) return current; // First year is entirely base
+            const previous = unitsData[index - 1];
+            return Math.min(current, previous); // Base portion (blue)
+        });
+        
+        const unitsGrowth = unitsData.map((current, index) => {
+            if (index === 0) return 0; // No growth for first year
+            const previous = unitsData[index - 1];
+            return Math.max(0, current - previous); // Growth portion (green)
+        });
+        
+        const unitsDecline = unitsData.map((current, index) => {
+            if (index === 0) return 0; // No decline for first year
+            const previous = unitsData[index - 1];
+            return Math.max(0, previous - current); // Decline portion (red)
+        });
+
+        // Make data globally accessible for modal
+        window.chartData = {
+            years: years,
+            propertiesData: propertiesData,
+            unitsData: unitsData
+        };
+
+        // Make data globally accessible for modal
+        window.chartData = {
+            years: years,
+            propertiesData: propertiesData,
+            unitsData: unitsData
+        };
+    }
+    document.addEventListener('DOMContentLoaded',()=>{ if(window.Chart){renderCharts()} else {const t=setInterval(()=>{ if(window.Chart){clearInterval(t);renderCharts()} },50)} });
+    </script>
+    <script>
+// Topbar dropdown script removed
+    </script>
+
+    <!-- Advanced Modal for Property List -->
+<div id="property-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+        <button onclick="closePropertyModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
+            <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+                <input id="property-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
+            </div>
+        <div style="max-height:400px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#e3e8f7;">
+                        <th style="padding:8px 12px;white-space:nowrap;">Sl No.</th>
+                        <th style="padding:8px 12px;">Property Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+                        {% for row in all_properties %}
+                        <tr class="property-row">
+                            <td style="padding:8px 12px;">{{ forloop.counter }}</td>
+                            <td style="padding:8px 12px;">{{ row.property_name }}</td>
+                        </tr>
+                        {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+        <script>
+        // Property modal search/filter functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            var searchInput = document.getElementById('property-search');
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    var filter = this.value.toLowerCase();
+                    var rows = document.querySelectorAll('#property-modal .property-row');
+                    let visibleCount = 0;
+                    rows.forEach(function(row, idx) {
+                        var nameCell = row.cells[1];
+                        if (nameCell && nameCell.textContent.toLowerCase().includes(filter)) {
+                                row.style.display = '';
+                                // Update serial number for visible rows
+                                row.cells[0].textContent = ++visibleCount;
+                                // Highlight matching text
+                                var originalText = row.getAttribute('data-original') || nameCell.textContent;
+                                row.setAttribute('data-original', originalText);
+                                if (filter) {
+                                    var regex = new RegExp('(' + filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                                    nameCell.innerHTML = originalText.replace(regex, '<span class="highlight-search">$1</span>');
+                                } else {
+                                    nameCell.innerHTML = originalText;
+                                }
+                        } else {
+                                row.style.display = 'none';
+                                // Restore original text if hidden
+                                var originalText = row.getAttribute('data-original');
+                                if (originalText) nameCell.innerHTML = originalText;
+                        }
+                    });
+                    // If no match, show a friendly message
+                    var tbody = searchInput.closest('.modal-content').querySelector('tbody');
+                    var noMatchRow = document.getElementById('no-match-row');
+                    if (visibleCount === 0) {
+                        if (!noMatchRow) {
+                            noMatchRow = document.createElement('tr');
+                            noMatchRow.id = 'no-match-row';
+                            noMatchRow.innerHTML = '<td colspan="2" style="text-align:center;padding:18px;color:#4f6bed;font-size:17px;">No properties found</td>';
+                            tbody.appendChild(noMatchRow);
+                        }
+                    } else {
+                        if (noMatchRow) noMatchRow.remove();
+                    }
+                });
+            }
+        });
+        </script>
+<script>
+function openPropertyModal() {
+    document.getElementById('property-modal').style.display = 'flex';
+}
+function closePropertyModal() {
+    document.getElementById('property-modal').style.display = 'none';
+}
+document.getElementById('total-properties-card').addEventListener('click', openPropertyModal);
+document.getElementById('total-units-card').addEventListener('click', function() {
+    document.getElementById('units-modal').style.display = 'flex';
+});
+function closeUnitsModal() {
+    document.getElementById('units-modal').style.display = 'none';
+}
+
+function openPropertiesChartModal() {
+    document.getElementById('properties-chart-modal').style.display = 'flex';
+    // Re-render the chart in the modal if needed
+    setTimeout(() => {
+        renderPropertiesChartInModal();
+    }, 100);
+}
+
+function closePropertiesChartModal() {
+    document.getElementById('properties-chart-modal').style.display = 'none';
+    // Destroy chart when modal is closed
+    if (window.propertiesModalChart) {
+        window.propertiesModalChart.destroy();
+        window.propertiesModalChart = null;
+    }
+}
+
+function openUnitsChartModal() {
+    document.getElementById('units-chart-modal').style.display = 'flex';
+    // Re-render the chart in the modal if needed
+    setTimeout(() => {
+        renderUnitsChartInModal();
+    }, 100);
+}
+
+function closeUnitsChartModal() {
+    document.getElementById('units-chart-modal').style.display = 'none';
+    // Destroy chart when modal is closed
+    if (window.unitsModalChart) {
+        window.unitsModalChart.destroy();
+        window.unitsModalChart = null;
+    }
+}
+
+function openOccupancyChartModal() {
+    document.getElementById('occupancy-chart-modal').style.display = 'flex';
+    // Re-render the chart in the modal if needed
+    setTimeout(() => {
+        renderOccupancyChartInModal();
+    }, 100);
+}
+
+function closeOccupancyChartModal() {
+    document.getElementById('occupancy-chart-modal').style.display = 'none';
+    // Destroy chart when modal is closed
+    if (window.occupancyModalChart) {
+        window.occupancyModalChart.destroy();
+        window.occupancyModalChart = null;
+    }
+}
+
+function renderOccupancyChartInModal() {
+    const modalCanvas = document.getElementById('modalChartOccupancy');
+    if (modalCanvas && window.Chart) {
+        // Destroy existing chart if it exists
+        if (window.occupancyModalChart) {
+            window.occupancyModalChart.destroy();
+        }
+        
+        // Sample occupancy data over years (as percentage)
+        const years = ['2021', '2022', '2023', '2024', '2025'];
+        const occupancyData = [92, 94, 96, 95, 97]; // Occupancy percentages
+        
+        // Calculate base and growth portions
+        const occupancyBase = occupancyData.map((current, index) => {
+            if (index === 0) return current;
+            const previous = occupancyData[index - 1];
+            return Math.min(current, previous);
+        });
+        
+        const occupancyGrowth = occupancyData.map((current, index) => {
+            if (index === 0) return 0;
+            const previous = occupancyData[index - 1];
+            return Math.max(0, current - previous);
+        });
+        
+        // Create new chart and store reference
+        window.occupancyModalChart = new Chart(modalCanvas, {
+            type: 'bar',
+            data: {
+                labels: years,
+                datasets: [
+                    {
+                        label: 'Base Occupancy %',
+                        data: occupancyBase,
+                        backgroundColor: '#1F3639',
+                        borderColor: '#1F3639',
+                        borderWidth: 1,
+                        stack: 'occupancy'
+                    },
+                    {
+                        label: 'Growth %',
+                        data: occupancyGrowth,
+                        backgroundColor: '#22C55E',
+                        borderColor: '#22C55E',
+                        borderWidth: 1,
+                        stack: 'occupancy'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true },
+                    y: { 
+                        beginAtZero: true, 
+                        stacked: true, 
+                        ticks: { 
+                            stepSize: 5,
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { boxWidth: 12, padding: 10 }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Occupancy Rate Over Time',
+                        font: { size: 16 }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(context) {
+                                return `Year: ${context[0].label}`;
+                            },
+                            label: function(context) {
+                                const datasetLabel = context.dataset.label;
+                                const value = context.raw;
+                                if (datasetLabel === 'Base Occupancy %') {
+                                    return `Base: ${value}%`;
+                                } else if (datasetLabel === 'Growth %') {
+                                    return value > 0 ? `Growth: +${value}%` : '';
+                                }
+                                return `${datasetLabel}: ${value}%`;
+                            },
+                            footer: function(context) {
+                                const index = context[0].dataIndex;
+                                const total = occupancyData[index];
+                                return `Total: ${total}%`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+function renderUnitsChartInModal() {
+    const modalCanvas = document.getElementById('modalChartTotalUnits');
+    if (modalCanvas && window.Chart && window.chartData) {
+        // Destroy existing chart if it exists
+        if (window.unitsModalChart) {
+            window.unitsModalChart.destroy();
+        }
+        
+        // Use the global chart data
+        const { years, unitsData } = window.chartData;
+        
+        // Calculate base and growth portions
+        const unitsBase = unitsData.map((current, index) => {
+            if (index === 0) return current;
+            const previous = unitsData[index - 1];
+            return Math.min(current, previous);
+        });
+        
+        const unitsGrowth = unitsData.map((current, index) => {
+            if (index === 0) return 0;
+            const previous = unitsData[index - 1];
+            return Math.max(0, current - previous);
+        });
+        
+        // Create new chart and store reference
+        window.unitsModalChart = new Chart(modalCanvas, {
+            type: 'bar',
+            data: {
+                labels: years,
+                datasets: [
+                    {
+                        label: 'Base Units',
+                        data: unitsBase,
+                        backgroundColor: '#1F3639',
+                        borderColor: '#1F3639',
+                        borderWidth: 1,
+                        stack: 'units'
+                    },
+                    {
+                        label: 'Growth',
+                        data: unitsGrowth,
+                        backgroundColor: '#22C55E',
+                        borderColor: '#22C55E',
+                        borderWidth: 1,
+                        stack: 'units'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true },
+                    y: { beginAtZero: true, stacked: true, ticks: { stepSize: 50 } }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { boxWidth: 12, padding: 10 }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Total Units Over Time',
+                        font: { size: 16 }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(context) {
+                                return `Year: ${context[0].label}`;
+                            },
+                            label: function(context) {
+                                const datasetLabel = context.dataset.label;
+                                const value = context.raw;
+                                if (datasetLabel === 'Base Units') {
+                                    return `Base: ${value} units`;
+                                } else if (datasetLabel === 'Growth') {
+                                    return value > 0 ? `Growth: +${value} units` : '';
+                                }
+                                return `${datasetLabel}: ${value}`;
+                            },
+                            footer: function(context) {
+                                const index = context[0].dataIndex;
+                                const total = unitsData[index];
+                                return `Total: ${total} units`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+function renderPropertiesChartInModal() {
+    const modalCanvas = document.getElementById('modalChartTotalProperties');
+    if (modalCanvas && window.Chart && window.chartData) {
+        // Destroy existing chart if it exists
+        if (window.propertiesModalChart) {
+            window.propertiesModalChart.destroy();
+        }
+        
+        // Use the global chart data
+        const { years, propertiesData } = window.chartData;
+        
+        // Calculate base and growth portions
+        const propertiesBase = propertiesData.map((current, index) => {
+            if (index === 0) return current;
+            const previous = propertiesData[index - 1];
+            return Math.min(current, previous);
+        });
+        
+        const propertiesGrowth = propertiesData.map((current, index) => {
+            if (index === 0) return 0;
+            const previous = propertiesData[index - 1];
+            return Math.max(0, current - previous);
+        });
+        
+        // Create new chart and store reference
+        window.propertiesModalChart = new Chart(modalCanvas, {
+            type: 'bar',
+            data: {
+                labels: years,
+                datasets: [
+                    {
+                        label: 'Base Properties',
+                        data: propertiesBase,
+                        backgroundColor: '#1F3639',
+                        borderColor: '#1F3639',
+                        borderWidth: 1,
+                        stack: 'properties'
+                    },
+                    {
+                        label: 'Growth',
+                        data: propertiesGrowth,
+                        backgroundColor: '#22C55E',
+                        borderColor: '#22C55E',
+                        borderWidth: 1,
+                        stack: 'properties'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true },
+                    y: { beginAtZero: true, stacked: true, ticks: { stepSize: 2 } }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { boxWidth: 12, padding: 10 }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Total Properties Over Time',
+                        font: { size: 16 }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(context) {
+                                return `Year: ${context[0].label}`;
+                            },
+                            label: function(context) {
+                                const datasetLabel = context.dataset.label;
+                                const value = context.raw;
+                                if (datasetLabel === 'Base Properties') {
+                                    return `Base: ${value} properties`;
+                                } else if (datasetLabel === 'Growth') {
+                                    return value > 0 ? `Growth: +${value} properties` : '';
+                                }
+                                return `${datasetLabel}: ${value}`;
+                            },
+                            footer: function(context) {
+                                const index = context[0].dataIndex;
+                                const total = propertiesData[index];
+                                return `Total: ${total} properties`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var searchInput = document.getElementById('units-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            var filter = this.value.toLowerCase();
+            var rows = document.querySelectorAll('#units-modal .units-row');
+            let visibleCount = 0;
+            rows.forEach(function(row, idx) {
+                var nameCell = row.cells[1];
+                if (nameCell && nameCell.textContent.toLowerCase().includes(filter)) {
+                    row.style.display = '';
+                    row.cells[0].textContent = ++visibleCount;
+                    // Highlight matching text
+                    var originalText = row.getAttribute('data-original') || nameCell.textContent;
+                    row.setAttribute('data-original', originalText);
+                    if (filter) {
+                        var regex = new RegExp('(' + filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                        nameCell.innerHTML = originalText.replace(regex, '<span class="highlight-search">$1</span>');
+                    } else {
+                        nameCell.innerHTML = originalText;
+                    }
+                } else {
+                    row.style.display = 'none';
+                    var originalText = row.getAttribute('data-original');
+                    if (originalText) nameCell.innerHTML = originalText;
+                }
+            });
+            // If no match, show a friendly message
+            var tbody = searchInput.closest('.modal-content').querySelector('tbody');
+            var noMatchRow = document.getElementById('units-no-match-row');
+            if (visibleCount === 0) {
+                if (!noMatchRow) {
+                    noMatchRow = document.createElement('tr');
+                    noMatchRow.id = 'units-no-match-row';
+                    noMatchRow.innerHTML = '<td colspan="3" style="text-align:center;padding:18px;color:#4f6bed;font-size:17px;">No properties found</td>';
+                    tbody.appendChild(noMatchRow);
+                }
+            } else {
+                if (noMatchRow) noMatchRow.remove();
+            }
+        });
+    }
+});
+    </script>
+</body>
+</html>
+
+<!-- Modal for Properties Chart -->
+<div id="properties-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+        <button onclick="closePropertiesChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
+        <h3 style="margin-bottom:20px;color:#0B3A3F;font-size:20px;font-weight:600;text-align:center;">Total Properties Trend</h3>
+        <div style="height:400px;">
+            <canvas id="modalChartTotalProperties"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Units Chart -->
+<div id="units-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+        <button onclick="closeUnitsChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
+        <h3 style="margin-bottom:20px;color:#0B3A3F;font-size:20px;font-weight:600;text-align:center;">Total Units Trend</h3>
+        <div style="height:400px;">
+            <canvas id="modalChartTotalUnits"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Occupancy Chart -->
+<div id="occupancy-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+        <button onclick="closeOccupancyChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
+        <h3 style="margin-bottom:20px;color:#0B3A3F;font-size:20px;font-weight:600;text-align:center;">Occupancy Rate Trend</h3>
+        <div style="height:400px;">
+            <canvas id="modalChartOccupancy"></canvas>
+        </div>
+    </div>
+</div>

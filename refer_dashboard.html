@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Property Analytics – Olympus</title>
+
+<style>
+:root{
+  /* Olympus look */
+  --topbar-h:140px;                 /* same bar height as olympusproperty.com */
+  --nav-bg:#1F3639; --nav-text:#F7FAFC; --nav-hover:#2A474B;
+  --aqua:#59E6F6;
+
+  --page-bg:#F3F6F8; --card-bg:#FFFFFF; --border:#E5E7EB; --text:#0F172A; --muted:#64748B;
+  --radius:14px; --gap:22px;
+}
+html,body{height:100%} *{box-sizing:border-box}
+body{margin:0;background:var(--page-bg);color:var(--text);font:22px/1.5 Inter,system-ui,Segoe UI,Arial}
+
+/* ===== TOP BAR ===== */
+.topbar{position:sticky;top:0;z-index:70;background:var(--nav-bg);color:var(--nav-text);width:100%;
+        box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.topbar-inner{height:var(--topbar-h);padding:0 28px;display:flex;align-items:center;gap:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:32px;white-space:nowrap}
+.brand svg{width:30px;height:30px;flex:0 0 30px}
+
+/* HAMBURGER (MENU) */
+.hamburger{
+  width:44px;height:44px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;
+  position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-right:6px;
+}
+.hamburger .bar{position:absolute;width:22px;height:2px;background:var(--nav-text);transition:.25s}
+.hamburger .bar:nth-child(1){transform:translateY(-6px)}
+.hamburger .bar:nth-child(2){transform:translateY(0)}
+.hamburger .bar:nth-child(3){transform:translateY(6px)}
+.hamburger.open .bar:nth-child(1){transform:rotate(45deg)}
+.hamburger.open .bar:nth-child(2){opacity:0}
+.hamburger.open .bar:nth-child(3){transform:rotate(-45deg)}
+
+/* top filters like nav links */
+.nav{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.nav-item{position:relative}
+.nav-btn{
+  background:none;border:none;color:var(--nav-text);text-transform:uppercase;letter-spacing:.08em;
+  font-weight:700;font-size:22px;padding:10px 6px;cursor:pointer;display:flex;align-items:center;gap:8px;
+}
+.nav-btn .caret{border:solid var(--nav-text);border-width:0 2px 2px 0;display:inline-block;padding:3px;transform:rotate(45deg)}
+.nav-item:hover>.nav-btn,.nav-btn:focus{color:#fff}
+
+.menu{
+  position:absolute;left:0;top:100%;margin-top:12px;min-width:260px;background:#3A4A4D;
+  border-radius:6px;padding:10px 0;box-shadow:0 8px 20px rgba(0,0,0,.18);display:none
+}
+.menu.open{display:block}
+.menu button{
+  width:100%;display:block;text-align:left;background:none;border:none;color:#DEE6EA;
+  padding:12px 16px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer
+}
+.menu button:hover{background:#2F4042;color:#fff}
+
+/* Export (replaces Important News) */
+.export-btn{
+  margin-left:auto;background:#3FE0F0;color:#0B3A3F;border:none;border-radius:6px;
+  text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:10px 16px;cursor:pointer
+}
+
+/* ===== OVERLAY MENU (like Olympus mobile/mega menu) ===== */
+.overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
+.drawer{
+  position:absolute;left:0;top:0;bottom:0;width:340px;background:var(--nav-bg);color:var(--nav-text);
+  transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:18px 18px 24px 18px;
+  overflow:auto;
+}
+.drawer.open{transform:translateX(0)}
+.overlay.open{display:block}
+.drawer .big-item{
+  display:block;color:#E9F2F5;text-decoration:none;font-size:22px;font-weight:800;letter-spacing:.06em;
+  padding:14px 8px;border-radius:6px;text-transform:uppercase
+}
+.drawer .big-item:hover{background:#2A474B}
+
+/* ===== MAIN (bigger left column) ===== */
+.main{width:100%;min-height:calc(100vh - var(--topbar-h));
+      display:grid;grid-template-columns:460px 1fr;gap:var(--gap);padding:20px 28px 28px}
+@media (max-width:1240px){.main{grid-template-columns:1fr}}
+
+.sidebar{display:grid;gap:12px;align-self:start;position:sticky;top:calc(var(--topbar-h) + 14px)}
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 14px}
+.kpi .label{font-size:22px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .value{font-size:32px;line-height:1.1;font-weight:700;margin-top:4px}
+
+.section{margin-bottom:var(--gap)}
+.section-title{font-weight:700;margin:2px 0 8px;color:#0B3A3F}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+@media (max-width:900px){.grid-2{grid-template-columns:1fr}}
+
+.chart-card{background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius);padding:12px;height:360px}
+.chart-card canvas{width:100% !important;height:100% !important}
+
+.empty{height:360px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
+  color:var(--muted);background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius)}
+
+:focus-visible{outline:2px solid #3FE0F0;outline-offset:2px}
+</style>
+</head>
+
+<body>
+  <!-- ===== TOP BAR ===== -->
+  <div class="topbar">
+    <div class="topbar-inner">
+      <!-- Hamburger -->
+      <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="overlay">
+        <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+      </button>
+
+      <!-- Brand -->
+      <div class="brand">
+        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="32" cy="32" r="19" stroke="#59E6F6" stroke-width="2"/>
+          <ellipse cx="32" cy="32" rx="26" ry="12" stroke="#59E6F6" stroke-width="2"/>
+          <ellipse cx="32" cy="32" rx="12" ry="26" stroke="#59E6F6" stroke-width="2"/>
+          <circle cx="32" cy="32" r="1.6" fill="#59E6F6"/>
+        </svg>
+        Olympus Property
+      </div>
+
+      <!-- “Menu” text next to brand as requested -->
+      
+
+      <!-- Filters across the bar (styled like Olympus links) -->
+      <nav class="nav" style="margin-left:24px;flex:1">
+        <div class="nav-item">
+          <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Community <i class="caret"></i></button>
+          <div class="menu" role="menu">
+            <button>206 Apartments</button><button>207 East</button><button>Mirador</button><button>Stovall</button>
+          </div>
+        </div>
+
+        <div class="nav-item">
+          <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Period (Month/Year) <i class="caret"></i></button>
+          <div class="menu" role="menu">
+            <button>Jun-2025</button><button>May-2025</button><button>Apr-2025</button><button>Mar-2025</button>
+          </div>
+        </div>
+
+        <div class="nav-item">
+          <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Regional Manager <i class="caret"></i></button>
+          <div class="menu" role="menu">
+            <button>All</button><button>Brandy Morris</button><button>Tracey Lohman</button>
+          </div>
+        </div>
+
+        <div class="nav-item">
+          <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Investor <i class="caret"></i></button>
+          <div class="menu" role="menu">
+            <button>All</button><button>BLACKSTONE/LIVCOR</button><button>Private</button>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Export button -->
+      <button class="export-btn">Export</button>
+    </div>
+  </div>
+
+  <!-- ===== OVERLAY MENU (acts like Olympus) ===== -->
+  <div class="overlay" id="overlay" aria-hidden="true">
+    <nav class="drawer" id="drawer" aria-label="Main Menu">
+      <a href="#" class="big-item">Dashboard</a>
+      <a href="#" class="big-item">Shout Outs</a>
+      <a href="#" class="big-item">Reports</a>
+      <a href="#" class="big-item">Settings</a>
+      <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:14px 8px;">
+      <a href="#" class="big-item">Help & Support</a>
+      <a href="#" class="big-item">Sign Out</a>
+    </nav>
+  </div>
+
+  <!-- ===== MAIN: bigger left column; two charts per row ===== -->
+  <div class="main">
+    <!-- LEFT KPIs -->
+    <aside class="sidebar">
+      <div class="card kpi"><div class="label">Total Units</div><div class="value">203</div></div>
+      <div class="card kpi"><div class="label">Occupancy</div><div class="value">94.58%</div></div>
+      <div class="card kpi"><div class="label">Exposure (8 wks)</div><div class="value">7.88%</div></div>
+      <div class="card kpi"><div class="label">Delinquency</div><div class="value">10.35%</div></div>
+      <div class="card kpi"><div class="label">Avg Turn Time</div><div class="value">6.33</div></div>
+      <div class="card kpi"><div class="label">Service Requests</div><div class="value">90</div></div>
+      <div class="card kpi"><div class="label">Google Stars</div><div class="value">4.40</div></div>
+      <div class="card kpi"><div class="label">Renewal Conversion</div><div class="value">50.00%</div></div>
+    </aside>
+
+    <!-- RIGHT: charts -->
+    <main>
+      <div class="section grid-2">
+        <div>
+          <div class="section-title">Effective Rent</div>
+          <div class="chart-card"><canvas id="chartRent"></canvas></div>
+        </div>
+        <div>
+          <div class="section-title">Occupancy &amp; Revenue</div>
+          <div class="chart-card"><canvas id="chartOccRev"></canvas></div>
+        </div>
+      </div>
+
+      <div class="section grid-2">
+        <div>
+          <div class="section-title">Renewals</div>
+          <div class="chart-card"><canvas id="chartRenewals"></canvas></div>
+        </div>
+        <div>
+          <div class="section-title">Trade Out</div>
+          <div class="empty card">
+            <div style="font-weight:700">No Trade Outs for Selected Criteria</div>
+            <div style="font-size:12px">Try a different period or community.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section grid-2">
+        <div>
+          <div class="section-title">Move-Out Reasons</div>
+          <div class="chart-card"><canvas id="chartMoveOut"></canvas></div>
+        </div>
+        <div>
+          <div class="section-title">Expense Control</div>
+          <div class="chart-card"><canvas id="chartExpense"></canvas></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== MENU / DROPDOWNS JS ===== -->
+  <script>
+  // Top dropdowns
+  const navItems=[];
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.querySelectorAll('.nav-item').forEach(it=>{
+      const btn=it.querySelector('.nav-btn'); const menu=it.querySelector('.menu');
+      if(!btn||!menu) return;
+      navItems.push({btn,menu});
+      const open=v=>{menu.classList.toggle('open',v);btn.setAttribute('aria-expanded',v)};
+      btn.addEventListener('click',e=>{e.stopPropagation();open(!menu.classList.contains('open'));});
+      it.addEventListener('mouseenter',()=>open(true));
+      it.addEventListener('mouseleave',()=>open(false));
+    });
+    document.addEventListener('click',()=>navItems.forEach(({btn,menu})=>{menu.classList.remove('open');btn.setAttribute('aria-expanded','false');}));
+  });
+
+  // Hamburger / overlay drawer
+  const hamburger=document.getElementById('hamburger');
+  const overlay=document.getElementById('overlay');
+  const drawer=document.getElementById('drawer');
+
+  function setMenu(open){
+    hamburger.classList.toggle('open',open);
+    overlay.classList.toggle('open',open);
+    drawer.classList.toggle('open',open);
+    hamburger.setAttribute('aria-expanded',open);
+    overlay.setAttribute('aria-hidden',!open);
+  }
+  hamburger.addEventListener('click',e=>{e.stopPropagation();setMenu(!overlay.classList.contains('open'));});
+  overlay.addEventListener('click',e=>{ if(e.target===overlay) setMenu(false); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') setMenu(false); });
+  </script>
+
+  <!-- ===== Charts (robust load) ===== -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script>
+  if(!window.Chart){
+    document.write('<script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"><\/script>');
+  }
+  </script>
+  <script>
+  function renderCharts(){
+    const months=['Aug-24','Sep-24','Oct-24','Nov-24','Dec-24','Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+
+    new Chart(document.getElementById('chartRent'),{
+      type:'line',
+      data:{labels:months,datasets:[
+        {label:'Effective',data:[1620,1585,1560,1540,1520,1500,1510,1530,1545,1568,1550],borderColor:'#0E555A',backgroundColor:'transparent',borderWidth:2,tension:.3},
+        {label:'Market',data:[1680,1660,1655,1650,1648,1650,1655,1660,1665,1670,1668],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{ticks:{callback:v=>'$'+v}}}}
+    });
+
+    new Chart(document.getElementById('chartOccRev'),{
+      type:'bar',
+      data:{labels:months,datasets:[
+        {type:'line',label:'Occupancy %',yAxisID:'yL',data:[95,97,96,95,96.5,94.8,95.2,96.8,95.8,96.1,94.7],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3},
+        {label:'Total Revenue (k$)',yAxisID:'yR',data:[340,352,349,344,346,343,345,350,347,348,343],backgroundColor:'#C69A58'}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        scales:{yL:{position:'left',ticks:{callback:v=>v+'%'}},yR:{position:'right',ticks:{callback:v=>'$'+v+'k'}}}}
+    });
+
+    const months6=['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+    new Chart(document.getElementById('chartRenewals'),{
+      type:'bar',
+      data:{labels:months6,datasets:[
+        {label:'Expirations',data:[22,20,26,28,27,29],backgroundColor:'#E5E7EB',borderColor:'#CBD5E1'},
+        {label:'Renewals',data:[10,9,12,11,13,13],backgroundColor:'#0E555A',borderColor:'#0E555A'}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}
+    });
+
+    new Chart(document.getElementById('chartMoveOut'),{
+      type:'doughnut',
+      data:{labels:['Affordability','Dissatisfied','Home Purchase'],
+        datasets:[{data:[18,16,14],backgroundColor:['#0E555A','#C69A58','#93C5FD']}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right'}}}
+    });
+
+    const months6b=['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+    new Chart(document.getElementById('chartExpense'),{
+      type:'bar',
+      data:{labels:months6b,datasets:[
+        {label:'Controllable',data:[50,52,51,49,48,50],backgroundColor:'#0E555A'},
+        {label:'Non-Controllable',data:[38,40,41,39,37,39],backgroundColor:'#C69A58'}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>'$'+v+'k'}}}}
+    });
+  }
+  document.addEventListener('DOMContentLoaded',()=>{ if(window.Chart){renderCharts()} else {const t=setInterval(()=>{ if(window.Chart){clearInterval(t);renderCharts()} },50)} });
+  </script>
+</body>
+</html>

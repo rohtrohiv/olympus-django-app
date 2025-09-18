@@ -1,0 +1,15 @@
+<div class="sidebar">
+    <div class="card kpi" id="total-properties-card" style="cursor:pointer;">
+        <div class="label">Total Properties</div>
+        <div class="value">{{ kpi.total_properties }}</div>
+        <a href="#" onclick="openPropertiesChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a>
+    </div>
+    <div class="card kpi" id="total-units-card" style="cursor:pointer;"><div class="label">Total Units</div><div class="value">{{ kpi.total_units }}</div><a href="#" onclick="openUnitsChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
+    <div class="card kpi" id="occupancy-card" style="cursor:pointer;"><div class="label">Occupancy</div><div class="value">{{ kpi.occupancy }}</div><a href="#" onclick="openOccupancyChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
+    <div class="card kpi"><div class="label">Exposure (8 wks)</div><div class="value">{{ kpi.exposure }}</div></div>
+    <div class="card kpi"><div class="label">Delinquency</div><div class="value">{{ kpi.delinquency }}</div></div>
+    <div class="card kpi"><div class="label">Avg Turn Time</div><div class="value">{{ kpi.avg_turn_time }}</div></div>
+    <div class="card kpi"><div class="label">Service Requests</div><div class="value">{{ kpi.service_requests }}</div></div>
+    <div class="card kpi"><div class="label">Google Stars</div><div class="value">{{ kpi.google_stars }}</div></div>
+    <div class="card kpi"><div class="label">Renewal Conversion</div><div class="value">{{ kpi.renewal_conversion }}</div></div>
+</div>

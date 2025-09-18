@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Property Analytics – Olympus</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+/* Responsive sidebar margin when drawer is open */
+.sidebar.drawer-open {
+    margin-left: 340px;
+    transition: margin-left 0.3s;
+}
+.charts-container.drawer-open {
+    margin-left: 340px;
+    transition: margin-left 0.3s;
+}
+.property-table-container.drawer-open {
+    margin-left: 340px;
+    transition: margin-left 0.3s;
+}
+/* User profile and logout */
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-left: 24px;
+}
+.profile-pic {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #59E6F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: bold;
+    font-size: 1.2em;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.profile-name {
+    color: var(--nav-text);
+    font-weight: 600;
+    font-size: 1.1em;
+}
+.logout-btn {
+    background: #3FE0F0;
+    color: #0B3A3F;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-left: 8px;
+}
+.logout-btn:hover {
+    background: #2A474B;
+    color: #fff;
+}
+:root{
+    /* Olympus look */
+    --topbar-h:140px;                 /* same bar height as olympusproperty.com */
+    --nav-bg:#1F3639; --nav-text:#F7FAFC; --nav-hover:#2A474B;
+    --aqua:#59E6F6;
+
+    --page-bg:#F3F6F8; --card-bg:#FFFFFF; --border:#E5E7EB; --text:#0F172A; --muted:#64748B;
+    --radius:14px; --gap:22px;
+}
+html,body{height:100%} *{box-sizing:border-box}
+body{margin:0;background:var(--page-bg);color:var(--text);font:22px/1.5 Inter,system-ui,Segoe UI,Arial}
+
+/* ===== TOP BAR ===== */
+.topbar{position:sticky;top:0;z-index:70;background:var(--nav-bg);color:var(--nav-text);width:100%;
+                box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.topbar-inner{height:var(--topbar-h);padding:0 28px;display:flex;align-items:center;gap:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:32px;white-space:nowrap}
+.brand svg{width:30px;height:30px;flex:0 0 30px}
+
+/* HAMBURGER (MENU) */
+.hamburger{
+    width:44px;height:44px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;
+    position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-right:6px;
+}
+.hamburger .bar{position:absolute;width:22px;height:2px;background:var(--nav-text);transition:.25s}
+.hamburger .bar:nth-child(1){transform:translateY(-6px)}
+.hamburger .bar:nth-child(2){transform:translateY(0)}
+.hamburger .bar:nth-child(3){transform:translateY(6px)}
+.hamburger.open .bar:nth-child(1){transform:rotate(45deg)}
+.hamburger.open .bar:nth-child(2){opacity:0}
+.hamburger.open .bar:nth-child(3){transform:rotate(-45deg)}
+
+/* top filters like nav links */
+.nav{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.nav-item{position:relative}
+.nav-btn{
+    background:none;border:none;color:var(--nav-text);text-transform:uppercase;letter-spacing:.08em;
+    font-weight:700;font-size:22px;padding:10px 6px;cursor:pointer;display:flex;align-items:center;gap:8px;
+}
+.nav-btn .caret{border:solid var(--nav-text);border-width:0 2px 2px 0;display:inline-block;padding:3px;transform:rotate(45deg)}
+.nav-item:hover>.nav-btn,.nav-btn:focus{color:#fff}
+
+.menu{
+    position:absolute;left:0;top:100%;margin-top:12px;min-width:260px;background:#3A4A4D;
+    border-radius:6px;padding:10px 0;box-shadow:0 8px 20px rgba(0,0,0,.18);display:none;
+    max-height: 260px;
+    overflow-y: auto;
+}
+.menu.open{display:block}
+.menu button{
+    width:100%;display:block;text-align:left;background:none;border:none;color:#DEE6EA;
+    padding:12px 16px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer
+}
+.menu button:hover{background:#2F4042;color:#fff}
+
+/* Export (replaces Important News) */
+.export-btn{
+    margin-left:auto;background:#3FE0F0;color:#0B3A3F;border:none;border-radius:6px;
+    text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:10px 16px;cursor:pointer
+}
+
+/* ===== OVERLAY MENU (like Olympus mobile/mega menu) ===== */
+.overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
+.drawer{
+    position:absolute;left:0;top:0;bottom:0;width:340px;background:var(--nav-bg);color:var(--nav-text);
+    transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:18px 18px 24px 18px;
+    overflow:auto;
+}
+.drawer.open{transform:translateX(0)}
+.overlay.open{display:block}
+.drawer .big-item{
+    display:block;color:#E9F2F5;text-decoration:none;font-size:22px;font-weight:800;letter-spacing:.06em;
+    padding:14px 8px;border-radius:6px;text-transform:uppercase
+}
+.drawer .big-item:hover{background:#2A474B}
+
+/* ===== MAIN (bigger left column) ===== */
+
+.main {
+    width: 100vw;
+    min-height: 100px;
+    padding: 20px 0 0 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.sidebar{
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-self: start;
+    position: sticky;
+    top: calc(var(--topbar-h) + 14px);
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: center;
+}
+.card.kpi {
+    flex: 1 1 260px;
+    min-width: 260px;
+    max-width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+@media (max-width: 1200px) {
+    .sidebar {
+        gap: 8px;
+    }
+    .card.kpi {
+        min-width: 260px;
+    }
+}
+@media (max-width: 900px) {
+    .sidebar {
+        gap: 6px;
+    }
+    .card.kpi {
+        min-width: 260px;
+    }
+}
+@media (max-width: 600px) {
+    .sidebar {
+        flex-direction: column;
+        gap: 10px;
+        position: static;
+        width: 100%;
+    }
+    .card.kpi {
+        min-width: 100%;
+        width: 100%;
+    }
+}
+.card.kpi {
+    min-width: 260px;
+    flex: 0 1 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 14px}
+.kpi .label{font-size:22px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .value{font-size:32px;line-height:1.1;font-weight:700;margin-top:4px}
+
+.section{margin-bottom:var(--gap)}
+.section-title{font-weight:700;margin:2px 0 8px;color:#0B3A3F}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+@media (max-width:900px){.grid-2{grid-template-columns:1fr}}
+
+.chart-card{background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius);padding:12px;height:360px}
+/* Responsive chart container and canvas */
+.charts-container {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    margin-bottom: 32px;
+    justify-content: center;
+    align-items: center;
+}
+.chart-card {
+    background: var(--card-bg);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    height: 360px;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    flex: 1 1 340px;
+    min-width: 260px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+.chart-card canvas {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: 2/1;
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+}
+@media (max-width: 1200px) {
+    .charts-container {
+        gap: 18px;
+    }
+    .chart-card {
+        min-width: 220px;
+        height: 260px;
+    }
+}
+@media (max-width: 900px) {
+    .charts-container {
+        gap: 12px;
+    }
+    .chart-card {
+        min-width: 180px;
+        height: 200px;
+    }
+}
+@media (max-width: 600px) {
+    .charts-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+    .chart-card {
+        min-width: 100%;
+        height: 160px;
+        flex: 1 1 100%;
+    }
+}
+
+.empty{height:360px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
+    color:var(--muted);background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius)}
+
+.selected-period {
+    background: #4f6bed;
+    color: #fff;
+}
+.unselected-period {
+    background: none;
+    color: #DEE6EA;
+}
+
+:focus-visible{outline:2px solid #3FE0F0;outline-offset:2px}
+.menu .dropdown-year {
+    position: relative;
+    margin-bottom: 0;
+}
+.menu .dropdown-toggle {
+    width: 180px;
+    text-align: left;
+    padding: 6px 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    background: none;
+    color: #DEE6EA;
+    border: none;
+    outline: none;
+    margin-bottom: 0;
+}
+.menu .dropdown-content {
+    position: absolute;
+    left: 180px;
+    top: 0;
+    min-width: 180px;
+    background: #3A4A4D;
+    border-radius: 6px;
+    box-shadow: 0 8px 20px rgba(0,0,0,.18);
+    z-index: 10;
+    display: none;
+    max-height: none;
+    overflow-y: visible;
+}
+.menu .dropdown-quarter {
+    position: relative;
+    margin-bottom: 0;
+}
+.menu .dropdown-content-months {
+    position: absolute;
+    left: 180px;
+    top: 0;
+    min-width: 160px;
+    background: #3A4A4D;
+    border-radius: 6px;
+    box-shadow: 0 8px 20px rgba(0,0,0,.18);
+    z-index: 20;
+    display: none;
+    max-height: none;
+    overflow-y: visible;
+}
+.menu {
+    max-height: none;
+    overflow-y: visible;
+}
+.highlight-search {
+    background: #ffe066;
+    color: #0B3A3F;
+    border-radius: 3px;
+    padding: 0 2px;
+    font-weight: 600;
+}
+</style>
+</head>
+
+<body>
+    <!-- ===== TOP BAR ===== -->
+    <div class="topbar">
+        <div class="topbar-inner">
+            <!-- Hamburger -->
+            <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="overlay">
+                <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+            </button>
+
+            <!-- Brand -->
+            <div class="brand">
+                <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <circle cx="32" cy="32" r="19" stroke="#59E6F6" stroke-width="2"/>
+                    <ellipse cx="32" cy="32" rx="26" ry="12" stroke="#59E6F6" stroke-width="2"/>
+                    <ellipse cx="32" cy="32" rx="12" ry="26" stroke="#59E6F6" stroke-width="2"/>
+                    <circle cx="32" cy="32" r="1.6" fill="#59E6F6"/>
+                </svg>
+                Olympus Property
+            </div>
+
+            <!-- “Menu” text next to brand as requested -->
+      
+
+            <!-- Filters across the bar (styled like Olympus links) -->
+            <nav class="nav" style="margin-left:24px;flex:1">
+                <div class="nav-item">
+                    <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Community <i class="caret"></i></button>
+                    <div class="menu" role="menu">
+                        <button>206 Apartments</button><button>207 East</button><button>Mirador</button><button>Stovall</button>
+                    </div>
+                </div>
+
+                <div class="nav-item">
+                    <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Period (Month/Year/Quarter) <i class="caret"></i></button>
+                    <div class="menu" role="menu" id="period-menu">
+                        {% for year, data in period_options.items %}
+                            <div class="dropdown-year">
+                                <button type="button" class="dropdown-toggle" onclick="toggleDropdown('year-{{ year }}')">{{ year }}</button>
+                                <div class="dropdown-content" id="year-{{ year }}">
+                                    <div class="dropdown-section">Quarters</div>
+                                    {% for quarter, months in data.quarters.items %}
+                                        <div class="dropdown-quarter">
+                                            <button type="button" class="dropdown-toggle" onclick="toggleDropdown('quarter-{{ year }}-{{ quarter }}')">{{ quarter }}</button>
+                                            <div class="dropdown-content-months" id="quarter-{{ year }}-{{ quarter }}">
+                                                {% for month in months %}
+                                                    <form method="get" action="/dashboard" style="margin:0;">
+                                                        <input type="hidden" name="period" value="{{ month }}-{{ year }}" />
+                                                        <button type="submit"
+                                                            class="{% if month|add:'-'|add:year == selected_period %}selected-period{% else %}unselected-period{% endif %}"
+                                                            style="width:100%;text-align:left;padding:8px 16px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;">
+                                                            {{ month }}-{{ year }}
+                                                        </button>
+                                                    </form>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="nav-item">
+                    <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Regional Manager <i class="caret"></i></button>
+                    <div class="menu" role="menu">
+                        <button>All</button><button>Brandy Morris</button><button>Tracey Lohman</button>
+                    </div>
+                </div>
+
+                <div class="nav-item">
+                    <button class="nav-btn" aria-haspopup="true" aria-expanded="false">Investor <i class="caret"></i></button>
+                    <div class="menu" role="menu">
+                        <button>All</button><button>BLACKSTONE/LIVCOR</button><button>Private</button>
+                    </div>
+                </div>
+            </nav>
+
+            
+
+            <!-- User profile and logout -->
+            <div class="user-profile">
+                <div class="profile-pic" title="{{ user.get_full_name|default:user.username }}">
+                    {{ user.first_name|default:user.username|slice:":1"|upper }}
+                </div>
+                <span class="profile-name">{{ user.get_full_name|default:user.username }}</span>
+                <form method="post" action="{% url 'logout' %}" style="display:inline;">
+                    {% csrf_token %}
+                    <button class="logout-btn" type="submit">Logout</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== OVERLAY MENU (acts like Olympus) ===== -->
+    <div class="overlay" id="overlay" aria-hidden="true">
+        <nav class="drawer" id="drawer" aria-label="Main Menu">
+            <a href="/dashboard" class="big-item">Dashboard</a>
+            <a href="#" class="big-item">Shout Outs</a>
+            <a href="#" class="big-item">Reports</a>
+            <a href="#" class="big-item">Settings</a>
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:14px 8px;">
+            <a href="#" class="big-item">Help & Support</a>
+            <a href="#" class="big-item">Sign Out</a>
+        </nav>
+    </div>
+
+        <!-- ===== MAIN: only left panel ===== -->
+        <div class="main">
+            <div class="sidebar">
+                <div class="card kpi" id="total-properties-card" style="cursor:pointer;">
+                    <div class="label">Total Properties</div>
+                    <div class="value">{{ kpi.total_properties }}</div>
+                </div>
+                <div class="card kpi" id="total-units-card" style="cursor:pointer;"><div class="label">Total Units</div><div class="value">{{ kpi.total_units }}</div></div>
+                <div class="card kpi"><div class="label">Occupancy</div><div class="value">{{ kpi.occupancy }}</div></div>
+                <div class="card kpi"><div class="label">Exposure (8 wks)</div><div class="value">{{ kpi.exposure }}</div></div>
+                <div class="card kpi"><div class="label">Delinquency</div><div class="value">{{ kpi.delinquency }}</div></div>
+                <div class="card kpi"><div class="label">Avg Turn Time</div><div class="value">{{ kpi.avg_turn_time }}</div></div>
+                <div class="card kpi"><div class="label">Service Requests</div><div class="value">{{ kpi.service_requests }}</div></div>
+                <div class="card kpi"><div class="label">Google Stars</div><div class="value">{{ kpi.google_stars }}</div></div>
+                <div class="card kpi"><div class="label">Renewal Conversion</div><div class="value">{{ kpi.renewal_conversion }}</div></div>
+            </div>
+        </div>
+        <div style="height:32px;"></div>
+
+        <!-- Modal for Total Units List -->
+        <div id="units-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+            <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+                <button onclick="closeUnitsModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
+                <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Units by Property <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
+                <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+                    <input id="units-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
+                    <span style="color:#4f6bed;font-size:20px;user-select:none;">&#128269;</span>
+                </div>
+                <div style="max-height:400px;overflow-y:auto;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="background:#e3e8f7;">
+                                <th style="padding:8px 12px;white-space:nowrap;">Sl No.</th>
+                                <th style="padding:8px 12px;">Property Name</th>
+                                <th style="padding:8px 12px;">Total Units</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in all_properties %}
+                            <tr class="units-row">
+                                <td style="padding:8px 12px;">{{ forloop.counter }}</td>
+                                <td style="padding:8px 12px;">{{ row.property_name }}</td>
+                                <td style="padding:8px 12px;">{{ row.total_units }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="charts-container" id="dashboard-charts">
+            <div class="chart-card">
+                <canvas id="chartRent"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartOccRev"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartRenewals"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartMoveOut"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="chartExpense"></canvas>
+            </div>
+        </div>
+
+        <button class="btn btn-primary" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasBottom" aria-controls="offcanvasBottom" style="margin:32px 0;">Toggle bottom offcanvas</button>
+
+        <div class="offcanvas offcanvas-bottom" tabindex="-1" id="offcanvasBottom" aria-labelledby="offcanvasBottomLabel">
+          <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="offcanvasBottomLabel">Unique Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+          </div>
+          <div class="offcanvas-body small" style="padding:0;">
+            <div style="overflow-x:auto;overflow-y:auto;max-height:400px;">
+                <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.04);">
+                <thead>
+                    <tr style="background:#e3e8f7;">
+                        <th style="padding:8px 12px;">Property Number</th>
+                        <th style="padding:8px 12px;">Property Name</th>
+                        <th style="padding:8px 12px;">Total Units</th>
+                        <th style="padding:8px 12px;">Investor</th>
+                        <th style="padding:8px 12px;">Regional Manager</th>
+                        <th style="padding:8px 12px;">Regional Director</th>
+                        <th style="padding:8px 12px;">Asst Manager</th>
+                        <th style="padding:8px 12px;">Occupied Units</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in properties %}
+                    <tr>
+                        <td style="padding:8px 12px;">{{ row.property_number }}</td>
+                        <td style="padding:8px 12px;">{{ row.property_name }}</td>
+                        <td style="padding:8px 12px;">{{ row.total_units }}</td>
+                        <td style="padding:8px 12px;">{{ row.investor }}</td>
+                        <td style="padding:8px 12px;">{{ row.regional_area_manager }}</td>
+                        <td style="padding:8px 12px;">{{ row.regional_director }}</td>
+                        <td style="padding:8px 12px;">{{ row.asst_manager }}</td>
+                        <td style="padding:8px 12px;">{{ row.occupied_units }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" style="text-align:center;padding:16px;">No data available.</td></tr>
+                    {% endfor %}
+                </tbody>
+                </table>
+            </div>
+            <div style="margin-top:16px;text-align:center;">
+                {% if properties.has_other_pages %}
+                    <nav aria-label="Table pagination">
+                        <ul style="display:inline-flex;list-style:none;padding:0;">
+                            {% if properties.has_previous %}
+                                <li><a href="?page={{ properties.previous_page_number }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">Previous</a></li>
+                            {% endif %}
+                            {% for num in properties.paginator.page_range %}
+                                {% if num == 1 and properties.number > 4 %}
+                                    <li><a href="?page=1" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">1</a></li>
+                                    <li><span style="padding:8px 12px;margin:0 4px;">...</span></li>
+                                {% elif num == properties.number or num == properties.number|add:'-1' or num == properties.number|add:'1' %}
+                                    {% if properties.number == num %}
+                                        <li><span style="padding:8px 12px;margin:0 4px;background:#4f6bed;color:#fff;border-radius:4px;">{{ num }}</span></li>
+                                    {% else %}
+                                        <li><a href="?page={{ num }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">{{ num }}</a></li>
+                                    {% endif %}
+                                {% elif num == properties.paginator.num_pages and properties.number < properties.paginator.num_pages|add:'-3' %}
+                                    <li><span style="padding:8px 12px;margin:0 4px;">...</span></li>
+                                    <li><a href="?page={{ properties.paginator.num_pages }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">{{ properties.paginator.num_pages }}</a></li>
+                                {% endif %}
+                            {% endfor %}
+                            {% if properties.has_next %}
+                                <li><a href="?page={{ properties.next_page_number }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">Next</a></li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                {% endif %}
+            </div>
+          </div>
+        </div>
+
+    <!-- ===== MENU / DROPDOWNS JS ===== -->
+    <script>
+    // Top dropdowns
+    const navItems=[];
+    document.addEventListener('DOMContentLoaded',()=>{
+        document.querySelectorAll('.nav-item').forEach(it=>{
+            const btn=it.querySelector('.nav-btn'); const menu=it.querySelector('.menu');
+            if(!btn||!menu) return;
+            navItems.push({btn,menu});
+            const open=v=>{menu.classList.toggle('open',v);btn.setAttribute('aria-expanded',v)};
+            btn.addEventListener('click',e=>{e.stopPropagation();open(!menu.classList.contains('open'));});
+        });
+        document.addEventListener('click',()=>navItems.forEach(({btn,menu})=>{menu.classList.remove('open');btn.setAttribute('aria-expanded','false');}));
+    });
+
+    // Hamburger / overlay drawer
+    const hamburger=document.getElementById('hamburger');
+    const overlay=document.getElementById('overlay');
+    const drawer=document.getElementById('drawer');
+    const sidebar=document.querySelector('.sidebar');
+
+    function setMenu(open){
+        hamburger.classList.toggle('open',open);
+        overlay.classList.toggle('open',open);
+        drawer.classList.toggle('open',open);
+        hamburger.setAttribute('aria-expanded',open);
+        overlay.setAttribute('aria-hidden',!open);
+        // Adjust main content when drawer is open
+        document.querySelector('.sidebar').classList.toggle('drawer-open',open);
+        document.querySelector('.charts-container').classList.toggle('drawer-open',open);
+        document.querySelector('.property-table-container').classList.toggle('drawer-open',open);
+    }
+    hamburger.addEventListener('click',e=>{e.stopPropagation();setMenu(!overlay.classList.contains('open'));});
+    overlay.addEventListener('click',e=>{ if(e.target===overlay) setMenu(false); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') setMenu(false); });
+    </script>
+
+    <!-- ===== Charts (robust load) ===== -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+    <script>
+    if(!window.Chart){
+        document.write('<script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"><\/script>');
+    }
+    </script>
+    <script>
+    function renderCharts(){
+        const months=['Aug-24','Sep-24','Oct-24','Nov-24','Dec-24','Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+
+        new Chart(document.getElementById('chartRent'),{
+            type:'line',
+            data:{labels:months,datasets:[
+                {label:'Effective',data:[1620,1585,1560,1540,1520,1500,1510,1530,1545,1568,1550],borderColor:'#0E555A',backgroundColor:'transparent',borderWidth:2,tension:.3},
+                {label:'Market',data:[1680,1660,1655,1650,1648,1650,1655,1660,1665,1670,1668],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+            scales:{y:{ticks:{callback:v=>'$'+v}}}}
+        });
+
+        new Chart(document.getElementById('chartOccRev'),{
+            type:'bar',
+            data:{labels:months,datasets:[
+                {type:'line',label:'Occupancy %',yAxisID:'yL',data:[95,97,96,95,96.5,94.8,95.2,96.8,95.8,96.1,94.7],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3},
+                {label:'Total Revenue (k$)',yAxisID:'yR',data:[340,352,349,344,346,343,345,350,347,348,343],backgroundColor:'#C69A58'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,
+                scales:{yL:{position:'left',ticks:{callback:v=>v+'%'}},yR:{position:'right',ticks:{callback:v=>'$'+v+'k'}}}}
+        });
+
+        const months6=['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+        new Chart(document.getElementById('chartRenewals'),{
+            type:'bar',
+            data:{labels:months6,datasets:[
+                {label:'Expirations',data:[22,20,26,28,27,29],backgroundColor:'#E5E7EB',borderColor:'#CBD5E1'},
+                {label:'Renewals',data:[10,9,12,11,13,13],backgroundColor:'#0E555A',borderColor:'#0E555A'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}
+        });
+
+        new Chart(document.getElementById('chartMoveOut'),{
+            type:'doughnut',
+            data:{labels:['Affordability','Dissatisfied','Home Purchase'],
+                datasets:[{data:[18,16,14],backgroundColor:['#0E555A','#C69A58','#93C5FD']}]},
+            options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right'}}}
+        });
+
+        const months6b=['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+        new Chart(document.getElementById('chartExpense'),{
+            type:'bar',
+            data:{labels:months6b,datasets:[
+                {label:'Controllable',data:[50,52,51,49,48,50],backgroundColor:'#0E555A'},
+                {label:'Non-Controllable',data:[38,40,41,39,37,39],backgroundColor:'#C69A58'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>'$'+v+'k'}}}}
+        });
+    }
+    document.addEventListener('DOMContentLoaded',()=>{ if(window.Chart){renderCharts()} else {const t=setInterval(()=>{ if(window.Chart){clearInterval(t);renderCharts()} },50)} });
+    </script>
+    <script>
+function toggleDropdown(id) {
+    var el = document.getElementById(id);
+    if (el) {
+        el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+    }
+    event.stopPropagation();
+}
+window.addEventListener('click', function(e) {
+    var menus = document.querySelectorAll('.menu');
+    menus.forEach(function(menu) {
+        menu.classList.remove('open');
+        var dropdowns = menu.querySelectorAll('.dropdown-content, .dropdown-content-months');
+        dropdowns.forEach(function(dd) { dd.style.display = 'none'; });
+    });
+});
+// Removed faulty event listeners for period-menu and period-dropdown-btn
+window.addEventListener('click', function(e) {
+    var menu = document.getElementById('period-menu');
+    if (menu) menu.classList.remove('open');
+    // Removed btn.setAttribute to prevent error
+});
+    </script>
+
+    <!-- Advanced Modal for Property List -->
+<div id="property-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+        <button onclick="closePropertyModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
+            <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+                <input id="property-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
+            </div>
+        <div style="max-height:400px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#e3e8f7;">
+                        <th style="padding:8px 12px;white-space:nowrap;">Sl No.</th>
+                        <th style="padding:8px 12px;">Property Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+                        {% for row in all_properties %}
+                        <tr class="property-row">
+                            <td style="padding:8px 12px;">{{ forloop.counter }}</td>
+                            <td style="padding:8px 12px;">{{ row.property_name }}</td>
+                        </tr>
+                        {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+        <script>
+        // Property modal search/filter functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            var searchInput = document.getElementById('property-search');
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    var filter = this.value.toLowerCase();
+                    var rows = document.querySelectorAll('#property-modal .property-row');
+                    let visibleCount = 0;
+                    rows.forEach(function(row, idx) {
+                        var nameCell = row.cells[1];
+                        if (nameCell && nameCell.textContent.toLowerCase().includes(filter)) {
+                                row.style.display = '';
+                                // Update serial number for visible rows
+                                row.cells[0].textContent = ++visibleCount;
+                                // Highlight matching text
+                                var originalText = row.getAttribute('data-original') || nameCell.textContent;
+                                row.setAttribute('data-original', originalText);
+                                if (filter) {
+                                    var regex = new RegExp('(' + filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                                    nameCell.innerHTML = originalText.replace(regex, '<span class="highlight-search">$1</span>');
+                                } else {
+                                    nameCell.innerHTML = originalText;
+                                }
+                        } else {
+                                row.style.display = 'none';
+                                // Restore original text if hidden
+                                var originalText = row.getAttribute('data-original');
+                                if (originalText) nameCell.innerHTML = originalText;
+                        }
+                    });
+                    // If no match, show a friendly message
+                    var tbody = searchInput.closest('.modal-content').querySelector('tbody');
+                    var noMatchRow = document.getElementById('no-match-row');
+                    if (visibleCount === 0) {
+                        if (!noMatchRow) {
+                            noMatchRow = document.createElement('tr');
+                            noMatchRow.id = 'no-match-row';
+                            noMatchRow.innerHTML = '<td colspan="2" style="text-align:center;padding:18px;color:#4f6bed;font-size:17px;">No properties found</td>';
+                            tbody.appendChild(noMatchRow);
+                        }
+                    } else {
+                        if (noMatchRow) noMatchRow.remove();
+                    }
+                });
+            }
+        });
+        </script>
+<script>
+function openPropertyModal() {
+    document.getElementById('property-modal').style.display = 'flex';
+}
+function closePropertyModal() {
+    document.getElementById('property-modal').style.display = 'none';
+}
+document.getElementById('total-properties-card').addEventListener('click', openPropertyModal);
+document.getElementById('total-units-card').addEventListener('click', function() {
+    document.getElementById('units-modal').style.display = 'flex';
+});
+function closeUnitsModal() {
+    document.getElementById('units-modal').style.display = 'none';
+}
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var searchInput = document.getElementById('units-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            var filter = this.value.toLowerCase();
+            var rows = document.querySelectorAll('#units-modal .units-row');
+            let visibleCount = 0;
+            rows.forEach(function(row, idx) {
+                var nameCell = row.cells[1];
+                if (nameCell && nameCell.textContent.toLowerCase().includes(filter)) {
+                    row.style.display = '';
+                    row.cells[0].textContent = ++visibleCount;
+                    // Highlight matching text
+                    var originalText = row.getAttribute('data-original') || nameCell.textContent;
+                    row.setAttribute('data-original', originalText);
+                    if (filter) {
+                        var regex = new RegExp('(' + filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                        nameCell.innerHTML = originalText.replace(regex, '<span class="highlight-search">$1</span>');
+                    } else {
+                        nameCell.innerHTML = originalText;
+                    }
+                } else {
+                    row.style.display = 'none';
+                    var originalText = row.getAttribute('data-original');
+                    if (originalText) nameCell.innerHTML = originalText;
+                }
+            });
+            // If no match, show a friendly message
+            var tbody = searchInput.closest('.modal-content').querySelector('tbody');
+            var noMatchRow = document.getElementById('units-no-match-row');
+            if (visibleCount === 0) {
+                if (!noMatchRow) {
+                    noMatchRow = document.createElement('tr');
+                    noMatchRow.id = 'units-no-match-row';
+                    noMatchRow.innerHTML = '<td colspan="3" style="text-align:center;padding:18px;color:#4f6bed;font-size:17px;">No properties found</td>';
+                    tbody.appendChild(noMatchRow);
+                }
+            } else {
+                if (noMatchRow) noMatchRow.remove();
+            }
+        });
+    }
+});
+</script>
+</body>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</html>
