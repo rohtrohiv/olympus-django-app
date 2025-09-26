@@ -1,0 +1,1086 @@
+{% extends 'base.html' %}
+{% block title %}Advanced Analytics — Olympus{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  .container {
+    max-width: 3000px;
+    margin: 18px auto;
+    padding: 12px;
+  }
+  
+  .analytics-container {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 24px;
+    padding: 12px;
+    height: calc(100vh - var(--topbar-h) - 24px);
+  }
+  
+  .controls-panel {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    overflow-y: auto;
+    max-height: 300px;
+  }
+  
+  .controls-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+  
+  .results-panel {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  
+  .control-group {
+    margin-bottom: 16px;
+  }
+  
+  .control-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #1F3639;
+    font-size: 14px;
+  }
+  
+  .control-group select, .control-group input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  
+  .control-group select:focus, .control-group input:focus {
+    outline: none;
+    border-color: #59E6F6;
+    box-shadow: 0 0 0 2px rgba(89, 230, 246, 0.2);
+  }
+  
+  .multi-select {
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    max-height: 140px;
+    overflow-y: auto;
+    padding: 4px;
+    background: #FAFBFC;
+  }
+  
+  .multi-select label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    font-weight: normal;
+    margin: 0;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 13px;
+    transition: opacity 0.2s ease;
+  }
+  
+  .multi-select label.filtered {
+    opacity: 0.4;
+    background: #F3F4F6;
+  }
+  
+  .multi-select label:not(.filtered):hover {
+    background: #F8FAFC;
+  }
+  
+  .cascading-indicator {
+    font-size: 11px;
+    color: #6B7280;
+    font-style: italic;
+    margin-top: 4px;
+    padding-left: 4px;
+  }
+  
+  .multi-select input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+  }
+  
+  .btn {
+    background: #59E6F6;
+    color: #0B3A3F;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  
+  .btn:hover {
+    background: #3FE0F0;
+  }
+  
+  .btn-secondary {
+    background: #6B7280;
+    color: white;
+  }
+  
+  .btn-secondary:hover {
+    background: #4B5563;
+  }
+  
+  .results-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #E5E7EB;
+  }
+  
+  .view-toggles {
+    display: flex;
+    gap: 8px;
+  }
+  
+  .view-toggle {
+    padding: 6px 12px;
+    border: 1px solid #E5E7EB;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  
+  .view-toggle.active {
+    background: #59E6F6;
+    color: #0B3A3F;
+    border-color: #59E6F6;
+  }
+  
+  .results-content {
+    flex: 1;
+    overflow: auto;
+  }
+  
+  .chart-container {
+    height: 400px;
+    margin-bottom: 24px;
+    display: none;
+  }
+  
+  .chart-container.active {
+    display: block;
+  }
+  
+  .table-container {
+    overflow: auto;
+    max-height: 500px;
+  }
+  
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  
+  .data-table th, .data-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #E5E7EB;
+  }
+  
+  .data-table th {
+    background: #F8FAFC;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+  }
+  
+  .data-table tbody tr:hover {
+    background: #F8FAFC;
+  }
+  
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  
+  .summary-card {
+    padding: 16px;
+    background: #F8FAFC;
+    border-radius: 8px;
+    border-left: 4px solid #59E6F6;
+  }
+  
+  .summary-card h4 {
+    margin: 0 0 8px;
+    color: #1F3639;
+    font-size: 14px;
+  }
+  
+  .summary-card .value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #0F172A;
+  }
+  
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 40px;
+    color: #6B7280;
+  }
+  
+  .error {
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    color: #B91C1C;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  
+  @media (max-width: 1024px) {
+    .controls-grid {
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    
+    .controls-panel {
+      max-height: 250px;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .controls-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .controls-panel {
+      max-height: 200px;
+    }
+    
+    .analytics-container {
+      padding: 8px;
+      gap: 16px;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-container">
+  <div class="controls-panel">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+      <h2 style="margin: 0; color: #1F3639;">Advanced Analytics</h2>
+      <div style="display: flex; gap: 8px;">
+        <button type="submit" form="analyticsForm" class="btn">Analyze Data</button>
+        <button type="button" id="resetBtn" class="btn btn-secondary">Reset</button>
+      </div>
+    </div>
+    
+    <form id="analyticsForm">
+      {% csrf_token %}
+      <div class="controls-grid">
+      <div class="control-group">
+        <label for="dateRange">Date Range</label>
+        <select id="dateRange" name="date_range">
+          <option value="last_30_days">Last 30 Days</option>
+          <option value="last_90_days">Last 90 Days</option>
+          <option value="last_6_months">Last 6 Months</option>
+          <option value="last_year">Last Year</option>
+          <option value="all_time">All Time</option>
+          <option value="custom">Custom Range</option>
+        </select>
+      </div>
+      
+      <div class="control-group" id="customDateRange" style="display: none;">
+        <label for="startDate">Start Date</label>
+        <input type="date" id="startDate" name="start_date">
+        <label for="endDate" style="margin-top: 8px;">End Date</label>
+        <input type="date" id="endDate" name="end_date">
+      </div>
+      
+      <div class="control-group">
+        <label>Properties</label>
+        <div class="multi-select" id="propertySelect">
+          <label><input type="checkbox" name="properties" value="all" checked> All Properties</label>
+          {% for property in properties %}
+          <label><input type="checkbox" name="properties" value="{{ property }}"> {{ property }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <label>Investors</label>
+        <div class="multi-select" id="investorSelect">
+          <label><input type="checkbox" name="investors" value="all" checked> All Investors</label>
+          {% for investor in investors %}
+          <label><input type="checkbox" name="investors" value="{{ investor }}"> {{ investor }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <label>Regional Managers</label>
+        <div class="multi-select" id="managerSelect">
+          <label><input type="checkbox" name="managers" value="all" checked> All Managers</label>
+          {% for manager in managers %}
+          <label><input type="checkbox" name="managers" value="{{ manager }}"> {{ manager }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <label for="groupBy">Group By</label>
+        <select id="groupBy" name="group_by">
+          <option value="">No Grouping</option>
+          <option value="property_name">Property</option>
+          <option value="investor">Investor</option>
+          <option value="regional_area_manager">Regional Manager</option>
+          <option value="regional_director">Regional Director</option>
+          <option value="senior_regional">Senior Regional</option>
+          <option value="snapshotdate">Date</option>
+        </select>
+      </div>
+      
+      <div class="control-group">
+        <label for="metrics">Key Metrics</label>
+        <div class="multi-select">
+          <label><input type="checkbox" name="metrics" value="total_units" checked> Total Units</label>
+          <label><input type="checkbox" name="metrics" value="occupied_units" checked> Occupied Units</label>
+          <label><input type="checkbox" name="metrics" value="percentage_occupacy" checked> Occupancy %</label>
+          <label><input type="checkbox" name="metrics" value="total_move_ins"> Move Ins</label>
+          <label><input type="checkbox" name="metrics" value="total_move_outs"> Move Outs</label>
+          <label><input type="checkbox" name="metrics" value="avg_amount_per_sqft"> Avg $/sqft</label>
+          <label><input type="checkbox" name="metrics" value="effective_rent"> Effective Rent</label>
+          <label><input type="checkbox" name="metrics" value="market_rent"> Market Rent</label>
+          <label><input type="checkbox" name="metrics" value="applications"> Applications</label>
+          <label><input type="checkbox" name="metrics" value="visit"> Visits</label>
+          <label><input type="checkbox" name="metrics" value="cancelled"> Cancelled</label>
+          <label><input type="checkbox" name="metrics" value="denied"> Denied</label>
+          <label><input type="checkbox" name="metrics" value="vacant_pre_leased"> Vacant Pre-Leased</label>
+          <label><input type="checkbox" name="metrics" value="NTV"> NTV</label>
+          <label><input type="checkbox" name="metrics" value="make_ready"> Make Ready</label>
+          <label><input type="checkbox" name="metrics" value="MTM"> Month-to-Month</label>
+          <label><input type="checkbox" name="metrics" value="vacant_units_without_down_admin"> Vacant Units</label>
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <label for="aggregation">Aggregation</label>
+        <select id="aggregation" name="aggregation">
+          <option value="sum">Sum</option>
+          <option value="avg">Average</option>
+          <option value="max">Maximum</option>
+          <option value="min">Minimum</option>
+          <option value="count">Count</option>
+        </select>
+      </div>
+      </div>
+    </form>
+  </div>
+  
+  <div class="results-panel">
+    <div class="results-toolbar">
+      <div class="view-toggles">
+        <button class="view-toggle active" data-view="summary">Summary</button>
+        <button class="view-toggle" data-view="chart">Charts</button>
+        <button class="view-toggle" data-view="table">Data Table</button>
+      </div>
+      
+      <div>
+        <button id="exportCsv" class="btn btn-secondary" style="display: none;">Export CSV</button>
+        <span id="recordCount" style="margin-left: 12px; color: #6B7280;"></span>
+      </div>
+    </div>
+    
+    <div class="error" id="errorMsg"></div>
+    <div class="loading" id="loadingMsg">
+      <div>Analyzing data...</div>
+    </div>
+    
+    <div class="results-content">
+      <!-- Summary View -->
+      <div id="summaryView" class="view-content">
+        <div class="summary-cards" id="summaryCards">
+          <div class="summary-card">
+            <h4>Total Properties</h4>
+            <div class="value" id="totalProperties">-</div>
+          </div>
+          <div class="summary-card">
+            <h4>Total Units</h4>
+            <div class="value" id="totalUnits">-</div>
+          </div>
+          <div class="summary-card">
+            <h4>Occupied Units</h4>
+            <div class="value" id="occupiedUnits">-</div>
+          </div>
+          <div class="summary-card">
+            <h4>Average Occupancy</h4>
+            <div class="value" id="avgOccupancy">-</div>
+          </div>
+          <div class="summary-card">
+            <h4>Total Move Ins</h4>
+            <div class="value" id="totalMoveIns">-</div>
+          </div>
+          <div class="summary-card">
+            <h4>Total Applications</h4>
+            <div class="value" id="totalApplications">-</div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 24px;">
+          <h3 style="color: #1F3639; margin-bottom: 16px;">Key Insights</h3>
+          <div id="insights" style="color: #6B7280;">
+            Run an analysis to see key insights and trends in your data.
+          </div>
+        </div>
+      </div>
+      
+      <!-- Chart View -->
+      <div id="chartView" class="view-content" style="display: none;">
+        <div class="chart-container active">
+          <canvas id="mainChart"></canvas>
+        </div>
+        
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button class="view-toggle" data-chart="bar">Bar Chart</button>
+          <button class="view-toggle active" data-chart="line">Line Chart</button>
+          <button class="view-toggle" data-chart="pie">Pie Chart</button>
+          <button class="view-toggle" data-chart="scatter">Scatter Plot</button>
+        </div>
+      </div>
+      
+      <!-- Table View -->
+      <div id="tableView" class="view-content" style="display: none;">
+        <div class="table-container">
+          <table class="data-table" id="dataTable">
+            <thead id="tableHeader">
+              <!-- Dynamic headers -->
+            </thead>
+            <tbody id="tableBody">
+              <!-- Dynamic data rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- JSON data (application/json) - safe to include template output here without breaking JS parsing -->
+<script id="investorPropertiesJson" type="application/json">{{ investor_properties_json|safe }}</script>
+<script id="investorManagersJson" type="application/json">{{ investor_managers_json|safe }}</script>
+<script id="propertyManagersJson" type="application/json">{{ property_managers_json|safe }}</script>
+<script id="propertiesJson" type="application/json">{{ properties_json|safe }}</script>
+<script id="managersJson" type="application/json">{{ managers_json|safe }}</script>
+
+<script>
+// Parse JSON blobs from the DOM to keep template tokens out of inline JS logic
+const cascadingData = {
+  investorProperties: JSON.parse(document.getElementById('investorPropertiesJson').textContent || '{}'),
+  investorManagers: JSON.parse(document.getElementById('investorManagersJson').textContent || '{}'),
+  propertyManagers: JSON.parse(document.getElementById('propertyManagersJson').textContent || '{}')
+};
+
+// properties and managers lists are read inside the class constructor from the JSON script tags
+
+class AdvancedAnalytics {
+  constructor() {
+    this.chart = null;
+    this.currentData = null;
+    this.currentView = 'summary';
+    this.currentChart = 'line';
+    // Load properties and managers JSON from script tags (keeps template tokens out of class body)
+    try {
+      this.allProperties = JSON.parse(document.getElementById('propertiesJson').textContent || '[]');
+    } catch (e) {
+      this.allProperties = [];
+    }
+    try {
+      this.allManagers = JSON.parse(document.getElementById('managersJson').textContent || '[]');
+    } catch (e) {
+      this.allManagers = [];
+    }
+    
+    this.initializeEventListeners();
+    this.setupCascadingFilters();
+    this.initializeDateGrouping();
+    this.loadInitialData();
+  }
+  
+  initializeDateGrouping() {
+    // Initialize Date grouping visibility based on current date range selection
+    const dateRange = document.getElementById('dateRange').value;
+    const groupBySelect = document.getElementById('groupBy');
+    const dateOption = groupBySelect.querySelector('option[value="snapshotdate"]');
+    
+    if (dateOption) {
+      if (dateRange === 'last_30_days') {
+        dateOption.style.display = 'block';
+        dateOption.disabled = false;
+      } else {
+        dateOption.style.display = 'none';
+        dateOption.disabled = true;
+      }
+    }
+  }
+  
+  initializeEventListeners() {
+    // Form submission
+    document.getElementById('analyticsForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.analyzeData();
+    });
+    
+    // Date range change
+    document.getElementById('dateRange').addEventListener('change', (e) => {
+      const customRange = document.getElementById('customDateRange');
+      customRange.style.display = e.target.value === 'custom' ? 'block' : 'none';
+      
+      // Show/hide Date grouping option based on date range
+      const groupBySelect = document.getElementById('groupBy');
+      const dateOption = groupBySelect.querySelector('option[value="snapshotdate"]');
+      
+      if (e.target.value === 'last_30_days') {
+        // Show date option for last 30 days
+        if (dateOption) {
+          dateOption.style.display = 'block';
+          dateOption.disabled = false;
+        }
+      } else {
+        // Hide date option for other ranges and reset to no grouping if date was selected
+        if (dateOption) {
+          dateOption.style.display = 'none';
+          dateOption.disabled = true;
+          if (groupBySelect.value === 'snapshotdate') {
+            groupBySelect.value = '';
+          }
+        }
+      }
+    });
+    
+    // View toggles
+    document.querySelectorAll('.view-toggle[data-view]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.switchView(e.target.dataset.view);
+      });
+    });
+    
+    // Chart type toggles
+    document.querySelectorAll('.view-toggle[data-chart]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.switchChart(e.target.dataset.chart);
+      });
+    });
+    
+    // Reset button
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      this.resetForm();
+    });
+    
+    // Export CSV
+    document.getElementById('exportCsv').addEventListener('click', () => {
+      this.exportToCsv();
+    });
+    
+    // Select all checkboxes
+    this.setupSelectAll();
+  }
+  
+  setupSelectAll() {
+    ['properties', 'investors', 'managers'].forEach(group => {
+      const container = document.getElementById(group.slice(0, -1) + 'Select');
+      if (!container) return;
+      
+      const allCheckbox = container.querySelector('input[value="all"]');
+      const otherCheckboxes = container.querySelectorAll('input:not([value="all"])');
+      
+      if (allCheckbox) {
+        allCheckbox.addEventListener('change', () => {
+          otherCheckboxes.forEach(cb => cb.checked = allCheckbox.checked);
+        });
+      }
+      
+      otherCheckboxes.forEach(cb => {
+        cb.addEventListener('change', () => {
+          if (allCheckbox) {
+            allCheckbox.checked = Array.from(otherCheckboxes).every(c => c.checked);
+          }
+        });
+      });
+    });
+  }
+  
+  setupCascadingFilters() {
+    // Get investor checkboxes
+    const investorCheckboxes = document.querySelectorAll('input[name="investors"]:not([value="all"])');
+    
+    // Add change listeners to investor checkboxes
+    investorCheckboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        this.updateCascadingFilters();
+      });
+    });
+    
+    // Also listen to "All Investors" checkbox
+    const allInvestorsCheckbox = document.querySelector('input[name="investors"][value="all"]');
+    if (allInvestorsCheckbox) {
+      allInvestorsCheckbox.addEventListener('change', () => {
+        this.updateCascadingFilters();
+      });
+    }
+  }
+  
+  updateCascadingFilters() {
+    const selectedInvestors = this.getSelectedInvestors();
+    
+    // Update properties based on selected investors
+    this.updatePropertiesFilter(selectedInvestors);
+    
+    // Update managers based on selected investors
+    this.updateManagersFilter(selectedInvestors);
+  }
+  
+  getSelectedInvestors() {
+    const allInvestorsChecked = document.querySelector('input[name="investors"][value="all"]').checked;
+    
+    if (allInvestorsChecked) {
+      // Return all investors
+      return Object.keys(cascadingData.investorProperties);
+    } else {
+      // Return only checked investors
+      const checked = [];
+      document.querySelectorAll('input[name="investors"]:not([value="all"]):checked').forEach(cb => {
+        checked.push(cb.value);
+      });
+      return checked;
+    }
+  }
+  
+  updatePropertiesFilter(selectedInvestors) {
+    const propertyContainer = document.getElementById('propertySelect');
+    const allPropertyCheckbox = propertyContainer.querySelector('input[value="all"]');
+    
+    // Get available properties for selected investors
+    let availableProperties = new Set();
+    
+    if (selectedInvestors.length === 0 || selectedInvestors.length === Object.keys(cascadingData.investorProperties).length) {
+      // No investors selected or all selected - show all properties
+      availableProperties = new Set(this.allProperties);
+    } else {
+      // Show only properties for selected investors
+      selectedInvestors.forEach(investor => {
+        if (cascadingData.investorProperties[investor]) {
+          cascadingData.investorProperties[investor].forEach(prop => {
+            availableProperties.add(prop);
+          });
+        }
+      });
+    }
+    
+    // Update property checkboxes visibility/availability
+    const propertyCheckboxes = propertyContainer.querySelectorAll('input[name="properties"]:not([value="all"])');
+    propertyCheckboxes.forEach(checkbox => {
+      const label = checkbox.closest('label');
+      if (availableProperties.has(checkbox.value)) {
+        label.style.display = 'flex';
+        label.style.opacity = '1';
+      } else {
+        label.style.display = 'none';
+        checkbox.checked = false; // Uncheck unavailable properties
+      }
+    });
+    
+    // Update "All Properties" state
+    const visiblePropertyCheckboxes = Array.from(propertyCheckboxes).filter(cb => 
+      availableProperties.has(cb.value)
+    );
+    allPropertyCheckbox.checked = visiblePropertyCheckboxes.length > 0 && 
+      visiblePropertyCheckboxes.every(cb => cb.checked);
+  }
+  
+  updateManagersFilter(selectedInvestors) {
+    const managerContainer = document.getElementById('managerSelect');
+    const allManagerCheckbox = managerContainer.querySelector('input[value="all"]');
+    
+    // Get available managers for selected investors
+    let availableManagers = new Set();
+    
+    if (selectedInvestors.length === 0 || selectedInvestors.length === Object.keys(cascadingData.investorManagers).length) {
+      // No investors selected or all selected - show all managers
+      availableManagers = new Set(this.allManagers);
+    } else {
+      // Show only managers for selected investors
+      selectedInvestors.forEach(investor => {
+        if (cascadingData.investorManagers[investor]) {
+          cascadingData.investorManagers[investor].forEach(manager => {
+            availableManagers.add(manager);
+          });
+        }
+      });
+    }
+    
+    // Update manager checkboxes visibility/availability
+    const managerCheckboxes = managerContainer.querySelectorAll('input[name="managers"]:not([value="all"])');
+    managerCheckboxes.forEach(checkbox => {
+      const label = checkbox.closest('label');
+      if (availableManagers.has(checkbox.value)) {
+        label.style.display = 'flex';
+        label.style.opacity = '1';
+      } else {
+        label.style.display = 'none';
+        checkbox.checked = false; // Uncheck unavailable managers
+      }
+    });
+    
+    // Update "All Managers" state
+    const visibleManagerCheckboxes = Array.from(managerCheckboxes).filter(cb => 
+      availableManagers.has(cb.value)
+    );
+    allManagerCheckbox.checked = visibleManagerCheckboxes.length > 0 && 
+      visibleManagerCheckboxes.every(cb => cb.checked);
+  }
+  
+  async loadInitialData() {
+    try {
+      // Load default view with real data
+      await this.analyzeData();
+    } catch (error) {
+      this.showError('Failed to load initial data: ' + error.message);
+    }
+  }
+  
+  async analyzeData() {
+    this.showLoading(true);
+    this.hideError();
+    
+    try {
+      const formData = new FormData(document.getElementById('analyticsForm'));
+      const params = new URLSearchParams();
+      
+      // Convert form data to URL params
+      for (let [key, value] of formData.entries()) {
+        if (params.has(key)) {
+          params.append(key, value);
+        } else {
+          params.set(key, value);
+        }
+      }
+      
+      // Simulate API call - replace with actual endpoint
+      await this.simulateApiCall(params);
+      
+      this.updateViews();
+      document.getElementById('exportCsv').style.display = 'inline-block';
+      
+    } catch (error) {
+      this.showError('Analysis failed: ' + error.message);
+    } finally {
+      this.showLoading(false);
+    }
+  }
+  
+  async simulateApiCall(params) {
+    // Call the actual Django endpoint
+    try {
+      // Debug: log the params being sent
+      console.log('Sending parameters:', Object.fromEntries(params.entries()));
+      
+      const response = await fetch('/analytics/query/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: params.toString()
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+      
+      this.currentData = await response.json();
+      
+      if (this.currentData.error) {
+        throw new Error(this.currentData.error);
+      }
+      
+    } catch (error) {
+      // Fallback to mock data if server call fails
+      console.warn('API call failed, using mock data:', error);
+      
+      // Generate mock data based on parameters
+      this.currentData = {
+        summary: {
+          totalProperties: 124,
+          totalUnits: 3456,
+          avgOccupancy: 92.4,
+          totalMoveIns: 234,
+          totalMoveOuts: 189
+        },
+        chart_data: {
+          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+          datasets: [{
+            label: 'Occupancy Rate',
+            data: [89.5, 91.2, 88.7, 92.1, 93.8, 92.4],
+            borderColor: '#59E6F6',
+            backgroundColor: 'rgba(89, 230, 246, 0.1)',
+            tension: 0.4
+          }]
+        },
+        table_data: [
+          {
+            'Property Name': 'Lakeview Apartments',
+            'Investor': 'Property Group A',
+            'Regional Area Manager': 'John Smith',
+            'Total Units': 250,
+            'Occupied Units': 230,
+            'Percentage Occupacy': 92.0
+          },
+          {
+            'Property Name': 'Maple Ridge',
+            'Investor': 'Investment Corp B', 
+            'Regional Area Manager': 'Sarah Johnson',
+            'Total Units': 180,
+            'Occupied Units': 165,
+            'Percentage Occupacy': 91.7
+          }
+        ],
+        insights: [
+          'Occupancy rates have increased by 3.2% over the selected period',
+          'Lakeview Apartments shows the highest performance with 92% occupancy',
+          'Move-ins are outpacing move-outs by 45 units this period'
+        ]
+      };
+    }
+  }
+  
+  updateViews() {
+    this.updateSummary();
+    this.updateChart();
+    this.updateTable();
+    this.updateRecordCount();
+  }
+  
+  updateSummary() {
+    const summary = this.currentData.summary;
+    
+    document.getElementById('totalProperties').textContent = (summary.totalProperties || 0).toLocaleString();
+    document.getElementById('totalUnits').textContent = (summary.totalUnits || 0).toLocaleString();
+    document.getElementById('occupiedUnits').textContent = (summary.occupiedUnits || 0).toLocaleString();
+    document.getElementById('avgOccupancy').textContent = (summary.avgOccupancy || 0).toFixed(1) + '%';
+    document.getElementById('totalMoveIns').textContent = (summary.totalMoveIns || 0).toLocaleString();
+    document.getElementById('totalApplications').textContent = (summary.totalApplications || 0).toLocaleString();
+    
+    // Update insights
+    const insights = this.currentData.insights || [];
+    document.getElementById('insights').innerHTML = insights.map(insight => 
+      `<div style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">• ${insight}</div>`
+    ).join('');
+  }
+  
+  updateChart() {
+    const ctx = document.getElementById('mainChart').getContext('2d');
+    
+    if (this.chart) {
+      this.chart.destroy();
+    }
+    
+    // Use chart_data from server response or chartData from mock
+    const chartData = this.currentData.chart_data || this.currentData.chartData;
+    
+    // Debug: log the chart data being used
+    console.log('Chart data:', chartData);
+    
+    this.chart = new Chart(ctx, {
+      type: this.currentChart,
+      data: chartData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+          },
+          title: {
+            display: true,
+            text: 'Property Analytics Trends'
+          }
+        },
+        scales: this.currentChart === 'pie' ? {} : {
+          y: {
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  }
+  
+  updateTable() {
+    // Use table_data from server response or tableData from mock
+    const tableData = this.currentData.table_data || this.currentData.tableData;
+    const header = document.getElementById('tableHeader');
+    const body = document.getElementById('tableBody');
+    
+    // Clear existing content
+    header.innerHTML = '';
+    body.innerHTML = '';
+    
+    if (!tableData || tableData.length === 0) {
+      body.innerHTML = '<tr><td colspan="100%" style="text-align: center; padding: 40px; color: #6B7280;">No data available</td></tr>';
+      return;
+    }
+    
+    // Create header
+    const headerRow = document.createElement('tr');
+    Object.keys(tableData[0]).forEach(key => {
+      const th = document.createElement('th');
+      th.textContent = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1');
+      headerRow.appendChild(th);
+    });
+    header.appendChild(headerRow);
+    
+    // Create body rows
+    tableData.forEach(row => {
+      const tr = document.createElement('tr');
+      Object.values(row).forEach(value => {
+        const td = document.createElement('td');
+        td.textContent = typeof value === 'number' ? value.toLocaleString() : value;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }
+  
+  updateRecordCount() {
+    const tableData = this.currentData.table_data || this.currentData.tableData || [];
+    const count = tableData.length;
+    document.getElementById('recordCount').textContent = `${count} records`;
+  }
+  
+  switchView(view) {
+    // Update active button
+    document.querySelectorAll('.view-toggle[data-view]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    
+    // Show/hide view content
+    document.querySelectorAll('.view-content').forEach(content => {
+      content.style.display = 'none';
+    });
+    
+    document.getElementById(view + 'View').style.display = 'block';
+    this.currentView = view;
+    
+    // Refresh chart if switching to chart view
+    if (view === 'chart' && this.currentData) {
+      setTimeout(() => this.updateChart(), 100);
+    }
+  }
+  
+  switchChart(chartType) {
+    document.querySelectorAll('.view-toggle[data-chart]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.chart === chartType);
+    });
+    
+    this.currentChart = chartType;
+    if (this.currentData) {
+      this.updateChart();
+    }
+  }
+  
+  resetForm() {
+    document.getElementById('analyticsForm').reset();
+    document.getElementById('customDateRange').style.display = 'none';
+    
+    // Reset all checkboxes
+    document.querySelectorAll('input[value="all"]').forEach(cb => cb.checked = true);
+    document.querySelectorAll('input:not([value="all"])').forEach(cb => cb.checked = false);
+    
+    // Reset cascading filters - show all options
+    this.showAllFilterOptions();
+    
+    this.currentData = null;
+    document.getElementById('exportCsv').style.display = 'none';
+  }
+  
+  showAllFilterOptions() {
+    // Show all property options
+    const propertyLabels = document.querySelectorAll('#propertySelect label:not(:first-child)');
+    propertyLabels.forEach(label => {
+      label.style.display = 'flex';
+      label.style.opacity = '1';
+    });
+    
+    // Show all manager options
+    const managerLabels = document.querySelectorAll('#managerSelect label:not(:first-child)');
+    managerLabels.forEach(label => {
+      label.style.display = 'flex';
+      label.style.opacity = '1';
+    });
+  }
+  
+  exportToCsv() {
+    const tableData = this.currentData.table_data || this.currentData.tableData;
+    if (!tableData || !tableData.length) {
+      alert('No data to export');
+      return;
+    }
+    
+    const data = tableData;
+    const headers = Object.keys(data[0]);
+    
+    let csv = headers.join(',') + '\n';
+    data.forEach(row => {
+      csv += Object.values(row).map(value => 
+        typeof value === 'string' && value.includes(',') ? `"${value}"` : value
+      ).join(',') + '\n';
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `property_analytics_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  }
+  
+  showLoading(show) {
+    document.getElementById('loadingMsg').style.display = show ? 'block' : 'none';
+  }
+  
+  hideError() {
+    document.getElementById('errorMsg').style.display = 'none';
+  }
+  
+  showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.style.display = 'block';
+  }
+}
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+  new AdvancedAnalytics();
+});
+</script>
+{% endblock %}

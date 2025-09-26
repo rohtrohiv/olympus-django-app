@@ -1,17 +1,201 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Olympus Property</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <style>
-        body { background: #F3F6F8; color: #222; font-family: Inter, Arial, sans-serif; margin: 0; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}Olympus{% endblock %}</title>
+  <style>
+    /* Brand variables */
+    :root{
+      --nav-bg:#1F3639; --nav-text:#F7FAFC; --aqua:#59E6F6; --topbar-h:140px;
+    }
+
+  /* Base page */
+  html,body{height:100%} *{box-sizing:border-box}
+  /* match dashboard base font size/line-height */
+  body{margin:0;background:#f3f6f8;color:#0f172a;font-family:Inter,system-ui,Segoe UI,Arial;font:22px/1.5 Inter,system-ui,Segoe UI,Arial}
+    .container{max-width:1200px;margin:18px auto;padding:12px}
+
+    /* ===== TOP BAR (aligned with dashboard) ===== */
+    .topbar{position:sticky;top:0;z-index:70;background:var(--nav-bg);color:var(--nav-text);width:100%;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+    .topbar-inner{height:var(--topbar-h);padding:0 28px;display:flex;align-items:center;gap:18px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:32px;white-space:nowrap}
+    .brand svg{width:30px;height:30px;flex:0 0 30px}
+
+    /* HAMBURGER */
+  .hamburger{width:44px;height:44px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-right:6px}
+  .hamburger .bar{position:absolute;width:22px;height:2px;background:var(--nav-text);transition:.25s}
+  .hamburger .bar:nth-child(1){transform:translateY(-6px)}
+  .hamburger .bar:nth-child(2){transform:translateY(0)}
+  .hamburger .bar:nth-child(3){transform:translateY(6px)}
+  .hamburger.open .bar:nth-child(1){transform:rotate(45deg)}
+  .hamburger.open .bar:nth-child(2){opacity:0}
+  .hamburger.open .bar:nth-child(3){transform:rotate(-45deg)}
+
+    /* NAV */
+  .nav{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+  /* push nav to take available space so profile sits at right */
+  .nav{flex:1}
+    .topbar-link{color:var(--nav-text);text-decoration:none;padding:8px 10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;display:inline-block}
+
+    /* PROFILE */
+  .profile-pic{width:44px;height:44px;border-radius:50%;background:var(--aqua);display:flex;align-items:center;justify-content:center;color:#053033;font-weight:700;font-size:1.2em}
+  .profile-name{margin-left:8px;color:var(--nav-text);font-weight:600;font-size:1.1em}
+  .user-profile{display:flex;align-items:center;gap:12px}
+
+    /* LOGOUT BUTTON: matching dashboard styles */
+    .logout-btn{
+      margin-left:8px;
+      background:#3FE0F0;
+      color:#0B3A3F;
+      border:none;
+      border-radius:6px;
+      padding:10px 18px;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+      cursor:pointer;
+      transition:background .2s,color .2s;
+      display:inline-block;
+    }
+    .profile-pic {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #59E6F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: bold;
+    font-size: 1.2em;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+    .logout-btn:hover{background:#2A474B;color:#fff}
+  /* Overlay / drawer (hidden by default) */
+  .overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
+  .drawer{
+    position:absolute;left:0;top:0;bottom:0;width:340px;background:var(--nav-bg);color:var(--nav-text);
+    transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:18px 18px 24px 18px;
+    overflow:auto;
+  }
+  .drawer.open{transform:translateX(0)}
+  .overlay.open{display:block}
+  .drawer .big-item{
+    display:block;color:#E9F2F5;text-decoration:none;font-size:22px;font-weight:800;letter-spacing:.06em;
+    padding:14px 8px;border-radius:6px;text-transform:uppercase
+  }
+  .drawer .big-item:hover{background:#2A474B}
+  </style>
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <div class="container">
-        {% block content %}{% endblock %}
+  <header class="topbar">
+    <div class="topbar-inner">
+            <!-- Hamburger -->
+            <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="overlay">
+                <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+            </button>
+
+            <!-- Filter toggle (was here but now floating) -->
+
+            <!-- Brand -->
+            <div class="brand">
+                <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <circle cx="32" cy="32" r="19" stroke="#59E6F6" stroke-width="2"/>
+                    <ellipse cx="32" cy="32" rx="26" ry="12" stroke="#59E6F6" stroke-width="2"/>
+                    <ellipse cx="32" cy="32" rx="12" ry="26" stroke="#59E6F6" stroke-width="2"/>
+                    <circle cx="32" cy="32" r="1.6" fill="#59E6F6"/>
+                </svg>
+                Olympus Property
+            </div>
+
+            <!-- “Menu” text next to brand as requested -->
+      
+
+            <!-- topbar nav: mirror of drawer items for quick access (keeps hamburger intact) -->
+            <nav class="nav" style="margin-top:12px;margin-left:24px;flex:1">
+                <a href="/dashboard" class="topbar-link">Dashboard</a>
+                <a href="/analytics/" class="topbar-link">Property Analytics</a>
+                <a href="#" class="topbar-link">Shout Outs</a>
+                <a href="#" class="topbar-link">Reports</a>
+                <a href="#" class="topbar-link">Settings</a>
+                <!-- Sign Out link removed: logout button already present in topbar -->
+            </nav>
+
+            
+
+            <!-- User profile and logout -->
+            <div class="user-profile">
+                <div class="profile-pic" title="{{ user.get_full_name|default:user.username }}">
+                    {{ user.first_name|default:user.username|slice:":1"|upper }}
+                </div>
+                <span class="profile-name">{{ user.get_full_name|default:user.username }}</span>
+                <form method="post" action="{% url 'logout' %}" id="logoutForm" style="display:inline;">
+                    {% csrf_token %}
+                    <button class="logout-btn" type="submit">Logout</button>
+                </form>
+            </div>
     </div>
+  </header>
+  <!-- Overlay drawer (minimal) -->
+  <div class="overlay" id="overlay" aria-hidden="true">
+    <nav class="drawer" id="drawer" aria-label="Main Menu">
+  <a href="/dashboard" class="big-item">Dashboard</a>
+  <a href="/analytics/" class="big-item">Property Analytics</a>
+  <a href="#" class="big-item">Shout Outs</a>
+  <a href="#" class="big-item">Reports</a>
+  <a href="#" class="big-item">Settings</a>
+      <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:14px 8px;" />
+      <a href="#" class="big-item">Help & Support</a>
+      <a href="#" class="big-item">Sign Out</a>
+    </nav>
+  </div>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Hamburger / overlay drawer (adapted from dashboard)
+    (function(){
+      const hamburger = document.getElementById('hamburger');
+      const overlay = document.getElementById('overlay');
+      const drawer = document.getElementById('drawer');
+      const sidebar = document.querySelector('.sidebar');
+
+      function setMenu(open){
+        if(!hamburger) return;
+        hamburger.classList.toggle('open', open);
+        if(overlay) overlay.classList.toggle('open', open);
+        if(drawer) drawer.classList.toggle('open', open);
+        // Expose drawer-open at document level for layout consumption
+        document.documentElement.classList.toggle('drawer-open', open);
+        hamburger.setAttribute('aria-expanded', open);
+        if(overlay) overlay.setAttribute('aria-hidden', !open);
+
+        // Adjust main content when drawer is open (safe guards)
+        const mainEl = document.querySelector('.main');
+        if(mainEl) mainEl.classList.toggle('drawer-open', open);
+
+        const chartsContainer = document.querySelector('.charts-container');
+        if (chartsContainer) chartsContainer.classList.toggle('drawer-open', open);
+
+        const propertyTableParent = document.querySelector('div[style*="width:100%"][style*="margin-top"]');
+        if (propertyTableParent) propertyTableParent.classList.toggle('drawer-open', open);
+      }
+
+      if(hamburger){
+        hamburger.addEventListener('click', e=>{ e.stopPropagation(); setMenu(!overlay || !overlay.classList.contains('open')); });
+      }
+      if(overlay){
+        overlay.addEventListener('click', e=>{ if(e.target===overlay) setMenu(false); });
+      }
+      document.addEventListener('keydown', e=>{ if(e.key==='Escape') setMenu(false); });
+    })();
+  </script>
+  {% block extra_scripts %}{% endblock %}
 </body>
 </html>
+
+
