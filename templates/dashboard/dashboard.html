@@ -817,7 +817,7 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
             options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>'$'+v+'k'}}}}
         });
 
-        // Summary Charts - Properties and Units Over Time (Yearly Growth)
+    // Summary Charts - Properties and Units Over Time (Yearly Growth)
         const years = ['2021', '2022', '2023', '2024', '2025'];
         const propertiesData = [8, 10, 12, 15, 17];
         const unitsData = [280, 320, 400, 480, 535];
@@ -866,8 +866,18 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
             const previous = unitsData[index - 1];
             return Math.max(0, previous - current); // Decline portion (red)
         });
+        // Charts finished rendering: hide loading overlay if present
+        try{
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if(loadingOverlay) loadingOverlay.style.display = 'none';
+        }catch(e){}
     }
-    document.addEventListener('DOMContentLoaded',()=>{ if(window.Chart){renderCharts()} else {const t=setInterval(()=>{ if(window.Chart){clearInterval(t);renderCharts()} },50)} });
+
+    // Show overlay immediately on DOM ready to indicate charts are loading.
+    document.addEventListener('DOMContentLoaded',()=>{
+        try{ const loadingOverlay = document.getElementById('loadingOverlay'); if(loadingOverlay) loadingOverlay.style.display='flex'; }catch(e){}
+        if(window.Chart){ renderCharts(); } else { const t=setInterval(()=>{ if(window.Chart){ clearInterval(t); renderCharts(); } },50); }
+    });
     </script>
 
     <!-- Advanced Modal for Property List -->

@@ -175,22 +175,37 @@ def analytics_query(request):
 		elif date_range == 'last_90_days':
 			ninety_days_ago = datetime.now() - timedelta(days=90)
 			cutoff_date = ninety_days_ago.strftime('%Y-%m-%d')
-			cutoff_year = ninety_days_ago.strftime('%Y')
+			cutoff_month = ninety_days_ago.strftime('%b-%Y')
+			# Include exact-date rows and month-year formatted rows
 			qs = qs.filter(
 				Q(snapshotdate__gte=cutoff_date) |
-				Q(snapshotdate__contains=cutoff_year)
+				Q(snapshotdate__contains=cutoff_month)
 			)
 		elif date_range == 'last_6_months':
 			six_months_ago = datetime.now() - timedelta(days=180)
-			cutoff_year = six_months_ago.strftime('%Y')
-			qs = qs.filter(snapshotdate__contains=cutoff_year)
-		elif date_range == 'last_year':
-			one_year_ago = datetime.now() - timedelta(days=365)
-			cutoff_year = one_year_ago.strftime('%Y')
-			current_year = datetime.now().strftime('%Y')
+			cutoff_date = six_months_ago.strftime('%Y-%m-%d')
+			cutoff_month = six_months_ago.strftime('%b-%Y')
 			qs = qs.filter(
-				Q(snapshotdate__contains=cutoff_year) |
-				Q(snapshotdate__contains=current_year)
+				Q(snapshotdate__gte=cutoff_date) |
+				Q(snapshotdate__contains=cutoff_month)
+			)
+		elif date_range == 'current_year':
+			# Return rows for the current calendar year up to today. Some rows
+			# may be stored as 'Mon-YYYY' strings so include both year-lookup
+			# (works for DateField values) and a simple contains fallback.
+			this_year = datetime.now().year
+			today = datetime.now().date()
+			qs = qs.filter(
+				Q(snapshotdate__year=this_year, snapshotdate__lte=today) |
+				Q(snapshotdate__contains=str(this_year))
+			)
+		elif date_range == 'last_year':
+			# Interpret 'last_year' as the previous calendar year (Jan 1 - Dec 31 of prior year)
+			prev_year = datetime.now().year - 1
+			# Use __year lookup for DateFields and a contains fallback for string-stored month-year values
+			qs = qs.filter(
+				Q(snapshotdate__year=prev_year) |
+				Q(snapshotdate__contains=str(prev_year))
 			)
 		
 		# Apply other filters
@@ -309,8 +324,21 @@ def analytics_query(request):
 
 		# If cache was not used, pull data from DB into all_data
 		if not use_cached:
-			# Get all data and calculate stats manually due to mixed data types
-			all_data = list(qs.values())
+			# Get all data and calculate stats manually due to mixed data types.
+			# IMPORTANT: the underlying DB table/view does not have an implicit
+			# `id` primary key column. Calling qs.values() without field names
+			# causes Django to include the model pk ("id") in the SELECT which
+			# raises a ProgrammingError. Explicitly request only fields that
+			# exist on the model / DB to avoid that error.
+			db_fields = [
+				'snapshotdate', 'property_number', 'property_name', 'investor',
+				'regional_area_manager', 'regional_director', 'asst_manager',
+				'total_units', 'occupied_units', 'percentage_occupacy',
+				'total_move_ins', 'total_move_outs', 'applications',
+				'vacant_units_without_down_admin', 'effective_rent', 'market_rent',
+				'avg_amount_per_sqft'
+			]
+			all_data = list(qs.values(*db_fields))
 
 		# Calculate summary statistics
 		# Only proceed if we have any data (either cached or from DB)
