@@ -76,8 +76,8 @@ WSGI_APPLICATION = 'olympusproperty.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': r'C:\Users\rokumar1\Documents\sqllite\olympusproperty',
-        # 'NAME': BASE_DIR / 'db.sqlite3',
+       # 'NAME': r'C:\Users\rokumar1\Documents\sqllite\olympusproperty',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
