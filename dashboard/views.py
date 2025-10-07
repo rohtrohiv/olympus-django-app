@@ -481,99 +481,138 @@ def analytics_query(request):
 		response_data['table_data'] = table_data
 
 		# Generate chart data
+		# Classification of metrics: snapshot/state metrics need latest-per-property treatment,
+		# event/flow metrics should be summed across the selected window.
+		SNAPSHOT_METRICS = set(['total_units','occupied_units','vacant_units_without_down_admin','percentage_occupacy','effective_rent','market_rent','avg_amount_per_sqft'])
+		EVENT_METRICS = set(['total_move_ins','total_move_outs','applications','visit','cancelled','denied'])
+
+		from collections import defaultdict
+
+		def latest_per_property_map(rows):
+			"""Return map property_key -> latest_row (by parsed snapshotdate) from rows."""
+			m = {}
+			for r in rows:
+				pkey = r.get('property_number') or r.get('property_name')
+				if pkey is None:
+					continue
+				sd = _to_date_generic(r.get('snapshotdate'))
+				if sd is None:
+					sd = date(1970,1,1)
+				cur = m.get(pkey)
+				if cur is None or sd > cur[0]:
+					m[pkey] = (sd, r)
+			# return only rows (not the date)
+			return {k: v[1] for k, v in m.items()}
+
+		def latest_per_property_as_of(all_rows, as_of_date):
+			"""Return list of latest rows per property with snapshotdate <= as_of_date."""
+			m = {}
+			for r in all_rows:
+				pkey = r.get('property_number') or r.get('property_name')
+				if pkey is None:
+					continue
+				sd = _to_date_generic(r.get('snapshotdate'))
+				if sd is None:
+					continue
+				if sd <= as_of_date:
+					cur = m.get(pkey)
+					if cur is None or sd > cur[0]:
+						m[pkey] = (sd, r)
+			return [v[1] for v in m.values()]
+
+		# Helper to aggregate a metric for a group of rows
+		def aggregate_metric_for_group(rows, metric, aggregation_method):
+			# rows: raw rows for group (all snapshots within window)
+			# For snapshot metrics, operate on latest-per-property rows
+			if metric in SNAPSHOT_METRICS:
+				latest_rows = list(latest_per_property_map(rows).values())
+				# Special handling for occupancy %: compute weighted portfolio occupancy
+				if metric == 'percentage_occupacy':
+					total_units = sum(safe_int(r.get('total_units')) for r in latest_rows)
+					occupied = sum(safe_int(r.get('occupied_units')) for r in latest_rows)
+					if aggregation_method == 'count':
+						return len(latest_rows)
+					# For sum/avg: return weighted occupancy percentage
+					return (occupied / total_units * 100) if total_units else 0
+				# For other snapshot numeric metrics
+				values = []
+				for r in latest_rows:
+					val = r.get(metric)
+					if val is None or val == '':
+						continue
+					if metric in ['avg_amount_per_sqft','effective_rent','market_rent']:
+						values.append(safe_float(val))
+					else:
+						values.append(safe_int(val))
+			else:
+				# Event metrics operate over all rows in the window for the group
+				values = []
+				for r in rows:
+					val = r.get(metric)
+					if val is None or val == '':
+						continue
+					if metric in ['avg_amount_per_sqft','effective_rent','market_rent']:
+						values.append(safe_float(val))
+					else:
+						values.append(safe_int(val))
+
+			if not values:
+				return 0
+			if aggregation_method == 'sum':
+				return sum(values)
+			if aggregation_method == 'avg':
+				return sum(values) / len(values)
+			if aggregation_method == 'max':
+				return max(values)
+			if aggregation_method == 'min':
+				return min(values)
+			if aggregation_method == 'count':
+				# For snapshot metrics, count distinct properties (values built from latest_rows)
+				if metric in SNAPSHOT_METRICS:
+					return len(latest_per_property_map(rows))
+				# For event metrics, count rows
+				return len(values)
+			# default
+			return sum(values)
+
 		if group_by and group_by in table_fields:
 			# Group data for chart
-			from collections import defaultdict
 			grouped_data = defaultdict(list)
 
 			for item in all_data:
-				group_value = str(item[group_by])
+				group_value = str(item.get(group_by) or '')
 				if group_value:
 					grouped_data[group_value].append(item)
-			
-			chart_labels = []
+
+			chart_labels = list(grouped_data.keys())
 			datasets = []
-			
-			# Use selected metrics or default to occupancy
 			selected_metrics = metrics if metrics else ['percentage_occupacy']
-			
-			# Prepare chart labels (groups) - show all properties for zoom/pan functionality
-			group_names = list(grouped_data.keys())  # Show all groups, let zoom/pan handle navigation
-			chart_labels = group_names
-			
-			# Create a dataset for each selected metric
-			# Palette excludes the warning red by default. Red is applied only when
-			# the aggregated values are negative or the metric is inherently negative.
-			palette = ['#1E40AF', '#059669', '#5B21B6', '#EA580C', '#7C2D12']  # calm, readable colors
-			negative_color = '#DC2626'  # used only for negative/decline metrics
-			# Metrics that should generally never be shown as 'red' (positive KPIs)
+			palette = ['#1E40AF', '#059669', '#5B21B6', '#EA580C', '#7C2D12']
+			negative_color = '#DC2626'
 			always_positive_metrics = set(['percentage_occupacy', 'occupied_units', 'total_units', 'total_move_ins', 'applications', 'effective_rent', 'market_rent', 'avg_amount_per_sqft'])
-			# Metrics that are inherently negative indicators
 			always_negative_metrics = set(['total_move_outs', 'vacant_units_without_down_admin', 'vacant_units'])
 
-			for i, metric in enumerate(selected_metrics[:6]):  # Limit to 6 metrics for readability
+			for i, metric in enumerate(selected_metrics[:6]):
 				metric_label = table_fields.get(metric, metric.replace('_', ' ').title())
 				chart_values = []
-				
-				for group_name in group_names:
-					group_items = grouped_data[group_name]
-					
-					# Get values for the selected metric
-					if metric == 'percentage_occupacy':
-						metric_values = [safe_float(item[metric]) for item in group_items if item[metric]]
-					else:
-						metric_values = [safe_float(item[metric]) if metric in ['avg_amount_per_sqft', 'effective_rent', 'market_rent'] 
-										else safe_int(item[metric]) for item in group_items if item[metric]]
-					
-					# Apply aggregation
-					if metric_values:
-						if aggregation == 'sum':
-							agg_value = sum(metric_values)
-						elif aggregation == 'avg':
-							agg_value = sum(metric_values) / len(metric_values)
-						elif aggregation == 'max':
-							agg_value = max(metric_values)
-						elif aggregation == 'min':
-							agg_value = min(metric_values)
-						elif aggregation == 'count':
-							agg_value = len(metric_values)
-						else:
-							agg_value = sum(metric_values)
-						
-						chart_values.append(round(agg_value, 2))
-					else:
-						chart_values.append(0)
-				
+				for group_name in chart_labels:
+					rows = grouped_data.get(group_name, [])
+					val = aggregate_metric_for_group(rows, metric, aggregation)
+					chart_values.append(round(val, 2))
+
 				aggregation_label = aggregation.capitalize()
 				dataset_label = f'{aggregation_label} {metric_label}'
-				
-				# Determine whether this dataset should use the negative color
 				negative_flag = any(v < 0 for v in chart_values)
 				if metric in always_positive_metrics:
 					negative_flag = False
 				if metric in always_negative_metrics:
 					negative_flag = True
-
-				if negative_flag:
-					color = negative_color
-				else:
-					color = palette[i % len(palette)]
-
-				# Map hex color to rgba background with a higher opacity for visibility
-				if color == '#1E40AF':
-					bg_color = 'rgba(30, 64, 175, 0.8)'
-				elif color == '#059669':
-					bg_color = 'rgba(5, 150, 105, 0.8)'
-				elif color == '#5B21B6':
-					bg_color = 'rgba(91, 33, 182, 0.8)'
-				elif color == '#EA580C':
-					bg_color = 'rgba(234, 88, 12, 0.8)'
-				elif color == '#7C2D12':
-					bg_color = 'rgba(124, 45, 18, 0.8)'
-				elif color == negative_color:
-					bg_color = 'rgba(220, 38, 38, 0.8)'
-				else:
-					bg_color = 'rgba(30, 64, 175, 0.8)'
+				color = negative_color if negative_flag else palette[i % len(palette)]
+				bg_color = 'rgba(30, 64, 175, 0.8)'
+				if color == '#059669': bg_color = 'rgba(5, 150, 105, 0.8)'
+				elif color == '#5B21B6': bg_color = 'rgba(91, 33, 182, 0.8)'
+				elif color == '#EA580C': bg_color = 'rgba(234, 88, 12, 0.8)'
+				elif color == '#7C2D12': bg_color = 'rgba(124, 45, 18, 0.8)'
 
 				datasets.append({
 					'label': dataset_label,
@@ -582,7 +621,7 @@ def analytics_query(request):
 					'backgroundColor': bg_color,
 					'tension': 0.4
 				})
-			
+
 			response_data['chart_data'] = {
 				'labels': chart_labels,
 				'datasets': datasets
@@ -592,44 +631,31 @@ def analytics_query(request):
 			from collections import defaultdict
 			from datetime import datetime, timedelta
 			import calendar
-			
-			date_data = defaultdict(lambda: defaultdict(list))
-			
-			# Use selected metrics or default to occupancy
+		
+			# Build date -> rows mapping so we can compute "latest-as-of" snapshots per date
+			date_rows = defaultdict(list)
 			selected_metrics = metrics if metrics else ['percentage_occupacy']
-			
-			# Organize data by date and metric
 			for item in all_data:
-				# Normalize snapshot date keys to strings so later len() and '-' checks are safe
 				raw_date = item.get('snapshotdate')
-				if raw_date:
-					# Convert date/datetime objects to YYYY-MM-DD strings; leave other strings as-is
-					from datetime import date as _date, datetime as _datetime
-					if isinstance(raw_date, (_date, _datetime)):
-						date_key = raw_date.strftime('%Y-%m-%d')
-					else:
-						date_key = str(raw_date)
-					for metric in selected_metrics:
-						# Use .get to avoid KeyError if metric missing
-						if metric == 'percentage_occupacy':
-							value = safe_float(item.get(metric))
-						else:
-							value = safe_float(item.get(metric)) if metric in ['avg_amount_per_sqft', 'effective_rent', 'market_rent'] else safe_int(item.get(metric))
-						date_data[date_key][metric].append(value)
-			
+				if not raw_date:
+					continue
+				from datetime import date as _date, datetime as _datetime
+				if isinstance(raw_date, (_date, _datetime)):
+					date_key = raw_date.strftime('%Y-%m-%d')
+				else:
+					date_key = str(raw_date)
+				date_rows[date_key].append(item)
+		
 			chart_labels = []
 			datasets = []
-			
+		
 			# Enhanced date handling based on date range
 			if date_range == 'last_30_days' or date_range == 'custom':
 				# For last 30 days or custom range, show individual dates
-				sorted_dates = sorted(date_data.keys())
-				
+				sorted_dates = sorted(date_rows.keys())
 				if date_range == 'custom':
-					# For custom range, use the actual date range
 					chart_labels = []
 					date_range_keys = sorted_dates
-					
 					for date_key in sorted_dates:
 						try:
 							if len(date_key) > 8 and '-' in date_key:  # YYYY-MM-DD format
@@ -649,37 +675,31 @@ def analytics_query(request):
 					today = datetime.now()
 					date_range_labels = []
 					date_range_keys = []
-					
 					for i in range(30):
 						check_date = today - timedelta(days=i)
 						date_key = check_date.strftime('%Y-%m-%d')
 						date_label = check_date.strftime('%m/%d')
-						date_range_keys.insert(0, date_key)  # Insert at beginning to maintain chronological order
+						date_range_keys.insert(0, date_key)
 						date_range_labels.insert(0, date_label)
-					
-					# Also check for month-year format dates
+					# Also check for month-year format dates and convert them to month-end YYYY-MM-DD
 					month_year_dates = []
 					for date_key in sorted_dates:
-						if len(date_key) <= 8 and '-' in date_key:  # Mon-YYYY format
+						if len(date_key) <= 8 and '-' in date_key:
 							try:
-								# Convert Mon-YYYY to datetime
 								month_name, year = date_key.split('-')
 								month_num = list(calendar.month_abbr).index(month_name)
-								# Use last day of month for month-year dates
 								last_day = calendar.monthrange(int(year), month_num)[1]
 								converted_date = f"{year}-{month_num:02d}-{last_day:02d}"
 								month_year_dates.append((converted_date, date_key))
 							except (ValueError, IndexError):
 								pass
-					
-					# Include month-year dates in the range if they fall within last 30 days
 					for converted_date, original_key in month_year_dates:
 						try:
 							date_obj = datetime.strptime(converted_date, '%Y-%m-%d')
 							if (today - date_obj).days <= 30:
 								date_label = date_obj.strftime('%m/%d')
 								if converted_date not in date_range_keys:
-									# Find correct position to insert
+									# place converted_date in chronological position
 									insert_pos = 0
 									for i, existing_key in enumerate(date_range_keys):
 										if existing_key < converted_date:
@@ -688,57 +708,44 @@ def analytics_query(request):
 											break
 									date_range_keys.insert(insert_pos, converted_date)
 									date_range_labels.insert(insert_pos, date_label)
-									# Map original key to converted key for data lookup
-									if original_key in date_data:
-										date_data[converted_date] = date_data[original_key]
+									# map original rows to converted key
+									if original_key in date_rows:
+										date_rows[converted_date] = date_rows[original_key]
 						except ValueError:
 							pass
-					
 					chart_labels = date_range_labels
 					date_range_keys = date_range_keys
-				
 				final_date_keys = date_range_keys
-				
 			else:
 				# For other date ranges, group by month and show month-end data
-				monthly_data = defaultdict(lambda: defaultdict(list))
-				
-				for date_key in date_data.keys():
+				monthly_rows = defaultdict(list)
+				for date_key in date_rows.keys():
 					try:
-						# Handle different date formats
-						if len(date_key) > 8 and '-' in date_key:  # YYYY-MM-DD format
+						if len(date_key) > 8 and '-' in date_key:
 							date_obj = datetime.strptime(date_key, '%Y-%m-%d')
 							month_key = date_obj.strftime('%Y-%m')
-						elif len(date_key) <= 8 and '-' in date_key:  # Mon-YYYY format
+						elif len(date_key) <= 8 and '-' in date_key:
 							month_name, year = date_key.split('-')
 							month_num = list(calendar.month_abbr).index(month_name)
 							month_key = f"{year}-{month_num:02d}"
 						else:
 							continue
-							
-						# Aggregate data by month
-						for metric in selected_metrics:
-							if date_key in date_data and metric in date_data[date_key]:
-								monthly_data[month_key][metric].extend(date_data[date_key][metric])
-								
+						monthly_rows[month_key].extend(date_rows[date_key])
 					except (ValueError, IndexError):
 						continue
-				
 				# Sort months and create labels
-				sorted_months = sorted(monthly_data.keys())[-24:]  # Last 24 months max
-				
+				sorted_months = sorted(monthly_rows.keys())[-24:]
 				chart_labels = []
 				for month_key in sorted_months:
 					try:
 						month_obj = datetime.strptime(month_key, '%Y-%m')
-						chart_labels.append(month_obj.strftime('%b %Y'))  # Jan 2024
+						chart_labels.append(month_obj.strftime('%b %Y'))
 					except ValueError:
 						chart_labels.append(month_key)
-				
-				# Use monthly data for metrics calculation
-				date_data = monthly_data
+				# Use monthly_rows as our date bucket source
+				date_rows = monthly_rows
 				final_date_keys = sorted_months
-			
+		
 			# Create a dataset for each selected metric
 			palette = ['#1E40AF', '#059669', '#5B21B6', '#EA580C', '#7C2D12']  # calm, readable colors
 			negative_color = '#DC2626'
@@ -748,30 +755,53 @@ def analytics_query(request):
 			for i, metric in enumerate(selected_metrics[:6]):  # Limit to 6 metrics for readability
 				metric_label = table_fields.get(metric, metric.replace('_', ' ').title())
 				chart_values = []
-				
 				for date_key in final_date_keys:
-					if date_key in date_data and metric in date_data[date_key]:
-						metric_values = date_data[date_key][metric]
-					else:
-						metric_values = []
-						
-					if metric_values:
-						if aggregation == 'sum':
-							agg_value = sum(metric_values)
-						elif aggregation == 'avg':
-							agg_value = sum(metric_values) / len(metric_values)
-						elif aggregation == 'max':
-							agg_value = max(metric_values)
-						elif aggregation == 'min':
-							agg_value = min(metric_values)
-						elif aggregation == 'count':
-							agg_value = len(metric_values)
-						else:
-							agg_value = sum(metric_values) / len(metric_values)  # Default to average for time series
-						
-						chart_values.append(round(agg_value, 2))
-					else:
+					# For each date bucket, collect rows and compute aggregate using helpers
+					rows_for_bucket = date_rows.get(date_key, []) if date_rows else []
+					if not rows_for_bucket:
 						chart_values.append(0)
+						continue
+					# If metric is a snapshot metric, compute latest-as-of for that date and aggregate
+					try:
+						# convert date_key to date for comparisons when needed
+						as_of = None
+						if isinstance(date_key, str) and len(date_key) >= 8 and '-' in date_key:
+							try:
+								as_of = datetime.strptime(date_key, '%Y-%m-%d').date()
+							except Exception:
+								as_of = None
+						# For monthly buckets, date_key may be 'YYYY-MM' — treat as month-end
+						if as_of is None and isinstance(date_key, str) and re.match(r'^\d{4}-\d{2}$', str(date_key)):
+							try:
+								month_end = datetime.strptime(date_key + '-01', '%Y-%m-%d')
+								# move to last day of month
+								last_day = calendar.monthrange(month_end.year, month_end.month)[1]
+								as_of = date(month_end.year, month_end.month, last_day)
+							except Exception:
+								as_of = None
+						# If we have an as_of date, get latest rows as-of that date
+						if as_of:
+							bucket_rows = latest_per_property_as_of(all_data, as_of)
+						else:
+							# fallback: use the rows that are in the bucket
+							bucket_rows = rows_for_bucket
+						val = aggregate_metric_for_group(bucket_rows, metric, aggregation)
+					except Exception:
+						# on any error, fallback to previous numeric-list approach (safe)
+						try:
+							metric_values = []
+							for r in rows_for_bucket:
+								if metric == 'percentage_occupacy':
+									metric_values.append(safe_float(r.get(metric)))
+								else:
+									metric_values.append(safe_int(r.get(metric)))
+							if metric_values:
+								val = sum(metric_values) if aggregation == 'sum' else (sum(metric_values) / len(metric_values) if aggregation == 'avg' else len(metric_values) if aggregation == 'count' else sum(metric_values))
+							else:
+								val = 0
+						except Exception:
+							val = 0
+					chart_values.append(round(val, 2))
 				
 				aggregation_label = aggregation.capitalize()
 				dataset_label = f'{aggregation_label} {metric_label}'
