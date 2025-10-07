@@ -1,14 +1,24 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Property Analytics – Olympus</title>
+{% extends 'base.html' %}
+{% block title %}Property Analytics – Olympus{% endblock %}
 
+{% block extra_head %}
 <style>
+/* Dashboard-specific styles */
+
+/* CSS Variables for dashboard */
+:root {
+    --page-bg: #F3F6F8;
+    --card-bg: #FFFFFF;
+    --border: #E5E7EB;
+    --text: #0F172A;
+    --muted: #64748B;
+    --radius: 8px;
+    --gap: 12px;
+}
+
 /* Responsive sidebar using padding when drawer is open to keep content in viewport */
 .main.drawer-open {
-    padding-left: 340px;
+    padding-left: 280px;
     width: 100vw;
     box-sizing: border-box;
     transition: padding-left 0.3s;
@@ -28,20 +38,20 @@
 }
 /* Fallback for individual container adjustments (when outside main container) */
 .charts-container.drawer-open {
-    padding-left: 340px;
+    padding-left: 280px;
     width: 100%;
     box-sizing: border-box;
     transition: padding-left 0.3s;
 }
 .summary-charts-container.drawer-open {
-    padding-left: 340px;
+    padding-left: 280px;
     width: 100%;
     box-sizing: border-box;
     transition: padding-left 0.3s;
 }
 /* Adjust parent div of property table instead of the container itself */
 div[style*="width:100%"].drawer-open {
-    padding-left: 340px;
+    padding-left: 280px;
     box-sizing: border-box;
     transition: padding-left 0.3s;
 }
@@ -60,92 +70,6 @@ div[style*="width:100%"].drawer-open {
         padding-left: 280px;
     }
 }
-/* User profile and logout */
-.user-profile {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-left: 24px;
-}
-.profile-pic {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: #59E6F6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-weight: bold;
-    font-size: 1.2em;
-    box-shadow: 0 2px 8px rgba(0,0,0,.08);
-}
-.profile-name {
-    color: var(--nav-text);
-    font-weight: 600;
-    font-size: 1.1em;
-}
-.logout-btn {
-    background: #3FE0F0;
-    color: #0B3A3F;
-    border: none;
-    border-radius: 6px;
-    padding: 10px 18px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    cursor: pointer;
-    transition: background 0.2s;
-    margin-left: 8px;
-}
-.logout-btn:hover {
-    background: #2A474B;
-    color: #fff;
-}
-:root{
-    /* Olympus look */
-    --topbar-h:140px;                 /* same bar height as olympusproperty.com */
-    --nav-bg:#1F3639; --nav-text:#F7FAFC; --nav-hover:#2A474B;
-    --aqua:#59E6F6;
-
-    --page-bg:#F3F6F8; --card-bg:#FFFFFF; --border:#E5E7EB; --text:#0F172A; --muted:#64748B;
-    --radius:14px; --gap:22px;
-}
-html,body{height:100%} *{box-sizing:border-box}
-body{margin:0;background:var(--page-bg);color:var(--text);font:22px/1.5 Inter,system-ui,Segoe UI,Arial}
-
-/* ===== TOP BAR ===== */
-.topbar{position:sticky;top:0;z-index:70;background:var(--nav-bg);color:var(--nav-text);width:100%;
-                box-shadow:0 2px 8px rgba(0,0,0,.08)}
-.topbar-inner{height:var(--topbar-h);padding:0 28px;display:flex;align-items:center;gap:18px}
-.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:32px;white-space:nowrap}
-.brand svg{width:30px;height:30px;flex:0 0 30px}
-
-/* HAMBURGER (MENU) */
-.hamburger{
-    width:44px;height:44px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;
-    position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-right:6px;
-}
-.hamburger .bar{position:absolute;width:22px;height:2px;background:var(--nav-text);transition:.25s}
-.hamburger .bar:nth-child(1){transform:translateY(-6px)}
-.hamburger .bar:nth-child(2){transform:translateY(0)}
-.hamburger .bar:nth-child(3){transform:translateY(6px)}
-.hamburger.open .bar:nth-child(1){transform:rotate(45deg)}
-.hamburger.open .bar:nth-child(2){opacity:0}
-.hamburger.open .bar:nth-child(3){transform:rotate(-45deg)}
-
-/* topbar nav placeholder (dropdowns removed) */
-.nav{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
-.topbar-link{
-    color:var(--nav-text);text-decoration:none;padding:8px 10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;display:inline-block;
-}
-.topbar-link:hover{background:rgba(79,107,237,0.06);color:#fff}
-
-/* Export (replaces Important News) */
-.export-btn{
-    margin-left:auto;background:#3FE0F0;color:#0B3A3F;border:none;border-radius:6px;
-    text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:10px 16px;cursor:pointer
-}
 
 /* ===== FILTER PANE (LEFT) ===== */
 .filter-toggle-btn{
@@ -160,7 +84,7 @@ body{margin:0;background:var(--page-bg);color:var(--text);font:22px/1.5 Inter,sy
 .filter-toggle-floating{transition:left .28s ease, transform .18s}
 
 /* When filter pane is open, move the floating toggle to sit at the edge of the pane */
-.filter-open .filter-toggle-floating{left:calc(320px + 20px);transform:translateX(0)}
+.filter-open .filter-toggle-floating{left:calc(260px + 20px);transform:translateX(0)}
 @media (max-width:1200px){
     .filter-open .filter-toggle-floating{left:calc(260px + 20px)}
 }
@@ -170,39 +94,39 @@ body{margin:0;background:var(--page-bg);color:var(--text);font:22px/1.5 Inter,sy
 .period-mode-btn[aria-pressed="true"]{background:#eef6fb}
 
 /* When drawer opens, move the floating toggle to the drawer edge */
-.drawer-open .filter-toggle-floating{left:calc(340px + 20px)}
+.drawer-open .filter-toggle-floating{left:calc(280px + 20px)}
 @media (max-width:1200px){
     .drawer-open .filter-toggle-floating{left:calc(280px + 20px)}
 }
 
 /* If both drawer and filter are open prefer the larger offset (drawer) */
-.drawer-open.filter-open .filter-toggle-floating{left:calc(340px + 20px) !important}
+.drawer-open.filter-open .filter-toggle-floating{left:calc(280px + 20px) !important}
 @media (max-width:1200px){
     .drawer-open.filter-open .filter-toggle-floating{left:calc(280px + 20px) !important}
 }
 .filter-pane{
-    position:fixed;left:0;top:var(--topbar-h);bottom:0;width:320px;
+    position:fixed;left:0;top:var(--topbar-h);bottom:0;width:260px;
     /* Slightly cooler, subtly tinted background to separate from page bg */
     background: linear-gradient(180deg, #ffffff 0%, #eefafc 100%);
     /* branded divider and aqua-tinted shadow for subtle emphasis */
     border-right: 1px solid rgba(11,58,63,0.06);
     /* use a faint aqua glow blended with a soft dark shadow to match brand */
     box-shadow: 6px 0 40px rgba(89,230,246,0.06), 2px 0 18px rgba(9,45,47,0.06);
-    transform:translateX(-100%);transition:transform .28s ease-in-out;z-index:80;padding:18px;overflow:auto;
+    transform:translateX(-100%);transition:transform .28s ease-in-out;z-index:80;padding:12px;overflow:auto;
 }
 .filter-pane.open{transform:translateX(0)}
-.filter-pane h3{margin:0 0 12px;color:#0B3A3F}
-.filter-section{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px}
+.filter-pane h3{margin:0 0 8px;color:#0B3A3F;font-size:14px}
+.filter-section{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px}
 .filter-actions{display:flex;gap:8px;align-items:center}
 .filter-close{margin-left:auto;background:none;border:none;padding:8px;border-radius:8px;cursor:pointer;color:#4f6bed}
 
 /* When filter pane is open, use padding and width to keep content within viewport */
-.filter-open .main{padding-left:320px;width:100vw;box-sizing:border-box;transition:padding-left .28s}
-.filter-open .charts-container{padding-left:320px;width:100%;box-sizing:border-box;transition:padding-left .28s}
-div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;transition:padding-left .28s}
+.filter-open .main{padding-left:260px;width:100vw;box-sizing:border-box;transition:padding-left .28s}
+.filter-open .charts-container{padding-left:260px;width:100%;box-sizing:border-box;transition:padding-left .28s}
+div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;transition:padding-left .28s}
 /* Ensure the property table and its wrapper shift when filter pane is open to avoid overlap */
-.filter-open .property-table-container{padding-left:320px !important;box-sizing:border-box;transition:padding-left .28s}
-.filter-open div[style*="width:100%"] > .property-table-container{padding-left:320px !important}
+.filter-open .property-table-container{padding-left:260px !important;box-sizing:border-box;transition:padding-left .28s}
+.filter-open div[style*="width:100%"] > .property-table-container{padding-left:260px !important}
 @media (max-width:1200px){
     .filter-open .main,.filter-open .charts-container,div[style*="width:100%"].filter-open{padding-left:260px}
     .filter-open .property-table-container{padding-left:260px !important}
@@ -212,7 +136,7 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
 .filter-open .main::before{
     content: '';
     position:fixed;
-    left:320px; /* start at the edge of the filter pane */
+    left:260px; /* start at the edge of the filter pane */
     top:var(--topbar-h);
     bottom:0;
     right:0;
@@ -271,7 +195,7 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
 .filter-open .charts-container.drawer-open,
 .drawer-open.filter-open div[style*="width:100%"],
 .filter-open div[style*="width:100%"].drawer-open{
-    padding-left: 340px !important;
+    padding-left: 280px !important;
     width: 100vw !important;
     box-sizing: border-box;
 }
@@ -286,27 +210,14 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
     }
 }
 
-/* ===== OVERLAY MENU (like Olympus mobile/mega menu) ===== */
-.overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
-.drawer{
-    position:absolute;left:0;top:0;bottom:0;width:340px;background:var(--nav-bg);color:var(--nav-text);
-    transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:18px 18px 24px 18px;
-    overflow:auto;
-}
-.drawer.open{transform:translateX(0)}
-.overlay.open{display:block}
-.drawer .big-item{
-    display:block;color:#E9F2F5;text-decoration:none;font-size:22px;font-weight:800;letter-spacing:.06em;
-    padding:14px 8px;border-radius:6px;text-transform:uppercase
-}
-.drawer .big-item:hover{background:#2A474B}
-
 /* ===== MAIN (bigger left column) ===== */
 
 .main {
-    width: 100vw;
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
     min-height: 100px;
-    padding: 20px 0 0 0;
+    padding: 12px 8px 0 8px;
     display: flex;
     align-items: flex-start;
     justify-content: flex-start;
@@ -315,19 +226,17 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
 .sidebar{
     display: flex;
     flex-direction: row;
-    gap: 12px;
+    gap: 8px;
     align-self: start;
     position: sticky;
-    top: calc(var(--topbar-h) + 14px);
+    top: calc(var(--topbar-h) + 8px);
     flex-wrap: wrap;
     width: 100%;
     justify-content: center;
 }
 .card.kpi {
-    flex: 1 1 260px;
-    min-width: 260px;
-    max-width: 100%;
-    box-sizing: border-box;
+    min-width: 115px;
+    flex: 0 1 110px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -361,31 +270,33 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
         width: 100%;
     }
 }
-.card.kpi {
-    min-width: 260px;
-    flex: 0 1 180px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+
+/* Card styling */
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 8px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 }
-.card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 14px}
-.kpi .label{font-size:22px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.kpi .value{font-size:32px;line-height:1.1;font-weight:700;margin-top:4px}
+.kpi .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted); text-align: center;}
+.kpi .value{font-size:18px;line-height:1.1;font-weight:700;margin-top:2px}
 
 .section{margin-bottom:var(--gap)}
-.section-title{font-weight:700;margin:2px 0 8px;color:#0B3A3F}
+.section-title{font-weight:700;margin:2px 0 6px;color:#0B3A3F;font-size:13px}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 @media (max-width:900px){.grid-2{grid-template-columns:1fr}}
 
-.chart-card{background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius);padding:12px;height:360px}
+.chart-card{background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius);padding:8px;height:280px}
 /* Responsive chart container and canvas */
 .charts-container {
     width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
     display: flex;
     flex-wrap: wrap;
-    gap: 32px;
-    margin-bottom: 32px;
+    gap: 12px;
+    margin-bottom: 16px;
     justify-content: center;
     align-items: center;
 }
@@ -393,13 +304,13 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
     background: var(--card-bg);
     border: 1px dashed var(--border);
     border-radius: var(--radius);
-    padding: 12px;
-    height: 360px;
+    padding: 8px;
+    height: 280px;
     display: flex;
     align-items: stretch;
     justify-content: center;
-    flex: 1 1 340px;
-    min-width: 260px;
+    flex: 1 1 280px;
+    min-width: 220px;
     max-width: 100%;
     box-sizing: border-box;
 }
@@ -467,14 +378,17 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
 .loading-overlay{
     position:fixed;inset:0;background:rgba(3,11,12,0.45);display:none;align-items:center;justify-content:center;z-index:1100;
 }
-.loading-box{background:rgba(255,255,255,0.98);padding:18px 22px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:10px;box-shadow:0 8px 40px rgba(2,6,8,0.35)}
-.loading-spinner{width:56px;height:56px;border-radius:50%;border:6px solid rgba(11,58,63,0.08);border-top-color:#59E6F6;animation:spin 1s linear infinite}
-.loading-text{font-weight:700;color:#052F30}
+.loading-box{background:rgba(255,255,255,0.98);padding:12px 16px;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:8px;box-shadow:0 8px 40px rgba(2,6,8,0.35)}
+.loading-spinner{width:42px;height:42px;border-radius:50%;border:4px solid rgba(11,58,63,0.08);border-top-color:#59E6F6;animation:spin 1s linear infinite}
+.loading-text{font-weight:600;color:#052F30;font-size:12px}
 @keyframes spin{to{transform:rotate(360deg)}}
+.modal-content.property-row.td{
+    text-align: center;
+}
 </style>
-</head>
+{% endblock %}
 
-<body>
+{% block content %}
     <!-- Loading overlay shown when backend is processing filters -->
     <div id="loadingOverlay" class="loading-overlay" role="status" aria-hidden="true">
         <div class="loading-box">
@@ -482,72 +396,9 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
             <div class="loading-text">Applying filters…</div>
         </div>
     </div>
-    <!-- ===== TOP BAR ===== -->
-    <div class="topbar">
-        <div class="topbar-inner">
-            <!-- Hamburger -->
-            <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="overlay">
-                <span class="bar"></span><span class="bar"></span><span class="bar"></span>
-            </button>
-
-            <!-- Filter toggle (was here but now floating) -->
-
-            <!-- Brand -->
-            <div class="brand">
-                <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <circle cx="32" cy="32" r="19" stroke="#59E6F6" stroke-width="2"/>
-                    <ellipse cx="32" cy="32" rx="26" ry="12" stroke="#59E6F6" stroke-width="2"/>
-                    <ellipse cx="32" cy="32" rx="12" ry="26" stroke="#59E6F6" stroke-width="2"/>
-                    <circle cx="32" cy="32" r="1.6" fill="#59E6F6"/>
-                </svg>
-                Olympus Property
-            </div>
-
-            <!-- “Menu” text next to brand as requested -->
-      
-
-            <!-- topbar nav: mirror of drawer items for quick access (keeps hamburger intact) -->
-            <nav class="nav" style="margin-top:12px;margin-left:24px;flex:1">
-                <a href="/dashboard" class="topbar-link">Dashboard</a>
-                <a href="/analytics/" class="topbar-link">Property Analytics</a>
-                <a href="#" class="topbar-link">Shout Outs</a>
-                <a href="#" class="topbar-link">Reports</a>
-                <a href="#" class="topbar-link">Settings</a>
-                <!-- Sign Out link removed: logout button already present in topbar -->
-            </nav>
-
-            
-
-            <!-- User profile and logout -->
-            <div class="user-profile">
-                <div class="profile-pic" title="{{ user.get_full_name|default:user.username }}">
-                    {{ user.first_name|default:user.username|slice:":1"|upper }}
-                </div>
-                <span class="profile-name">{{ user.get_full_name|default:user.username }}</span>
-                <form method="post" action="{% url 'logout' %}" id="logoutForm" style="display:inline;">
-                    {% csrf_token %}
-                    <button class="logout-btn" type="submit">Logout</button>
-                </form>
-            </div>
-        </div>
-    </div>
 
     <!-- Floating filter toggle button (distinct from hamburger) -->
     <button id="filterToggle" class="filter-toggle-floating" aria-label="Open filters" title="Open filters">🔎</button>
-
-    <!-- ===== OVERLAY MENU (acts like Olympus) ===== -->
-    <div class="overlay" id="overlay" aria-hidden="true">
-            <nav class="drawer" id="drawer" aria-label="Main Menu">
-            <a href="/dashboard" class="big-item">Dashboard</a>
-            <a href="/analytics/" class="big-item">Property Analytics</a>
-            <a href="#" class="big-item">Shout Outs</a>
-            <a href="#" class="big-item">Reports</a>
-            <a href="#" class="big-item">Settings</a>
-            <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:14px 8px;">
-            <a href="#" class="big-item">Help & Support</a>
-            <a href="#" class="big-item">Sign Out</a>
-        </nav>
-    </div>
 
         <!-- FILTER PANE (inserted) -->
         <aside class="filter-pane" id="filterPane" aria-hidden="true">
@@ -567,6 +418,7 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
                 <form method="get" action="/dashboard" id="filter-period-form">
                     <!-- Year select -->
                     <select name="period_year" id="filterPeriodYear" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:block;">
+                        <option value="all" {% if selected_year == 'all' %}selected{% endif %}>All Years</option>
                         {% for year, data in period_options.items %}
                             <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
                         {% endfor %}
@@ -648,11 +500,11 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
                     <input id="units-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
                     <span style="color:#4f6bed;font-size:20px;user-select:none;">&#128269;</span>
                 </div>
-                <div style="max-height:400px;overflow-y:auto;">
+                <div style="max-height:400px;overflow-y:auto;text-align: center;">
                     <table style="width:100%;border-collapse:collapse;">
                         <thead>
                             <tr style="background:#e3e8f7;">
-                                <th style="padding:8px 12px;white-space:nowrap;">Sl No.</th>
+                                <th style="padding:8px 12px;white-space:nowrap;">Property Number</th>
                                 <th style="padding:8px 12px;">Property Name</th>
                                 <th style="padding:8px 12px;">Total Units</th>
                             </tr>
@@ -660,7 +512,7 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
                         <tbody>
                             {% for row in all_properties %}
                             <tr class="units-row">
-                                <td style="padding:8px 12px;">{{ forloop.counter }}</td>
+                                <td style="padding:8px 12px;">{{ row.property_number }}</td>
                                 <td style="padding:8px 12px;">{{ row.property_name }}</td>
                                 <td style="padding:8px 12px;">{{ row.total_units }}</td>
                             </tr>
@@ -688,360 +540,230 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
             </div>
         </div>
             {% include 'dashboard/partials/_property_table.html' %}
+{% endblock %}
 
-    <!-- ===== MENU / DROPDOWNS JS ===== -->
-    <script>
-    // Topbar dropdowns removed; no initialization required here.
+{% block extra_scripts %}
+<!-- NOTE: base.html already provides hamburger/drawer functionality, so we don't duplicate it here -->
+<script>
+// Filter pane toggle logic
+(function(){
+    const filterToggle = document.getElementById('filterToggle');
+    const filterPane = document.getElementById('filterPane');
+    const filterClose = document.getElementById('filterClose');
+    const applyBtn = document.getElementById('applyFilters');
+    const clearBtn = document.getElementById('clearFilters');
 
-    // Hamburger / overlay drawer
-    const hamburger=document.getElementById('hamburger');
-    const overlay=document.getElementById('overlay');
-    const drawer=document.getElementById('drawer');
-    const sidebar=document.querySelector('.sidebar');
-
-    function setMenu(open){
-        hamburger.classList.toggle('open',open);
-        overlay.classList.toggle('open',open);
-        drawer.classList.toggle('open',open);
-    // Expose drawer-open at document level for layout consumption
-    document.documentElement.classList.toggle('drawer-open', open);
-        hamburger.setAttribute('aria-expanded',open);
-        overlay.setAttribute('aria-hidden',!open);
-        // Adjust main content when drawer is open
-        document.querySelector('.main').classList.toggle('drawer-open',open);
-        // Also adjust containers that are outside of .main
+    function setFilter(open){
+        if(!filterPane) return;
+        filterPane.classList.toggle('open', open);
+        filterPane.setAttribute('aria-hidden', !open);
+        document.documentElement.classList.toggle('filter-open', open);
+        // Also mark body or wrapper element if logic relies on it
+        const mainEl = document.querySelector('.main');
+        if(mainEl) mainEl.classList.toggle('filter-open', open);
         const chartsContainer = document.querySelector('.charts-container');
-        if (chartsContainer) chartsContainer.classList.toggle('drawer-open',open);
-        
-        // Adjust the parent div of property-table-container instead of the container itself
-        const propertyTableParent = document.querySelector('div[style*="width:100%"][style*="margin-top"]');
-        if (propertyTableParent) propertyTableParent.classList.toggle('drawer-open',open);
+        if(chartsContainer) chartsContainer.classList.toggle('filter-open', open);
+        const propertyTableParent = document.querySelector('div[style*="width:100%"]');
+        if(propertyTableParent) propertyTableParent.classList.toggle('filter-open', open);
     }
-    hamburger.addEventListener('click',e=>{e.stopPropagation();setMenu(!overlay.classList.contains('open'));});
-    overlay.addEventListener('click',e=>{ if(e.target===overlay) setMenu(false); });
-    document.addEventListener('keydown',e=>{ if(e.key==='Escape') setMenu(false); });
 
-    // Topbar signout link removed; logout form/button remains in topbar
-    </script>
+    if(filterToggle){ filterToggle.addEventListener('click', e=>{ e.stopPropagation(); setFilter(!filterPane.classList.contains('open')); }); }
+    if(filterClose){ filterClose.addEventListener('click', e=>{ e.stopPropagation(); setFilter(false); }); }
 
-    <script>
-    // Filter pane toggle logic
-    (function(){
-        const filterToggle = document.getElementById('filterToggle');
-        const filterPane = document.getElementById('filterPane');
-        const filterClose = document.getElementById('filterClose');
-        const applyBtn = document.getElementById('applyFilters');
-        const clearBtn = document.getElementById('clearFilters');
+    // Close on Escape
+    document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ if(filterPane.classList.contains('open')) setFilter(false) } });
 
-        function setFilter(open){
-            filterPane.classList.toggle('open', open);
-            document.documentElement.classList.toggle('filter-open', open);
-            filterPane.setAttribute('aria-hidden', !open);
-            // Accessibility: if closing the pane and a control inside has focus,
-            // move focus to the filter toggle so the focused element is not hidden
-            if(!open){
-                try{
-                    const active = document.activeElement;
-                    if(active && filterPane.contains(active)){
-                        // Move focus to the visible toggle and blur the inner element
-                        filterToggle.focus();
-                        if(typeof active.blur === 'function') active.blur();
-                    }
-                }catch(e){ console.warn('Focus transfer failed', e); }
-            }
-        }
+    // Period mode toggle logic (Year / Quarter / Month)
+    const periodModeBtns = document.querySelectorAll('.period-mode-btn');
+    const selYear = document.getElementById('filterPeriodYear');
+    const selQuarter = document.getElementById('filterPeriodQuarter');
+    const selMonth = document.getElementById('filterPeriodMonth');
+    let activeMode = 'year';
 
-        if(filterToggle){ filterToggle.addEventListener('click', e=>{ e.stopPropagation(); setFilter(!filterPane.classList.contains('open')); }); }
-        if(filterClose){ filterClose.addEventListener('click', e=>{ e.stopPropagation(); setFilter(false); }); }
+    function setMode(mode){
+        activeMode = mode;
+        periodModeBtns.forEach(b=>{ b.style.background = (b.dataset.mode === mode) ? '#eef6fb' : 'transparent'; b.setAttribute('aria-pressed', b.dataset.mode === mode); });
+        selYear.style.display = (mode === 'year') ? 'block' : 'none';
+        selQuarter.style.display = (mode === 'quarter') ? 'block' : 'none';
+        selMonth.style.display = (mode === 'month') ? 'block' : 'none';
+    }
+    periodModeBtns.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+    // Initialize mode (if server provided a selection, auto-detect Year/Quarter/Month)
+    const initialSelectedPeriod = "{{ selected_period|default:'' }}";
+    const initialSelectedYear = "{{ selected_year|default:'' }}";
 
-        // Close on Escape
-        document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ if(filterPane.classList.contains('open')) setFilter(false) } });
-
-        // Period mode toggle logic (Year / Quarter / Month)
-        const periodModeBtns = document.querySelectorAll('.period-mode-btn');
-        const selYear = document.getElementById('filterPeriodYear');
-        const selQuarter = document.getElementById('filterPeriodQuarter');
-        const selMonth = document.getElementById('filterPeriodMonth');
-        let activeMode = 'year';
-
-        function setMode(mode){
-            activeMode = mode;
-            periodModeBtns.forEach(b=>{
-                b.style.background = (b.dataset.mode===mode)?'#eef6fb':'transparent';
-            });
-            // Show/hide selects
-            selYear.style.display = (mode==='year') ? 'block' : 'none';
-            selQuarter.style.display = (mode==='quarter') ? 'block' : 'none';
-            selMonth.style.display = (mode==='month') ? 'block' : 'none';
-        }
-        periodModeBtns.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
-        // Initialize mode (if server provided a selection, auto-detect Year/Quarter/Month)
-        const initialSelectedPeriod = "{{ selected_period|default:'' }}";
-        const initialSelectedYear = "{{ selected_year|default:'' }}";
-
-        function detectAndInit(){
-            const p = (initialSelectedPeriod || '').trim();
-            if(p){
-                // Year only: 4 digits
-                if(/^\d{4}$/.test(p)){
-                    if(selYear.querySelector('option[value="'+p+'"]')) selYear.value = p;
-                    setMode('year');
-                    return;
-                }
-                // Quarter formats: Q1-2024, Q1 2024, Q1_2024
-                if(/^Q\d[-_ ]?\d{4}$/i.test(p) || /^Q\d$/i.test(p)){
-                    // Normalize to Qx-YYYY where possible
-                    const norm = p.replace(/[ _]/g,'-');
-                    for(const opt of selQuarter.options){ if(opt.value.toLowerCase() === norm.toLowerCase()){ selQuarter.value = opt.value; setMode('quarter'); return; } }
-                    // fallback: try to split
-                    const parts = p.split(/[-_ ]/);
-                    if(parts.length>=2){ const cand = parts[0] + '-' + parts[1]; for(const opt of selQuarter.options){ if(opt.value.toLowerCase()===cand.toLowerCase()){ selQuarter.value = opt.value; setMode('quarter'); return; } } }
-                }
-                // Month formats: Jan-2024 or January-2024
-                if(/^[A-Za-z]{3,9}[- ]\d{4}$/.test(p)){
-                    const normM = p.replace(/[ ]/g,'-');
-                    for(const opt of selMonth.options){ if(opt.value.toLowerCase() === normM.toLowerCase()){ selMonth.value = opt.value; setMode('month'); return; } }
-                    // fallback: try to find by year only
-                    setMode('month');
-                    return;
-                }
-            }
-            // fallback: try selected_year or default to year mode
-            if(initialSelectedYear && selYear.querySelector('option[value="'+initialSelectedYear+'"]')){
-                selYear.value = initialSelectedYear;
-            }
+    function detectAndInit(){
+        if(!initialSelectedPeriod && !initialSelectedYear){ setMode('year'); return; }
+        if(initialSelectedPeriod.match(/Q[1-4]/)){
+            setMode('quarter');
+            Array.from(selQuarter.options).forEach(opt=>{ if(opt.value===initialSelectedPeriod) opt.selected=true; });
+        } else if(initialSelectedPeriod.match(/Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/)){
+            setMode('month');
+            Array.from(selMonth.options).forEach(opt=>{ if(opt.value===initialSelectedPeriod) opt.selected=true; });
+        } else if(initialSelectedYear){
+            setMode('year');
+            Array.from(selYear.options).forEach(opt=>{ if(opt.value===initialSelectedYear) opt.selected=true; });
+        } else {
             setMode('year');
         }
+    }
 
-        detectAndInit();
+    detectAndInit();
 
-        // --- New: Filter quarter and month options by selected year/quarter ---
-        // Cache original options so we can rebuild filtered lists
-        const origQuarterOptions = Array.from(selQuarter.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year') }));
-        const origMonthOptions = Array.from(selMonth.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year'), quarter: opt.dataset ? opt.dataset.quarter : opt.getAttribute('data-quarter') }));
+    // --- New: Filter quarter and month options by selected year/quarter ---
+    // Cache original options so we can rebuild filtered lists
+    const origQuarterOptions = Array.from(selQuarter.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year') }));
+    const origMonthOptions = Array.from(selMonth.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year'), quarter: opt.dataset ? opt.dataset.quarter : opt.getAttribute('data-quarter') }));
 
-        function rebuildQuarterOptionsForYear(year){
-            // Remove current options
-            selQuarter.innerHTML = '';
-            // Add only quarters that match this year
-            origQuarterOptions.forEach(o=>{
-                if(String(o.year) === String(year)){
-                    const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.text; opt.setAttribute('data-year', o.year); selQuarter.appendChild(opt);
-                }
-            });
-        }
-
-        function rebuildMonthOptionsForYearAndQuarter(year, quarter){
-            selMonth.innerHTML = '';
-            origMonthOptions.forEach(o=>{
-                if(String(o.year) === String(year) && (!quarter || String(o.quarter) === String(quarter))){
-                    const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.text; opt.setAttribute('data-year', o.year); opt.setAttribute('data-quarter', o.quarter); selMonth.appendChild(opt);
-                }
-            });
-        }
-
-        // When year changes, update quarter and month lists
-        selYear.addEventListener('change', function(){
-            const y = this.value;
-            rebuildQuarterOptionsForYear(y);
-            // Keep quarter selection valid; if quarter select now has options, select first
-            if(selQuarter.options.length) selQuarter.selectedIndex = 0;
-            // Rebuild months for selected year (no quarter filter)
-            rebuildMonthOptionsForYearAndQuarter(y, null);
+    function rebuildQuarterOptionsForYear(year){
+        selQuarter.innerHTML='';
+        origQuarterOptions.filter(o=>!year || o.year===year).forEach(o=>{
+            const opt=document.createElement('option'); opt.value=o.value; opt.textContent=o.text; opt.setAttribute('data-year',o.year); selQuarter.appendChild(opt);
         });
+        if(selQuarter.options.length) selQuarter.selectedIndex=0;
+    }
 
-        // When quarter changes, update month list to show only months in that quarter/year
-        selQuarter.addEventListener('change', function(){
-            // quarter option values are like 'Q1-2024' so extract quarter and year
-            const parts = this.value.split(/[-_]/);
-            let q = parts[0];
-            let y = parts.length>1?parts[1]:selYear.value;
-            rebuildMonthOptionsForYearAndQuarter(y, q);
-            if(selMonth.options.length) selMonth.selectedIndex = 0;
+    function rebuildMonthOptionsForYearAndQuarter(year, quarter){
+        selMonth.innerHTML='';
+        origMonthOptions.filter(o=>{
+            if(year && o.year!==year) return false;
+            if(quarter && o.quarter!==quarter) return false;
+            return true;
+        }).forEach(o=>{
+            const opt=document.createElement('option'); opt.value=o.value; opt.textContent=o.text; opt.setAttribute('data-year',o.year); opt.setAttribute('data-quarter',o.quarter); selMonth.appendChild(opt);
         });
+        if(selMonth.options.length) selMonth.selectedIndex=0;
+    }
 
-        // Call once on load to ensure lists reflect initial selected year
-        if(selYear.value){
-            rebuildQuarterOptionsForYear(selYear.value);
-            rebuildMonthOptionsForYearAndQuarter(selYear.value, null);
+    // When year changes, update quarter and month lists
+    selYear.addEventListener('change', function(){
+        const y = this.value;
+        rebuildQuarterOptionsForYear(y);
+        const selectedQ = selQuarter.options.length ? selQuarter.options[0].getAttribute('data-quarter') || null : null;
+        rebuildMonthOptionsForYearAndQuarter(y, null);
+    });
+
+    // When quarter changes, update month list to show only months in that quarter/year
+    selQuarter.addEventListener('change', function(){
+        const y = selYear.value;
+        const q = this.options[this.selectedIndex].getAttribute('data-quarter');
+        rebuildMonthOptionsForYearAndQuarter(y, q);
+        if(selMonth.options.length) selMonth.selectedIndex = 0;
+    });
+
+    // Call once on load to ensure lists reflect initial selected year
+    if(selYear.value){
+        rebuildQuarterOptionsForYear(selYear.value);
+    }
+
+    // --- Dependent dropdowns: investor -> regional -> community ---
+    try{
+        const invToRegional = JSON.parse('{{ inv_to_regional_json|default:"{}"|escapejs }}');
+        const invRegToCommunities = JSON.parse('{{ inv_reg_to_communities_json|default:"{}"|escapejs }}');
+        const selInv = document.getElementById('filterInvestor');
+        const selRegional = document.getElementById('filterRegional');
+        const selCommunity = document.getElementById('filterCommunity');
+
+        function rebuildRegionalForInvestor(inv){
+            if(!selRegional) return;
+            selRegional.innerHTML = '';
+            const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Regional Managers'; selRegional.appendChild(allOpt);
+            const opts = invToRegional[inv] || [];
+            opts.forEach(rm => { const o=document.createElement('option'); o.value=rm; o.textContent=rm; selRegional.appendChild(o); });
         }
 
-        // --- Dependent dropdowns: investor -> regional -> community ---
-        try{
-            const invToRegional = JSON.parse('{{ inv_to_regional_json|escapejs }}');
-            const invRegToCommunities = JSON.parse('{{ inv_reg_to_communities_json|escapejs }}');
-            const selInv = document.getElementById('filterInvestor');
-            const selRegional = document.getElementById('filterRegional');
-            const selCommunity = document.getElementById('filterCommunity');
+        function rebuildCommunityForInvRegional(inv, rm){
+            if(!selCommunity) return;
+            selCommunity.innerHTML = '';
+            const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Communities'; selCommunity.appendChild(allOpt);
+            const key = (inv||'') + '|||' + (rm||'');
+            const opts = invRegToCommunities[key] || [];
+            opts.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; selCommunity.appendChild(o); });
+        }
 
-            function rebuildRegionalForInvestor(inv){
-                // Clear
-                selRegional.innerHTML = '';
-                const opts = invToRegional[inv] || [];
-                const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Regional Managers'; selRegional.appendChild(allOpt);
-                opts.forEach(rm => { const o=document.createElement('option'); o.value=rm; o.textContent=rm; selRegional.appendChild(o); });
-            }
+        // Initialize based on current selections
+        const initialInv = '{{ selected_investor|default:""|escapejs }}';
+        const initialRegional = '{{ selected_regional_manager|default:""|escapejs }}';
+        const initialCommunity = '{{ selected_community|default:""|escapejs }}';
+        if(initialInv && selInv) selInv.value = initialInv;
+        rebuildRegionalForInvestor(selInv ? selInv.value : '');
+        if(initialRegional && selRegional) selRegional.value = initialRegional;
+        rebuildCommunityForInvRegional(selInv ? selInv.value : '', selRegional ? selRegional.value : '');
+        if(initialCommunity && selCommunity) selCommunity.value = initialCommunity;
 
-            function rebuildCommunityForInvRegional(inv, rm){
-                selCommunity.innerHTML = '';
-                const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Communities'; selCommunity.appendChild(allOpt);
-                const key = (inv||'') + '|||' + (rm||'');
-                const opts = invRegToCommunities[key] || [];
-                opts.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; selCommunity.appendChild(o); });
-            }
+        if(selInv) selInv.addEventListener('change', function(){ rebuildRegionalForInvestor(this.value); rebuildCommunityForInvRegional(this.value, ''); });
+        if(selRegional) selRegional.addEventListener('change', function(){ rebuildCommunityForInvRegional(selInv ? selInv.value : '', this.value); });
+    }catch(e){ console.warn('Dependent dropdown init failed', e); }
 
-            // Initialize based on current selections
-            const initialInv = '{{ selected_investor|default:""|escapejs }}';
-            const initialRegional = '{{ selected_regional_manager|default:""|escapejs }}';
-            const initialCommunity = '{{ selected_community|default:""|escapejs }}';
-            if(initialInv){ selInv.value = initialInv; }
-            rebuildRegionalForInvestor(selInv.value);
-            if(initialRegional){ selRegional.value = initialRegional; }
-            rebuildCommunityForInvRegional(selInv.value, selRegional.value);
-            if(initialCommunity){ selCommunity.value = initialCommunity; }
+    // Apply: submit via GET preserving other params where possible
+    if(applyBtn){
+        applyBtn.addEventListener('click', function(){
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if(loadingOverlay) loadingOverlay.style.display = 'flex';
+            const params = new URLSearchParams(window.location.search);
+            // Preserve existing params
+            const periodYear = document.getElementById('filterPeriodYear').value;
+            const periodQuarter = document.getElementById('filterPeriodQuarter').value;
+            const periodMonth = document.getElementById('filterPeriodMonth').value;
+            const investor = document.getElementById('filterInvestor').value;
+            const regional = document.getElementById('filterRegional').value;
+            const community = document.getElementById('filterCommunity').value;
+            // Determine which period is active and set explicit mode/year/month params
+            let period = periodYear; // default
+            let mode = 'year';
+            if(activeMode==='quarter' && periodQuarter){ period = periodQuarter; mode = 'quarter'; }
+            if(activeMode==='month' && periodMonth){ period = periodMonth; mode = 'month'; }
+            // Clear old filters
+            params.delete('period'); params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month'); params.delete('investor'); params.delete('regional_manager'); params.delete('community');
+            // Set new filters (include both explicit mode/year and legacy 'period' for compatibility)
+            if(mode) params.set('period_mode', mode);
+            if(mode === 'year') params.set('period_year', period);
+            if(mode === 'quarter') params.set('period_quarter', period);
+            if(mode === 'month') params.set('period_month', period);
+            if(period) params.set('period', period);
+            if(investor) params.set('investor', investor);
+            if(regional) params.set('regional_manager', regional);
+            if(community) params.set('community', community);
+            window.location.href = '/dashboard?' + params.toString();
+        });
+    }
 
-            selInv.addEventListener('change', function(){ rebuildRegionalForInvestor(this.value); rebuildCommunityForInvRegional(this.value, ''); });
-            selRegional.addEventListener('change', function(){ rebuildCommunityForInvRegional(selInv.value, this.value); });
-        }catch(e){ console.warn('Dependent dropdown init failed', e); }
+    // Ensure KPI card handlers can be rebound after AJAX replacement
+    function bindKpiCardHandlers(){
+        const totalPropertiesCard = document.getElementById('total-properties-card');
+        if(totalPropertiesCard){ totalPropertiesCard.addEventListener('click', openPropertyModal); }
+        const totalUnitsCard = document.getElementById('total-units-card');
+        if(totalUnitsCard){ totalUnitsCard.addEventListener('click', function(){ document.getElementById('units-modal').style.display='flex'; }); }
+    }
 
-        // Apply: submit via GET preserving other params where possible
-        if(applyBtn){
-            applyBtn.addEventListener('click', function(){
-                const investor = document.getElementById('filterInvestor').value;
-                const regional = (document.getElementById('filterRegional') && document.getElementById('filterRegional').value) || '';
-                const community = (document.getElementById('filterCommunity') && document.getElementById('filterCommunity').value) || '';
-                const params = new URLSearchParams(window.location.search);
-                // Build period param based on activeMode and also provide explicit mode/year/quarter/month params
-                let periodValue = '';
-                // Clear any previous explicit keys to avoid stale values
-                params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month');
-                if(activeMode === 'year'){
-                    periodValue = selYear.value; // e.g. '2024'
-                    if(periodValue) params.set('period_year', periodValue);
-                } else if(activeMode === 'quarter'){
-                    periodValue = selQuarter.value; // e.g. 'Q1-2024'
-                    // also send quarter and year separately to make server-side routing easier
-                    if(periodValue){
-                        params.set('period_quarter', periodValue);
-                        // extract year from quarter value like 'Q1-2024'
-                        const yy = periodValue.split(/[-_]/).pop();
-                        if(yy) params.set('period_year', yy);
-                    }
-                } else if(activeMode === 'month'){
-                    periodValue = selMonth.value; // e.g. 'Jan-2024'
-                    if(periodValue){
-                        // month value already contains '-YYYY'
-                        params.set('period_month', periodValue);
-                        const yy = periodValue.split(/[-_]/).pop(); if(yy) params.set('period_year', yy);
-                    }
-                }
-                // Set canonical `period` param for backward compatibility
-                if(periodValue) params.set('period', periodValue); else params.delete('period');
-                // Also set explicit mode so backend can distinguish intent
-                params.set('period_mode', activeMode);
+    if(clearBtn){
+        clearBtn.addEventListener('click', function(){
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if(loadingOverlay) loadingOverlay.style.display = 'flex';
+            const params = new URLSearchParams(window.location.search);
+            // Remove all filters
+            params.delete('period');
+            params.delete('investor');
+            params.delete('regional_manager');
+            params.delete('community');
+            // Keep other params if any
+            window.location.href = '/dashboard?' + params.toString();
+        });
+    }
 
-                if(investor) params.set('investor', investor); else params.delete('investor');
-                if(regional) params.set('regional_manager', regional); else params.delete('regional_manager');
-                if(community) params.set('community', community); else params.delete('community');
-                // Close pane then show loading overlay and try AJAX fetch; fallback to navigation
+    // Clicking outside filter pane should close it
+    document.addEventListener('click', function(e){
+        if(!filterPane) return;
+        if(filterPane.classList.contains('open')){
+            const isClickInsidePane = filterPane.contains(e.target);
+            const isClickOnToggle = filterToggle && filterToggle.contains(e.target);
+            if(!isClickInsidePane && !isClickOnToggle){
                 setFilter(false);
-                const overlayEl = document.getElementById('loadingOverlay');
-                if(overlayEl){ overlayEl.querySelector('.loading-text').textContent = 'Applying filters…'; overlayEl.style.display = 'flex'; overlayEl.setAttribute('aria-hidden','false'); }
-                // Attempt AJAX fetch to avoid full reload
-                try{
-                    const url = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
-                    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                        .then(async (r)=>{
-                            if(!r.ok) throw new Error('Network response not ok: ' + r.status);
-                            const ct = r.headers.get('content-type') || '';
-                            if(ct.includes('application/json')) return r.json();
-                            // If server returned HTML/text, attempt to parse JSON safely
-                            const text = await r.text();
-                            try{ return JSON.parse(text); }catch(e){ throw new Error('Invalid JSON response: ' + text.slice(0,200)); }
-                        })
-                        .then(data=>{
-                            // Replace KPI cards and property table fragments
-                            const kpiContainer = document.querySelector('.sidebar');
-                            if(kpiContainer && data.kpi_html){ kpiContainer.outerHTML = data.kpi_html; }
-                            const propFrag = document.getElementById('property-table-fragment');
-                            if(propFrag && data.table_html){ propFrag.outerHTML = data.table_html; }
-                            // Update URL (pushState) and hide overlay
-                            window.history.pushState({}, '', url);
-                            if(overlayEl){ overlayEl.style.display = 'none'; overlayEl.setAttribute('aria-hidden','true'); }
-                            // Rebind click handlers for new KPI cards
-                            bindKpiCardHandlers();
-                        })
-                        .catch(async e=>{
-                            // Try to capture server response/body if available for debugging
-                            console.warn('AJAX apply failed, falling back to reload', e);
-                            try{
-                                // attempt to fetch raw body for more context
-                                const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                                const text = await resp.text();
-                                console.warn('Server response (first 200 chars):', text.slice(0,200));
-                            }catch(_){ /* ignore secondary failures */ }
-                            setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50);
-                        });
-                }catch(e){ setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50); }
-            });
-        }
-
-        // Ensure KPI card handlers can be rebound after AJAX replacement
-        function bindKpiCardHandlers(){
-            try{
-                const totalProps = document.getElementById('total-properties-card');
-                const totalUnits = document.getElementById('total-units-card');
-                if(totalProps){ totalProps.removeEventListener('click', openPropertyModal); totalProps.addEventListener('click', openPropertyModal); }
-                if(totalUnits){ totalUnits.removeEventListener('click', function(){}); totalUnits.addEventListener('click', function(){ document.getElementById('units-modal').style.display = 'flex'; }); }
-            }catch(e){ console.warn('bindKpiCardHandlers failed', e); }
-        }
-
-        if(clearBtn){
-            clearBtn.addEventListener('click', function(){
-                // Reset period selects and investor and remove period params from URL
-                selYear.selectedIndex = 0;
-                selQuarter.selectedIndex = 0;
-                selMonth.selectedIndex = 0;
-                document.getElementById('filterInvestor').selectedIndex = 0;
-                setMode('year');
-                const params = new URLSearchParams(window.location.search);
-                params.delete('period'); params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month'); params.delete('investor'); params.delete('regional_manager'); params.delete('community');
-                // Show overlay then attempt AJAX fetch to clear filters
-                const overlayEl = document.getElementById('loadingOverlay');
-                if(overlayEl){ overlayEl.querySelector('.loading-text').textContent = 'Clearing filters…'; overlayEl.style.display = 'flex'; overlayEl.setAttribute('aria-hidden','false'); }
-                try{
-                    const url = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
-                    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                        .then(async (r)=>{
-                            if(!r.ok) throw new Error('Network response not ok: ' + r.status);
-                            const ct = r.headers.get('content-type') || '';
-                            if(ct.includes('application/json')) return r.json();
-                            const text = await r.text();
-                            try{ return JSON.parse(text); }catch(e){ throw new Error('Invalid JSON response: ' + text.slice(0,200)); }
-                        })
-                        .then(data=>{
-                            const kpiContainer = document.querySelector('.sidebar');
-                            if(kpiContainer && data.kpi_html){ kpiContainer.outerHTML = data.kpi_html; }
-                            const propFrag = document.getElementById('property-table-fragment');
-                            if(propFrag && data.table_html){ propFrag.outerHTML = data.table_html; }
-                            window.history.pushState({}, '', url);
-                            if(overlayEl){ overlayEl.style.display = 'none'; overlayEl.setAttribute('aria-hidden','true'); }
-                            bindKpiCardHandlers();
-                        })
-                        .catch(async e=>{ console.warn('AJAX clear failed, falling back to reload', e); try{ const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const text = await resp.text(); console.warn('Server response (first 200 chars):', text.slice(0,200)); }catch(_){ } setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50); });
-                }catch(e){ setTimeout(()=>{ window.location.search = params.toString() ? ('?' + params.toString()) : ''; }, 50); }
-            });
-        }
-
-        // Clicking outside filter pane should close it
-        document.addEventListener('click', function(e){
-            if(filterPane && filterPane.classList.contains('open')){
-                const inside = filterPane.contains(e.target) || (filterToggle && filterToggle.contains(e.target));
-                if(!inside) setFilter(false);
             }
-        });
-    })();
-    </script>
+        }
+    });
+})();
+</script>
 
     <!-- ===== Charts (robust load) ===== -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
@@ -1052,26 +774,20 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
     </script>
     <script>
     function renderCharts(){
-        const months=['Aug-24','Sep-24','Oct-24','Nov-24','Dec-24','Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
+        // Charts data prepared by server (deduped per property per bucket)
+        const chartRentData = JSON.parse('{{ chart_rent_json|default:"{}"|escapejs }}');
+        const chartOccRevData = JSON.parse('{{ chart_occrev_json|default:"{}"|escapejs }}');
 
         new Chart(document.getElementById('chartRent'),{
             type:'line',
-            data:{labels:months,datasets:[
-                {label:'Effective',data:[1620,1585,1560,1540,1520,1500,1510,1530,1545,1568,1550],borderColor:'#0E555A',backgroundColor:'transparent',borderWidth:2,tension:.3},
-                {label:'Market',data:[1680,1660,1655,1650,1648,1650,1655,1660,1665,1670,1668],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3}
-            ]},
-            options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-            scales:{y:{ticks:{callback:v=>'$'+v}}}}
+            data: chartRentData,
+            options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{ticks:{callback:v=>'$'+v}}}}
         });
 
         new Chart(document.getElementById('chartOccRev'),{
             type:'bar',
-            data:{labels:months,datasets:[
-                {type:'line',label:'Occupancy %',yAxisID:'yL',data:[95,97,96,95,96.5,94.8,95.2,96.8,95.8,96.1,94.7],borderColor:'#59E6F6',backgroundColor:'transparent',borderWidth:2,tension:.3},
-                {label:'Total Revenue (k$)',yAxisID:'yR',data:[340,352,349,344,346,343,345,350,347,348,343],backgroundColor:'#C69A58'}
-            ]},
-            options:{responsive:true,maintainAspectRatio:false,
-                scales:{yL:{position:'left',ticks:{callback:v=>v+'%'}},yR:{position:'right',ticks:{callback:v=>'$'+v+'k'}}}}
+            data: chartOccRevData,
+            options:{responsive:true,maintainAspectRatio:false,scales:{yL:{position:'left',ticks:{callback:v=>v+'%'}},yR:{position:'right',ticks:{callback:v=>'$'+v+'k'}}}}
         });
 
         const months6=['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'];
@@ -1150,25 +866,8 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
             const previous = unitsData[index - 1];
             return Math.max(0, previous - current); // Decline portion (red)
         });
-
-        // Make data globally accessible for modal
-        window.chartData = {
-            years: years,
-            propertiesData: propertiesData,
-            unitsData: unitsData
-        };
-
-        // Make data globally accessible for modal
-        window.chartData = {
-            years: years,
-            propertiesData: propertiesData,
-            unitsData: unitsData
-        };
     }
     document.addEventListener('DOMContentLoaded',()=>{ if(window.Chart){renderCharts()} else {const t=setInterval(()=>{ if(window.Chart){clearInterval(t);renderCharts()} },50)} });
-    </script>
-    <script>
-// Topbar dropdown script removed
     </script>
 
     <!-- Advanced Modal for Property List -->
@@ -1179,18 +878,18 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
             <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
                 <input id="property-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
             </div>
-        <div style="max-height:400px;overflow-y:auto;">
+        <div style="max-height:400px;overflow-y:auto;text-align: center;">
             <table style="width:100%;border-collapse:collapse;">
                 <thead>
                     <tr style="background:#e3e8f7;">
-                        <th style="padding:8px 12px;white-space:nowrap;">Sl No.</th>
+                        <th style="padding:8px 12px;white-space:nowrap;">Property Number</th>
                         <th style="padding:8px 12px;">Property Name</th>
                     </tr>
                 </thead>
                 <tbody>
                         {% for row in all_properties %}
                         <tr class="property-row">
-                            <td style="padding:8px 12px;">{{ forloop.counter }}</td>
+                            <td style="padding:8px 12px;">{{ row.property_number }}</td>
                             <td style="padding:8px 12px;">{{ row.property_name }}</td>
                         </tr>
                         {% endfor %}
@@ -1202,47 +901,15 @@ div[style*="width:100%"].filter-open{padding-left:320px;box-sizing:border-box;tr
         <script>
         // Property modal search/filter functionality
         document.addEventListener('DOMContentLoaded', function() {
-            var searchInput = document.getElementById('property-search');
-            if (searchInput) {
-                searchInput.addEventListener('input', function() {
+            var propertySearchInput = document.getElementById('property-search');
+            if (propertySearchInput) {
+                propertySearchInput.addEventListener('input', function() {
                     var filter = this.value.toLowerCase();
-                    var rows = document.querySelectorAll('#property-modal .property-row');
-                    let visibleCount = 0;
-                    rows.forEach(function(row, idx) {
-                        var nameCell = row.cells[1];
-                        if (nameCell && nameCell.textContent.toLowerCase().includes(filter)) {
-                                row.style.display = '';
-                                // Update serial number for visible rows
-                                row.cells[0].textContent = ++visibleCount;
-                                // Highlight matching text
-                                var originalText = row.getAttribute('data-original') || nameCell.textContent;
-                                row.setAttribute('data-original', originalText);
-                                if (filter) {
-                                    var regex = new RegExp('(' + filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-                                    nameCell.innerHTML = originalText.replace(regex, '<span class="highlight-search">$1</span>');
-                                } else {
-                                    nameCell.innerHTML = originalText;
-                                }
-                        } else {
-                                row.style.display = 'none';
-                                // Restore original text if hidden
-                                var originalText = row.getAttribute('data-original');
-                                if (originalText) nameCell.innerHTML = originalText;
-                        }
+                    var rows = document.querySelectorAll('.property-row');
+                    rows.forEach(function(row) {
+                        var text = row.textContent.toLowerCase();
+                        row.style.display = text.includes(filter) ? '' : 'none';
                     });
-                    // If no match, show a friendly message
-                    var tbody = searchInput.closest('.modal-content').querySelector('tbody');
-                    var noMatchRow = document.getElementById('no-match-row');
-                    if (visibleCount === 0) {
-                        if (!noMatchRow) {
-                            noMatchRow = document.createElement('tr');
-                            noMatchRow.id = 'no-match-row';
-                            noMatchRow.innerHTML = '<td colspan="2" style="text-align:center;padding:18px;color:#4f6bed;font-size:17px;">No properties found</td>';
-                            tbody.appendChild(noMatchRow);
-                        }
-                    } else {
-                        if (noMatchRow) noMatchRow.remove();
-                    }
                 });
             }
         });
@@ -1275,7 +942,6 @@ function closePropertiesChartModal() {
     // Destroy chart when modal is closed
     if (window.propertiesModalChart) {
         window.propertiesModalChart.destroy();
-        window.propertiesModalChart = null;
     }
 }
 
@@ -1292,7 +958,6 @@ function closeUnitsChartModal() {
     // Destroy chart when modal is closed
     if (window.unitsModalChart) {
         window.unitsModalChart.destroy();
-        window.unitsModalChart = null;
     }
 }
 
@@ -1309,7 +974,6 @@ function closeOccupancyChartModal() {
     // Destroy chart when modal is closed
     if (window.occupancyModalChart) {
         window.occupancyModalChart.destroy();
-        window.occupancyModalChart = null;
     }
 }
 
@@ -1416,8 +1080,10 @@ function renderOccupancyChartInModal() {
                 }
             }
         });
-    }
-}
+
+                // After chart creation: no KPI meta injection for units modal (removed per UX request)
+            }
+        }
 
 function renderUnitsChartInModal() {
     const modalCanvas = document.getElementById('modalChartTotalUnits');
@@ -1427,8 +1093,9 @@ function renderUnitsChartInModal() {
             window.unitsModalChart.destroy();
         }
         
-        // Use the global chart data
-        const { years, unitsData } = window.chartData;
+    // Use the global chart data (defensive - ensure keys exist)
+    const years = (window.chartData && window.chartData.years) ? window.chartData.years : [];
+    const unitsData = (window.chartData && window.chartData.unitsData) ? window.chartData.unitsData : [];
         
         // Calculate base and growth portions
         const unitsBase = unitsData.map((current, index) => {
@@ -1465,6 +1132,7 @@ function renderUnitsChartInModal() {
                         borderWidth: 1,
                         stack: 'units'
                     }
+                    // KPI snapshot horizontal line will be injected below if available
                 ]
             },
             options: {
@@ -1512,6 +1180,8 @@ function renderUnitsChartInModal() {
                 }
             }
         });
+
+        // KPI horizontal line removed from units modal chart
     }
 }
 
@@ -1523,8 +1193,9 @@ function renderPropertiesChartInModal() {
             window.propertiesModalChart.destroy();
         }
         
-        // Use the global chart data
-        const { years, propertiesData } = window.chartData;
+    // Use the global chart data (defensive - ensure keys exist)
+    const years = (window.chartData && window.chartData.years) ? window.chartData.years : [];
+    const propertiesData = (window.chartData && window.chartData.propertiesData) ? window.chartData.propertiesData : [];
         
         // Calculate base and growth portions
         const propertiesBase = propertiesData.map((current, index) => {
@@ -1613,57 +1284,29 @@ function renderPropertiesChartInModal() {
 </script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Expose properties modal data prepared by server
+    try{
+        window.chartData = JSON.parse('{{ chart_properties_json|default:"{}"|escapejs }}');
+    }catch(e){ window.chartData = null; }
     var searchInput = document.getElementById('units-search');
     if (searchInput) {
         searchInput.addEventListener('input', function() {
             var filter = this.value.toLowerCase();
-            var rows = document.querySelectorAll('#units-modal .units-row');
-            let visibleCount = 0;
-            rows.forEach(function(row, idx) {
-                var nameCell = row.cells[1];
-                if (nameCell && nameCell.textContent.toLowerCase().includes(filter)) {
-                    row.style.display = '';
-                    row.cells[0].textContent = ++visibleCount;
-                    // Highlight matching text
-                    var originalText = row.getAttribute('data-original') || nameCell.textContent;
-                    row.setAttribute('data-original', originalText);
-                    if (filter) {
-                        var regex = new RegExp('(' + filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-                        nameCell.innerHTML = originalText.replace(regex, '<span class="highlight-search">$1</span>');
-                    } else {
-                        nameCell.innerHTML = originalText;
-                    }
-                } else {
-                    row.style.display = 'none';
-                    var originalText = row.getAttribute('data-original');
-                    if (originalText) nameCell.innerHTML = originalText;
-                }
+            var rows = document.querySelectorAll('.units-row');
+            rows.forEach(function(row) {
+                var text = row.textContent.toLowerCase();
+                row.style.display = text.includes(filter) ? '' : 'none';
             });
-            // If no match, show a friendly message
-            var tbody = searchInput.closest('.modal-content').querySelector('tbody');
-            var noMatchRow = document.getElementById('units-no-match-row');
-            if (visibleCount === 0) {
-                if (!noMatchRow) {
-                    noMatchRow = document.createElement('tr');
-                    noMatchRow.id = 'units-no-match-row';
-                    noMatchRow.innerHTML = '<td colspan="3" style="text-align:center;padding:18px;color:#4f6bed;font-size:17px;">No properties found</td>';
-                    tbody.appendChild(noMatchRow);
-                }
-            } else {
-                if (noMatchRow) noMatchRow.remove();
-            }
         });
     }
 });
     </script>
-</body>
-</html>
 
 <!-- Modal for Properties Chart -->
 <div id="properties-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closePropertiesChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
-        <h3 style="margin-bottom:20px;color:#0B3A3F;font-size:20px;font-weight:600;text-align:center;">Total Properties Trend</h3>
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Total Properties Growth</h2>
         <div style="height:400px;">
             <canvas id="modalChartTotalProperties"></canvas>
         </div>
@@ -1674,7 +1317,8 @@ document.addEventListener('DOMContentLoaded', function() {
 <div id="units-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closeUnitsChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
-        <h3 style="margin-bottom:20px;color:#0B3A3F;font-size:20px;font-weight:600;text-align:center;">Total Units Trend</h3>
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Total Units Growth</h2>
+    <!-- KPI meta removed -->
         <div style="height:400px;">
             <canvas id="modalChartTotalUnits"></canvas>
         </div>
@@ -1685,9 +1329,10 @@ document.addEventListener('DOMContentLoaded', function() {
 <div id="occupancy-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closeOccupancyChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
-        <h3 style="margin-bottom:20px;color:#0B3A3F;font-size:20px;font-weight:600;text-align:center;">Occupancy Rate Trend</h3>
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Occupancy & Revenue</h2>
         <div style="height:400px;">
             <canvas id="modalChartOccupancy"></canvas>
         </div>
     </div>
 </div>
+{% endblock %}

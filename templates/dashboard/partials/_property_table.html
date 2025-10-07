@@ -2,38 +2,57 @@
     <div class="property-table-container" style="padding:24px;background:#f7f9fc;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03);">
         <h2 style="margin-bottom:16px;">Unique Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
         <div style="overflow-x:auto;overflow-y:auto;max-height:400px;">
-            <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.04);">
+            <style>
+                /* Small CSS for sortable headers */
+                #property-table thead th { position: relative; }
+                #property-table thead th .sort-indicator { font-size: 12px; color: #6b7280; margin-left:6px; }
+                #property-table thead th:hover { background:#dbe6fb; }
+                /* Use ARIA-compliant values for styling when available */
+                #property-table thead th[aria-sort="ascending"] { background: #e9f0ff; }
+                #property-table thead th[aria-sort="descending"] { background: #eef2ff; }
+            </style>
+            <!-- Embed full properties JSON for client-side search/sort -->
+            {{ all_properties|json_script:"properties-data" }}
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input id="property-table-search" type="search" placeholder="Search properties (name, number, investor, manager...)" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;" />
+                    <select id="property-table-column" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;">
+                        <option value="all">All columns</option>
+                        <option value="property_number">Property Number</option>
+                        <option value="property_name">Property Name</option>
+                        <option value="investor">Investor</option>
+                        <option value="regional_area_manager">Regional Manager</option>
+                        <option value="regional_director">Regional Director</option>
+                        <option value="asst_manager">Asst Manager</option>
+                    </select>
+                    <button id="property-table-clear" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;background:#f1f5f9;">Clear</button>
+                </div>
+                <div style="font-size:13px;color:#6b7280;">Tip: Click any column header to sort — click again to toggle ascending/descending. You can also press Enter when a header is focused.</div>
+            </div>
+            </div>
+            <table id="property-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.04);">
             <thead>
                 <tr style="background:#e3e8f7;">
-                    <th style="padding:8px 12px;">Property Number</th>
-                    <th style="padding:8px 12px;">Property Name</th>
-                    <th style="padding:8px 12px;">Investor</th>
-                    <th style="padding:8px 12px;">Regional Manager</th>
-                    <th style="padding:8px 12px;">Regional Director</th>
-                    <th style="padding:8px 12px;">Asst Manager</th>
-                    <th style="padding:8px 12px;">Total Units</th>
-                    <th style="padding:8px 12px;">Occupied Units</th>
+                    <th data-sort-key="property_number" style="padding:8px 12px;cursor:pointer;user-select:none;">Property Number<span class="sort-indicator"></span></th>
+                    <th data-sort-key="property_name" style="padding:8px 12px;cursor:pointer;user-select:none;">Property Name<span class="sort-indicator"></span></th>
+                    <th data-sort-key="investor" style="padding:8px 12px;cursor:pointer;user-select:none;">Investor<span class="sort-indicator"></span></th>
+                    <th data-sort-key="regional_area_manager" style="padding:8px 12px;cursor:pointer;user-select:none;">Regional Manager<span class="sort-indicator"></span></th>
+                    <th data-sort-key="regional_director" style="padding:8px 12px;cursor:pointer;user-select:none;">Regional Director<span class="sort-indicator"></span></th>
+                    <th data-sort-key="asst_manager" style="padding:8px 12px;cursor:pointer;user-select:none;">Asst Manager<span class="sort-indicator"></span></th>
+                    <th data-sort-key="total_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Total Units<span class="sort-indicator"></span></th>
+                    <th data-sort-key="occupied_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Occupied Units<span class="sort-indicator"></span></th>
+                    <!-- <th style="padding:8px 12px;">Latest Snapshot</th>
+                    <th style="padding:8px 12px;">Occupancy %</th>
+                    <th style="padding:8px 12px;">Effective Rent</th>
+                    <th style="padding:8px 12px;">Market Rent</th> -->
                 </tr>
             </thead>
-            <tbody>
-                {% for row in properties %}
-                <tr>
-                    <td style="padding:8px 12px;">{{ row.property_number }}</td>
-                    <td style="padding:8px 12px;">{{ row.property_name }}</td>
-                    <td style="padding:8px 12px;">{{ row.investor }}</td>
-                    <td style="padding:8px 12px;">{{ row.regional_area_manager }}</td>
-                    <td style="padding:8px 12px;">{{ row.regional_director }}</td>
-                    <td style="padding:8px 12px;">{{ row.asst_manager }}</td>
-                    <td style="padding:8px 12px;">{{ row.total_units }}</td>
-                    <td style="padding:8px 12px;">{{ row.occupied_units }}</td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="8" style="text-align:center;padding:16px;">No data available.</td></tr>
-                {% endfor %}
+            <tbody id="property-table-body">
+                <!-- rows rendered client-side -->
             </tbody>
         </table>
         </div>
-        <div style="margin-top:16px;text-align:center;">
+        <div id="server-pagination" style="margin-top:16px;text-align:center;">
             {% if properties.has_other_pages %}
                 <nav aria-label="Table pagination">
                     <ul style="display:inline-flex;list-style:none;padding:0;">
@@ -62,5 +81,163 @@
                 </nav>
             {% endif %}
         </div>
+        <!-- client-side pagination rendered here -->
+        <div id="client-pagination" style="margin-top:12px;text-align:center;"></div>
+
+        <script>
+        (function(){
+            // Load full properties data from the JSON script
+            const dataEl = document.getElementById('properties-data');
+            let fullData = [];
+            try {
+                fullData = dataEl ? JSON.parse(dataEl.textContent) : [];
+            } catch(e){ console.error('Invalid properties JSON', e); fullData = []; }
+
+            // State
+            let filtered = fullData.slice();
+            let sortKey = null; // current sort key
+            let sortDir = 1; // 1 asc, -1 desc
+            const pageSize = 10;
+            let currentPage = 1;
+
+            // Helpers
+            function getValue(row, key){
+                const v = row[key];
+                if (v === null || v === undefined) return '';
+                return String(v);
+            }
+
+            function compare(a,b){
+                if (!sortKey) return 0;
+                const va = a[sortKey];
+                const vb = b[sortKey];
+                // numeric comparison when possible
+                const na = parseFloat(va);
+                const nb = parseFloat(vb);
+                if (!isNaN(na) && !isNaN(nb)) return (na - nb) * sortDir;
+                // date detection (YYYY-MM-DD)
+                if (/^\d{4}-\d{2}-\d{2}/.test(String(va)) && /^\d{4}-\d{2}-\d{2}/.test(String(vb))){
+                    return (new Date(va) - new Date(vb)) * sortDir;
+                }
+                return String(va).localeCompare(String(vb)) * sortDir;
+            }
+
+            function renderTable(){
+                const tbody = document.getElementById('property-table-body');
+                tbody.innerHTML = '';
+                const start = (currentPage-1)*pageSize;
+                const pageItems = filtered.slice(start, start+pageSize);
+                if (!pageItems.length){
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;">No data available.</td></tr>';
+                    renderPagination();
+                    return;
+                }
+                const rowsHtml = pageItems.map(r => {
+                    const latest = r.latest_snapshot_date || r.snapshotdate || '';
+                    const occ = r.occupancy_pct || r.percentage_occupacy || '';
+                    const eff = (r.effective_rent!==null && r.effective_rent!==undefined) ? ('$'+Number(r.effective_rent).toLocaleString()) : '-';
+                    const mkt = (r.market_rent!==null && r.market_rent!==undefined) ? ('$'+Number(r.market_rent).toLocaleString()) : '-';
+                    return `<tr>
+                        <td style="padding:8px 12px;">${r.property_number || ''}</td>
+                        <td style="padding:8px 12px;">${r.property_name || ''}</td>
+                        <td style="padding:8px 12px;">${r.investor || ''}</td>
+                        <td style="padding:8px 12px;">${r.regional_area_manager || ''}</td>
+                        <td style="padding:8px 12px;">${r.regional_director || ''}</td>
+                        <td style="padding:8px 12px;">${r.asst_manager || ''}</td>
+                        <td style="padding:8px 12px;">${r.total_units || ''}</td>
+                        <td style="padding:8px 12px;">${r.occupied_units || ''}</td>
+                    </tr>`;
+                }).join('\n');
+                tbody.innerHTML = rowsHtml;
+                renderPagination();
+            }
+
+            function renderPagination(){
+                const container = document.getElementById('client-pagination');
+                const total = Math.ceil(filtered.length / pageSize) || 1;
+                let html = '';
+                if (total > 1){
+                    if (currentPage > 1) html += `<button data-page="${currentPage-1}" class="pg-btn" style="padding:6px 10px;margin:0 4px;">Previous</button>`;
+                    // show up to 7 pages
+                    const start = Math.max(1, currentPage-3);
+                    const end = Math.min(total, currentPage+3);
+                    for(let p=start;p<=end;p++){
+                        if (p===currentPage) html += `<button disabled style="padding:6px 10px;margin:0 4px;background:#4f6bed;color:#fff;border-radius:4px;">${p}</button>`;
+                        else html += `<button data-page="${p}" class="pg-btn" style="padding:6px 10px;margin:0 4px;">${p}</button>`;
+                    }
+                    if (currentPage < total) html += `<button data-page="${currentPage+1}" class="pg-btn" style="padding:6px 10px;margin:0 4px;">Next</button>`;
+                }
+                container.innerHTML = html;
+                // attach handlers
+                container.querySelectorAll('.pg-btn').forEach(b=> b.addEventListener('click', (e)=>{ currentPage = parseInt(e.currentTarget.getAttribute('data-page')); renderTable(); }));
+            }
+
+            // Search
+            const searchInput = document.getElementById('property-table-search');
+            const columnSelect = document.getElementById('property-table-column');
+            const clearBtn = document.getElementById('property-table-clear');
+
+            function applyFilter(){
+                const q = (searchInput.value || '').trim().toLowerCase();
+                const col = columnSelect.value;
+                if (!q){ filtered = fullData.slice(); currentPage = 1; renderTable(); return; }
+                filtered = fullData.filter(r => {
+                    if (col === 'all'){
+                        return ['property_number','property_name','investor','regional_area_manager','regional_director','asst_manager'].some(k=> (r[k]||'').toString().toLowerCase().includes(q));
+                    }
+                    return (r[col]||'').toString().toLowerCase().includes(q);
+                });
+                currentPage = 1;
+                if (sortKey) filtered.sort(compare);
+                renderTable();
+            }
+
+            searchInput.addEventListener('input', ()=>{ applyFilter(); });
+            columnSelect.addEventListener('change', ()=>{ applyFilter(); });
+            clearBtn.addEventListener('click', ()=>{ searchInput.value=''; columnSelect.value='all'; filtered = fullData.slice(); sortKey=null; sortDir=1; currentPage=1; renderTable(); });
+
+            // Sorting on header click
+            // Initialize header affordances (indicator, title, keyboard accessibility)
+            const headerCells = Array.from(document.querySelectorAll('#property-table thead th[data-sort-key]'));
+            headerCells.forEach(th => {
+                th.setAttribute('title','Click to sort');
+                th.tabIndex = 0; // make focusable
+                const si = th.querySelector('.sort-indicator');
+                if (si) si.textContent = ' ↕';
+                // keyboard support
+                th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); th.click(); } });
+                th.addEventListener('click', () => {
+                    const key = th.getAttribute('data-sort-key');
+                    if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = 1; }
+                    // update indicators and aria-sort
+                    headerCells.forEach(h => { const s = h.querySelector('.sort-indicator'); if (s) s.textContent = ' ↕'; h.removeAttribute('aria-sort'); });
+                    const clickedIndicator = th.querySelector('.sort-indicator');
+                    if (clickedIndicator) clickedIndicator.textContent = sortDir===1 ? ' ▲' : ' ▼';
+                    th.setAttribute('aria-sort', sortDir===1 ? 'ascending' : 'descending');
+                    filtered.sort(compare);
+                    currentPage = 1;
+                    renderTable();
+                });
+            });
+
+            // Hide server pagination when client pagination is active
+            const serverPg = document.getElementById('server-pagination');
+            if (serverPg) serverPg.style.display = 'none';
+
+            // initial render
+            filtered = fullData.slice();
+            renderTable();
+
+            // Expose a global function so other scripts (AJAX) can refresh the table
+            window.refreshPropertyTable = function(){
+                try{
+                    const dataElReload = document.getElementById('properties-data');
+                    fullData = dataElReload ? JSON.parse(dataElReload.textContent) : [];
+                }catch(e){ console.warn('Failed to parse refreshed properties JSON', e); fullData = []; }
+                // preserve current search/sort/page state where possible
+                applyFilter();
+            };
+        })();
+        </script>
     </div>
 </div>

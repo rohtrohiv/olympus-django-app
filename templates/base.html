@@ -7,60 +7,61 @@
   <style>
     /* Brand variables */
     :root{
-      --nav-bg:#1F3639; --nav-text:#F7FAFC; --aqua:#59E6F6; --topbar-h:140px;
+      --nav-bg:#1F3639; --nav-text:#F7FAFC; --aqua:#59E6F6; --topbar-h:80px;
     }
 
   /* Base page */
   html,body{height:100%} *{box-sizing:border-box}
   /* match dashboard base font size/line-height */
-  body{margin:0;background:#f3f6f8;color:#0f172a;font-family:Inter,system-ui,Segoe UI,Arial;font:22px/1.5 Inter,system-ui,Segoe UI,Arial}
-    .container{max-width:1200px;margin:18px auto;padding:12px}
+  body{margin:0;background:#f3f6f8;color:#0f172a;font-family:Inter,system-ui,Segoe UI,Arial;font:14px/1.5 Inter,system-ui,Segoe UI,Arial}
+    .container{max-width:1400px;margin:8px auto;padding:8px}
 
     /* ===== TOP BAR (aligned with dashboard) ===== */
     .topbar{position:sticky;top:0;z-index:70;background:var(--nav-bg);color:var(--nav-text);width:100%;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-    .topbar-inner{height:var(--topbar-h);padding:0 28px;display:flex;align-items:center;gap:18px}
-    .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:32px;white-space:nowrap}
-    .brand svg{width:30px;height:30px;flex:0 0 30px}
+  .topbar-inner{height:var(--topbar-h);padding:0 16px;display:flex;align-items:center;gap:12px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.02em;font-size:18px;white-space:nowrap}
+  .brand svg{width:20px;height:20px;flex:0 0 20px}
 
     /* HAMBURGER */
-  .hamburger{width:44px;height:44px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-right:6px}
-  .hamburger .bar{position:absolute;width:22px;height:2px;background:var(--nav-text);transition:.25s}
-  .hamburger .bar:nth-child(1){transform:translateY(-6px)}
+  .hamburger{width:32px;height:32px;border:1px solid rgba(255,255,255,.25);border-radius:6px;background:transparent;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-right:4px}
+  .hamburger .bar{position:absolute;width:18px;height:2px;background:var(--nav-text);transition:.25s}
+  .hamburger .bar:nth-child(1){transform:translateY(-5px)}
   .hamburger .bar:nth-child(2){transform:translateY(0)}
-  .hamburger .bar:nth-child(3){transform:translateY(6px)}
+  .hamburger .bar:nth-child(3){transform:translateY(5px)}
   .hamburger.open .bar:nth-child(1){transform:rotate(45deg)}
   .hamburger.open .bar:nth-child(2){opacity:0}
   .hamburger.open .bar:nth-child(3){transform:rotate(-45deg)}
 
     /* NAV */
-  .nav{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+  .nav{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   /* push nav to take available space so profile sits at right */
   .nav{flex:1}
-    .topbar-link{color:var(--nav-text);text-decoration:none;padding:8px 10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;display:inline-block}
+  .topbar-link{color:var(--nav-text);text-decoration:none;padding:6px 8px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:4px;display:inline-block;font-size:11px}
 
     /* PROFILE */
-  .profile-pic{width:44px;height:44px;border-radius:50%;background:var(--aqua);display:flex;align-items:center;justify-content:center;color:#053033;font-weight:700;font-size:1.2em}
-  .profile-name{margin-left:8px;color:var(--nav-text);font-weight:600;font-size:1.1em}
-  .user-profile{display:flex;align-items:center;gap:12px}
+  .profile-pic{width:32px;height:32px;border-radius:50%;background:var(--aqua);display:flex;align-items:center;justify-content:center;color:#053033;font-weight:700;font-size:14px}
+  .profile-name{margin-left:6px;color:var(--nav-text);font-weight:600;font-size:12px}
+  .user-profile{display:flex;align-items:center;gap:8px}
 
     /* LOGOUT BUTTON: matching dashboard styles */
     .logout-btn{
-      margin-left:8px;
+      margin-left:6px;
       background:#3FE0F0;
       color:#0B3A3F;
       border:none;
-      border-radius:6px;
-      padding:10px 18px;
+      border-radius:4px;
+      padding:6px 12px;
       font-weight:800;
       text-transform:uppercase;
       letter-spacing:.08em;
       cursor:pointer;
       transition:background .2s,color .2s;
       display:inline-block;
+      font-size:11px;
     }
     .profile-pic {
-    width: 44px;
-    height: 44px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: #59E6F6;
     display: flex;
@@ -68,22 +69,22 @@
     justify-content: center;
     color: #fff;
     font-weight: bold;
-    font-size: 1.2em;
+    font-size: 1em;
     box-shadow: 0 2px 8px rgba(0,0,0,.08);
 }
     .logout-btn:hover{background:#2A474B;color:#fff}
   /* Overlay / drawer (hidden by default) */
   .overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
   .drawer{
-    position:absolute;left:0;top:0;bottom:0;width:340px;background:var(--nav-bg);color:var(--nav-text);
-    transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:18px 18px 24px 18px;
+    position:absolute;left:0;top:0;bottom:0;width:260px;background:var(--nav-bg);color:var(--nav-text);
+    transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:12px 12px 18px 12px;
     overflow:auto;
   }
   .drawer.open{transform:translateX(0)}
   .overlay.open{display:block}
   .drawer .big-item{
-    display:block;color:#E9F2F5;text-decoration:none;font-size:22px;font-weight:800;letter-spacing:.06em;
-    padding:14px 8px;border-radius:6px;text-transform:uppercase
+    display:block;color:#E9F2F5;text-decoration:none;font-size:16px;font-weight:800;letter-spacing:.06em;
+    padding:10px 6px;border-radius:4px;text-transform:uppercase
   }
   .drawer .big-item:hover{background:#2A474B}
   </style>
@@ -114,7 +115,7 @@
       
 
             <!-- topbar nav: mirror of drawer items for quick access (keeps hamburger intact) -->
-            <nav class="nav" style="margin-top:12px;margin-left:24px;flex:1">
+            <nav class="nav" style="margin-top:8px;margin-left:16px;flex:1">
                 <a href="/dashboard" class="topbar-link">Dashboard</a>
                 <a href="/analytics/" class="topbar-link">Property Analytics</a>
                 <a href="#" class="topbar-link">Shout Outs</a>

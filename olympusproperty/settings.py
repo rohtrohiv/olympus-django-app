@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -73,13 +74,46 @@ WSGI_APPLICATION = 'olympusproperty.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': r'C:\Users\rokumar1\Documents\sqllite\olympusproperty',
-        # 'NAME': BASE_DIR / 'db.sqlite3',
+DB_FALLBACK_SQLITE = os.environ.get('DB_FALLBACK_SQLITE') == '1'
+
+if DB_FALLBACK_SQLITE:
+    # Local fallback for development when remote Postgres is unreachable.
+    # To enable set environment variable: $env:DB_FALLBACK_SQLITE='1' (PowerShell)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql_psycopg2',
+            'NAME': 'Olympus_Property',
+            'USER': 'rohit_kumar',
+            'PASSWORD': 'Re@dOnly987',
+            'HOST': '10.200.155.5',
+            'PORT': '5432',
+            # Ensure default schema is web_ai so models point to web_ai.* tables by default
+            'OPTIONS': {
+                'options': '-c search_path=web_ai'
+            },
+            # Reuse DB connections across requests (seconds). Set to 0 to close each request.
+            # 600s = 10 minutes - a reasonable default for low-to-medium traffic.
+            'CONN_MAX_AGE': 600,
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql_psycopg2',
+            'NAME': 'Olympus_Property',
+            'USER': 'rohit_kumar',
+            'PASSWORD': 'Re@dOnly987',
+            'HOST': '10.200.155.5',
+            'PORT': '5432',
+            # Ensure default schema is web_ai so models point to web_ai.* tables by default
+            'OPTIONS': {
+                'options': '-c search_path=web_ai'
+            },
+            # Reuse DB connections across requests (seconds). Set to 0 to close each request.
+            # 600s = 10 minutes - a reasonable default for low-to-medium traffic.
+            'CONN_MAX_AGE': 600,
+        }
+    }
 
 
 # Password validation
