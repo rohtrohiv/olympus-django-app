@@ -5,12 +5,12 @@ body {
     color: #222;
 }
 .dashboard-container {
-    max-width: 1200px;
-    margin: 40px auto;
+    width: 100%;
+    margin: 24px 0;
     background: #fff;
     border-radius: 12px;
     box-shadow: 0 2px 16px rgba(0,0,0,0.08);
-    padding: 32px;
+    padding: 24px;
 }
 header h1 {
     margin: 0 0 24px 0;

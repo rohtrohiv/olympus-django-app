@@ -7,10 +7,12 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
+  /* Use fluid container to prevent centered margins at different zoom levels */
   .container {
-    max-width: 1400px;
-    margin: 8px auto;
-    padding: 6px;
+    width: 100%;
+    max-width: none;
+    margin: 8px 0;
+    padding: 8px 16px;
   }
   
   .analytics-container {
@@ -18,7 +20,8 @@
     grid-template-rows: auto 1fr;
     gap: 12px;
     padding: 8px;
-    height: calc(100vh - var(--topbar-h) - 16px);
+    /* Allow the container to size naturally; avoid strict calc heights which can introduce scroll/margins at zoom */
+    min-height: calc(100vh - var(--topbar-h) - 24px);
   }
   
   .controls-panel {
@@ -27,8 +30,9 @@
     padding: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     overflow-y: auto;
-    max-height: 200px;
-    min-height: 300px;
+    /* Use flexible heights so zooming doesn't create unexpected gaps */
+    max-height: 40vh;
+    min-height: 180px;
   }
   
   .controls-grid {
@@ -46,7 +50,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    min-height: 600px; /* Increased from 450px to accommodate larger chart */
+    min-height: 45vh; /* responsive minimum height */
   }
   
   .control-group {

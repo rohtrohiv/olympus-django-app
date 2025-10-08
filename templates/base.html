@@ -14,11 +14,14 @@
   html,body{height:100%} *{box-sizing:border-box}
   /* match dashboard base font size/line-height */
   body{margin:0;background:#f3f6f8;color:#0f172a;font-family:Inter,system-ui,Segoe UI,Arial;font:14px/1.5 Inter,system-ui,Segoe UI,Arial}
-    .container{max-width:1400px;margin:8px auto;padding:8px}
+   /* Make the app container fluid so UI responds to browser zoom and viewport changes.
+     Use full width with modest horizontal padding rather than a fixed-centered max-width. */
+   .container{width:100%;max-width:none;margin:8px 0;padding:8px 16px}
 
     /* ===== TOP BAR (aligned with dashboard) ===== */
-    .topbar{position:sticky;top:0;z-index:70;background:var(--nav-bg);color:var(--nav-text);width:100%;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-  .topbar-inner{height:var(--topbar-h);padding:0 16px;display:flex;align-items:center;gap:12px}
+    /* Make topbar fixed so it's always visible at the top of the viewport */
+    .topbar{position:fixed;top:0;left:0;right:0;z-index:1000;background:var(--nav-bg);color:var(--nav-text);width:100%;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+    .topbar-inner{height:var(--topbar-h);padding:0 16px;display:flex;align-items:center;gap:12px}
   .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.02em;font-size:18px;white-space:nowrap}
   .brand svg{width:20px;height:20px;flex:0 0 20px}
 
@@ -74,9 +77,10 @@
 }
     .logout-btn:hover{background:#2A474B;color:#fff}
   /* Overlay / drawer (hidden by default) */
+  /* Drawer and overlay start below the fixed topbar */
   .overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
   .drawer{
-    position:absolute;left:0;top:0;bottom:0;width:260px;background:var(--nav-bg);color:var(--nav-text);
+    position:fixed;left:0;top:var(--topbar-h);bottom:0;width:260px;background:var(--nav-bg);color:var(--nav-text);
     transform:translateX(-100%);transition:.25s;box-shadow:2px 0 20px rgba(0,0,0,.25);padding:12px 12px 18px 12px;
     overflow:auto;
   }
@@ -171,6 +175,21 @@
   </main>
 
   <script>
+    // Ensure body has top padding equal to topbar height so content is not hidden underneath
+    (function(){
+      function applyTopbarPadding(){
+        try{
+          const rootStyles = getComputedStyle(document.documentElement);
+          const topbarH = rootStyles.getPropertyValue('--topbar-h') || '80px';
+          document.body.style.paddingTop = topbarH.trim();
+        }catch(e){ /* ignore */ }
+      }
+      // Apply on load and update on resize (in case CSS var changes)
+      window.addEventListener('load', applyTopbarPadding);
+      window.addEventListener('resize', applyTopbarPadding);
+      applyTopbarPadding();
+    })();
+
     // Hamburger / overlay drawer (adapted from dashboard)
     (function(){
       const hamburger = document.getElementById('hamburger');

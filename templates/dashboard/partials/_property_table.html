@@ -1,16 +1,36 @@
 <div style="width:100%;margin-top:32px;" id="property-table-fragment">
     <div class="property-table-container" style="padding:24px;background:#f7f9fc;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03);">
         <h2 style="margin-bottom:16px;">Unique Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
-        <div style="overflow-x:auto;overflow-y:auto;max-height:400px;">
-            <style>
-                /* Small CSS for sortable headers */
-                #property-table thead th { position: relative; }
-                #property-table thead th .sort-indicator { font-size: 12px; color: #6b7280; margin-left:6px; }
-                #property-table thead th:hover { background:#dbe6fb; }
-                /* Use ARIA-compliant values for styling when available */
-                #property-table thead th[aria-sort="ascending"] { background: #e9f0ff; }
-                #property-table thead th[aria-sort="descending"] { background: #eef2ff; }
-            </style>
+        <style>
+            /* Scrolling wrapper for property table and sticky header */
+            .property-table-scroll{
+                position:relative;
+                overflow-y:auto;
+                overflow-x:auto;
+                max-height: calc(100vh - var(--topbar-h) - 200px); /* leave room for KPI/cards */
+                -webkit-overflow-scrolling: touch;
+            }
+            /* Use separate border model so sticky header renders correctly */
+            #property-table{ width:100%; border-collapse:separate; border-spacing:0; }
+            /* Sticky header */
+            #property-table thead th {
+                position: sticky;
+                top: 0;
+                z-index: 5;
+                background: #e3e8f7;
+                backdrop-filter: blur(2px);
+            }
+            #property-table thead th .sort-indicator { font-size: 12px; color: #6b7280; margin-left:6px; }
+            #property-table thead th:hover { background:#dbe6fb; }
+            /* Use ARIA-compliant values for styling when available */
+            #property-table thead th[aria-sort="ascending"] { background: #e9f0ff; }
+            #property-table thead th[aria-sort="descending"] { background: #eef2ff; }
+            /* subtle shadow for header so it's visually distinct while sticky */
+            #property-table thead th::after{ content:''; position:absolute; left:0; right:0; bottom:-1px; height:1px; box-shadow:0 2px 6px rgba(0,0,0,0.06); z-index:4 }
+            /* center-align table body cells */
+            #property-table tbody td { text-align: center; vertical-align: middle; }
+        </style>
+        <div class="property-table-scroll">
             <!-- Embed full properties JSON for client-side search/sort -->
             {{ all_properties|json_script:"properties-data" }}
             <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
@@ -27,9 +47,14 @@
                     </select>
                     <button id="property-table-clear" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;background:#f1f5f9;">Clear</button>
                 </div>
+                <!-- New: Toggle to disable pagination and show all rows -->
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <input id="togglePagination" type="checkbox" />
+                    <label for="togglePagination" style="font-size:13px;color:#374151;">Disable Pagination (Show all)</label>
+                </div>
                 <div style="font-size:13px;color:#6b7280;">Tip: Click any column header to sort — click again to toggle ascending/descending. You can also press Enter when a header is focused.</div>
             </div>
-            </div>
+            
             <table id="property-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.04);">
             <thead>
                 <tr style="background:#e3e8f7;">
@@ -52,6 +77,7 @@
             </tbody>
         </table>
         </div>
+    </div>
         <div id="server-pagination" style="margin-top:16px;text-align:center;">
             {% if properties.has_other_pages %}
                 <nav aria-label="Table pagination">
@@ -99,6 +125,7 @@
             let sortDir = 1; // 1 asc, -1 desc
             const pageSize = 10;
             let currentPage = 1;
+            let paginationDisabled = false; // when true, show all rows
 
             // Helpers
             function getValue(row, key){
@@ -126,7 +153,7 @@
                 const tbody = document.getElementById('property-table-body');
                 tbody.innerHTML = '';
                 const start = (currentPage-1)*pageSize;
-                const pageItems = filtered.slice(start, start+pageSize);
+                const pageItems = paginationDisabled ? filtered.slice() : filtered.slice(start, start+pageSize);
                 if (!pageItems.length){
                     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;">No data available.</td></tr>';
                     renderPagination();
@@ -154,6 +181,14 @@
 
             function renderPagination(){
                 const container = document.getElementById('client-pagination');
+                const serverPg = document.getElementById('server-pagination');
+                // If pagination is disabled, hide both client and server pagination
+                if (paginationDisabled){
+                    if (container) container.innerHTML = '';
+                    if (serverPg) serverPg.style.display = 'none';
+                    return;
+                }
+                if (serverPg) serverPg.style.display = 'none';
                 const total = Math.ceil(filtered.length / pageSize) || 1;
                 let html = '';
                 if (total > 1){
@@ -228,15 +263,43 @@
             filtered = fullData.slice();
             renderTable();
 
-            // Expose a global function so other scripts (AJAX) can refresh the table
-            window.refreshPropertyTable = function(){
+            // Toggle handler: disable/enable pagination
+            const toggle = document.getElementById('togglePagination');
+            if (toggle){
+                toggle.addEventListener('change', function(){
+                    paginationDisabled = this.checked;
+                    // when disabling pagination, ensure we render all rows and reset page index
+                    if (paginationDisabled) currentPage = 1;
+                    renderTable();
+                    // when disabled, allow the table to scroll naturally (no extra controls)
+                });
+            }
+        })();
+        </script>
+        <script>
+        // Ensure the table scroll container has a computed max-height so vertical scroll appears
+        (function(){
+            function applyTableScrollHeight(){
                 try{
-                    const dataElReload = document.getElementById('properties-data');
-                    fullData = dataElReload ? JSON.parse(dataElReload.textContent) : [];
-                }catch(e){ console.warn('Failed to parse refreshed properties JSON', e); fullData = []; }
-                // preserve current search/sort/page state where possible
-                applyFilter();
-            };
+                    const wrapper = document.querySelector('.property-table-scroll');
+                    if(!wrapper) return;
+                    // prefer measuring the topbar element if present, otherwise fall back to CSS var
+                    const topbarEl = document.querySelector('.topbar');
+                    const topbarH = topbarEl ? topbarEl.getBoundingClientRect().height : parseInt(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 80;
+                    // reserve space for KPI cards and other UI (adjustable offset)
+                    const extraOffset = 220; // px
+                    const avail = Math.max(200, Math.floor(window.innerHeight - topbarH - extraOffset));
+                    wrapper.style.maxHeight = avail + 'px';
+                    wrapper.style.overflowY = 'auto';
+                    wrapper.style.overflowX = 'auto';
+                    // ensure sticky headers have high z-index
+                    document.querySelectorAll('#property-table thead th').forEach(th => { th.style.zIndex = 999; });
+                }catch(e){ console.warn('applyTableScrollHeight failed', e); }
+            }
+            window.addEventListener('resize', applyTableScrollHeight);
+            window.addEventListener('load', applyTableScrollHeight);
+            // run after a short delay to allow layout to settle
+            setTimeout(applyTableScrollHeight, 120);
         })();
         </script>
     </div>

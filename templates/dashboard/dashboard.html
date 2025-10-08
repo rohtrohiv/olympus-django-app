@@ -77,7 +77,7 @@ div[style*="width:100%"].drawer-open {
     display:flex;align-items:center;justify-content:center;cursor:pointer;margin-right:8px;color:var(--nav-text);
 }
 .filter-toggle-floating{
-    position:fixed;left:20px;top:calc(var(--topbar-h) + 18px);width:56px;height:56px;border-radius:50%;
+    position:fixed;left:0px;top:calc(var(--topbar-h) + 18px);width:56px;height:56px;border-radius:50%;
     background:var(--aqua);color:#053033;display:flex;align-items:center;justify-content:center;z-index:90;
     box-shadow:0 8px 24px rgba(9,45,47,0.12);border:2px solid rgba(255,255,255,0.9);cursor:pointer;font-size:20px
 }
@@ -121,12 +121,12 @@ div[style*="width:100%"].drawer-open {
 .filter-close{margin-left:auto;background:none;border:none;padding:8px;border-radius:8px;cursor:pointer;color:#4f6bed}
 
 /* When filter pane is open, use padding and width to keep content within viewport */
-.filter-open .main{padding-left:260px;width:100vw;box-sizing:border-box;transition:padding-left .28s}
+.filter-open .main{padding-left:260px;width:100%;box-sizing:border-box;transition:padding-left .28s}
 .filter-open .charts-container{padding-left:260px;width:100%;box-sizing:border-box;transition:padding-left .28s}
-div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;transition:padding-left .28s}
+.filter-open div[style*="width:100%"]{padding-left:260px;box-sizing:border-box;transition:padding-left .28s}
 /* Ensure the property table and its wrapper shift when filter pane is open to avoid overlap */
-.filter-open .property-table-container{padding-left:260px !important;box-sizing:border-box;transition:padding-left .28s}
-.filter-open div[style*="width:100%"] > .property-table-container{padding-left:260px !important}
+.filter-open .property-table-container{padding-left:0px !important;box-sizing:border-box;transition:padding-left .28s}
+.filter-open div[style*="width:100%"] > .property-table-container{padding-left:0px !important}
 @media (max-width:1200px){
     .filter-open .main,.filter-open .charts-container,div[style*="width:100%"].filter-open{padding-left:260px}
     .filter-open .property-table-container{padding-left:260px !important}
@@ -214,40 +214,48 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
 
 .main {
     width: 100%;
-    max-width: 1400px;
-    margin: 0 auto;
+    max-width: none;
+    margin: 0;
     min-height: 100px;
-    padding: 12px 8px 0 8px;
+    padding: 12px 16px 0 16px;
     display: flex;
     align-items: flex-start;
-    justify-content: flex-start;
+    justify-content: flex-start; /* keep content left-aligned */
+    box-sizing: border-box;
 }
 
 .sidebar{
+    /* keep sidebar aligned with main content; avoid fixed left margin that can cause gaps */
+    margin-left: 0;
     display: flex;
     flex-direction: row;
-    gap: 8px;
+    gap: 12px;
     align-self: start;
     position: sticky;
     top: calc(var(--topbar-h) + 8px);
     flex-wrap: wrap;
     width: 100%;
-    justify-content: center;
+    justify-content: flex-start; /* left align KPI cards to avoid centered gutters */
 }
 .card.kpi {
     min-width: 115px;
-    flex: 0 1 110px;
+    flex: 1 1 100px; /* allow cards to grow and fill space when zoomed out */
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: center; /* center label/value/trend inside each KPI card */
     justify-content: center;
+    padding: 12px; /* give a bit more padding for readability */
+    text-align: center; /* ensure inner text is centered */
 }
 @media (max-width: 1200px) {
     .sidebar {
         gap: 8px;
+        justify-content: center; /* center on smaller screens for better UX */
     }
     .card.kpi {
         min-width: 260px;
+        flex: 1 1 260px; /* ensure mobile cards take full width when needed */
+        align-items: center;
     }
 }
 @media (max-width: 900px) {
@@ -271,6 +279,26 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
     }
 }
 
+/* When filter pane is open, align property table and main content to the same left edge
+   so there's no visual gap between the filter pane and property list. */
+.filter-open .sidebar{ margin-left: 0 !important; }
+/* Shift the whole top-level regions to the right when the filter pane is open
+   using margin-left so inner containers keep their own padding and do not double-offset. */
+.filter-open .main,
+.filter-open .charts-container,
+.filter-open #property-table-fragment {
+    margin-left: 260px;
+    box-sizing: border-box;
+    transition: margin-left .28s;
+    /* remove the main left padding so inner content is visually flush with the pane */
+    padding-left: 0 !important;
+}
+/* Reduce inner container padding slightly so the table and charts don't show a large gutter */
+.filter-open .property-table-container,
+.filter-open div[style*="width:100%"] {
+    padding-left: 12px !important; /* small gutter inside container */
+}
+
 /* Card styling */
 .card {
     background: var(--card-bg);
@@ -279,8 +307,10 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
     padding: 10px 8px;
     box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 }
-.kpi .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted); text-align: center;}
-.kpi .value{font-size:18px;line-height:1.1;font-weight:700;margin-top:2px}
+.kpi .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.kpi .value{font-size:18px;line-height:1.1;font-weight:700;margin-top:6px}
+.card.kpi a{display:block;width:100%;text-align:center;margin-top:6px;color:#4f6bed;font-size:12px;text-decoration:none}
+.card.kpi .kpi-trend{margin-top:6px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px}
 
 .section{margin-bottom:var(--gap)}
 .section-title{font-weight:700;margin:2px 0 6px;color:#0B3A3F;font-size:13px}
@@ -291,8 +321,8 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
 /* Responsive chart container and canvas */
 .charts-container {
     width: 100%;
-    max-width: 1400px;
-    margin: 0 auto;
+    max-width: none;
+    margin: 0;
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
@@ -474,7 +504,17 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
                     <select name="community" id="filterCommunity" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff">
                         <option value="">All Communities</option>
                         {% for c in communities %}
-                            <option value="{{ c }}" {% if c == selected_community %}selected{% endif %}>{{ c }}</option>
+                            {% if c.community_name %}
+                                <option value="{{ c.community_name }}" {% if c.community_name == selected_community %}selected{% endif %}>{{ c.community_name }}</option>
+                            {% elif c.name %}
+                                <option value="{{ c.name }}" {% if c.name == selected_community %}selected{% endif %}>{{ c.name }}</option>
+                            {% elif c.community %}
+                                <option value="{{ c.community }}" {% if c.community == selected_community %}selected{% endif %}>{{ c.community }}</option>
+                            {% elif c.property_name %}
+                                <option value="{{ c.property_name }}" {% if c.property_name == selected_community %}selected{% endif %}>{{ c.property_name }}</option>
+                            {% else %}
+                                <option value="{{ c }}" {% if c == selected_community %}selected{% endif %}>{{ c }}</option>
+                            {% endif %}
                         {% endfor %}
                     </select>
                 </form>
@@ -492,7 +532,7 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
         <div style="height:32px;"></div>
 
         <!-- Modal for Total Units List -->
-        <div id="units-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+    <div id="units-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
             <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
                 <button onclick="closeUnitsModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
                 <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Units by Property <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
@@ -656,7 +696,7 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
         rebuildQuarterOptionsForYear(selYear.value);
     }
 
-    // --- Dependent dropdowns: investor -> regional -> community ---
+    // --- Dependent dropdowns: community -> regional -> investor (reverse cascade) ---
     try{
         const invToRegional = JSON.parse('{{ inv_to_regional_json|default:"{}"|escapejs }}');
         const invRegToCommunities = JSON.parse('{{ inv_reg_to_communities_json|default:"{}"|escapejs }}');
@@ -664,35 +704,96 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
         const selRegional = document.getElementById('filterRegional');
         const selCommunity = document.getElementById('filterCommunity');
 
-        function rebuildRegionalForInvestor(inv){
+        // Cache original option lists so we can restore them when clearing filters
+        const origInvOptions = selInv ? Array.from(selInv.options).map(o=>({value:o.value,text:o.textContent})) : [];
+        const origRegionalOptions = selRegional ? Array.from(selRegional.options).map(o=>({value:o.value,text:o.textContent})) : [];
+    const origCommunityOptions = selCommunity ? Array.from(selCommunity.options).map(o=>({value:o.value,text:o.textContent})) : [];
+
+        // Build reverse map: community -> { investors: Set, regionals: Set }
+        const communityMap = {};
+        Object.keys(invRegToCommunities).forEach(key => {
+            const parts = key.split('|||');
+            const inv = parts[0] || '';
+            const rm = parts[1] || '';
+            const comms = invRegToCommunities[key] || [];
+            comms.forEach(c => {
+                if(!communityMap[c]) communityMap[c] = { investors: new Set(), regionals: new Set() };
+                if(inv) communityMap[c].investors.add(inv);
+                if(rm) communityMap[c].regionals.add(rm);
+            });
+        });
+
+        function restoreSelect(sel, origOptions){
+            if(!sel) return;
+            sel.innerHTML = '';
+            origOptions.forEach(o=>{ const opt=document.createElement('option'); opt.value=o.value; opt.textContent=o.text; sel.appendChild(opt); });
+        }
+
+        function rebuildRegionalForCommunity(community){
             if(!selRegional) return;
+            if(!community){ restoreSelect(selRegional, origRegionalOptions); return; }
+            const regionals = communityMap[community] ? Array.from(communityMap[community].regionals) : [];
             selRegional.innerHTML = '';
             const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Regional Managers'; selRegional.appendChild(allOpt);
-            const opts = invToRegional[inv] || [];
-            opts.forEach(rm => { const o=document.createElement('option'); o.value=rm; o.textContent=rm; selRegional.appendChild(o); });
+            regionals.forEach(rm => { const o=document.createElement('option'); o.value=rm; o.textContent=rm; selRegional.appendChild(o); });
         }
 
-        function rebuildCommunityForInvRegional(inv, rm){
-            if(!selCommunity) return;
-            selCommunity.innerHTML = '';
-            const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Communities'; selCommunity.appendChild(allOpt);
-            const key = (inv||'') + '|||' + (rm||'');
-            const opts = invRegToCommunities[key] || [];
-            opts.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; selCommunity.appendChild(o); });
+        function rebuildInvestorForCommunity(community){
+            if(!selInv) return;
+            if(!community){ restoreSelect(selInv, origInvOptions); return; }
+            const investors = communityMap[community] ? Array.from(communityMap[community].investors) : [];
+            selInv.innerHTML = '';
+            const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Investors'; selInv.appendChild(allOpt);
+            investors.forEach(inv => { const o=document.createElement('option'); o.value=inv; o.textContent=inv; selInv.appendChild(o); });
         }
 
-        // Initialize based on current selections
-        const initialInv = '{{ selected_investor|default:""|escapejs }}';
-        const initialRegional = '{{ selected_regional_manager|default:""|escapejs }}';
+        // When community changes: populate regionals and investors related to that community
+        if(selCommunity){
+            selCommunity.addEventListener('change', function(){
+                const c = this.value;
+                if(!c){ // restore originals
+                    restoreSelect(selRegional, origRegionalOptions);
+                    restoreSelect(selInv, origInvOptions);
+                } else {
+                    rebuildRegionalForCommunity(c);
+                    rebuildInvestorForCommunity(c);
+                }
+            });
+        }
+
+        // When regional changes (after community selected), further filter investors to those matching community+regional
+        if(selRegional){
+            selRegional.addEventListener('change', function(){
+                const c = selCommunity ? selCommunity.value : '';
+                const r = this.value;
+                if(!c){ restoreSelect(selInv, origInvOptions); return; }
+                if(!r){ rebuildInvestorForCommunity(c); return; }
+                // Find investors that map to (regional r) and include community c
+                const invs = [];
+                Object.keys(invRegToCommunities).forEach(key => {
+                    const [inv, rm] = key.split('|||');
+                    const comms = invRegToCommunities[key] || [];
+                    if(rm === r && comms.indexOf(c) !== -1){ if(!invs.includes(inv)) invs.push(inv); }
+                });
+                selInv.innerHTML = '';
+                const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Investors'; selInv.appendChild(allOpt);
+                invs.forEach(inv => { const o=document.createElement('option'); o.value=inv; o.textContent=inv; selInv.appendChild(o); });
+            });
+        }
+
+        // Initialize: keep all selects populated by default, but if there's an initial community selection, apply filtering
         const initialCommunity = '{{ selected_community|default:""|escapejs }}';
-        if(initialInv && selInv) selInv.value = initialInv;
-        rebuildRegionalForInvestor(selInv ? selInv.value : '');
-        if(initialRegional && selRegional) selRegional.value = initialRegional;
-        rebuildCommunityForInvRegional(selInv ? selInv.value : '', selRegional ? selRegional.value : '');
-        if(initialCommunity && selCommunity) selCommunity.value = initialCommunity;
-
-        if(selInv) selInv.addEventListener('change', function(){ rebuildRegionalForInvestor(this.value); rebuildCommunityForInvRegional(this.value, ''); });
-        if(selRegional) selRegional.addEventListener('change', function(){ rebuildCommunityForInvRegional(selInv ? selInv.value : '', this.value); });
+        const initialRegional = '{{ selected_regional_manager|default:""|escapejs }}';
+        const initialInv = '{{ selected_investor|default:""|escapejs }}';
+        if(initialCommunity && selCommunity){
+            // apply after a tick so DOM is ready
+            setTimeout(()=>{
+                selCommunity.value = initialCommunity;
+                selCommunity.dispatchEvent(new Event('change'));
+                if(initialRegional && selRegional){ selRegional.value = initialRegional; selRegional.dispatchEvent(new Event('change')); }
+                if(initialInv && selInv){ selInv.value = initialInv; }
+            },0);
+        }
     }catch(e){ console.warn('Dependent dropdown init failed', e); }
 
     // Apply: submit via GET preserving other params where possible
@@ -881,7 +982,7 @@ div[style*="width:100%"].filter-open{padding-left:260px;box-sizing:border-box;tr
     </script>
 
     <!-- Advanced Modal for Property List -->
-<div id="property-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+<div id="property-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closePropertyModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
         <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
@@ -1313,7 +1414,7 @@ document.addEventListener('DOMContentLoaded', function() {
     </script>
 
 <!-- Modal for Properties Chart -->
-<div id="properties-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+<div id="properties-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closePropertiesChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
         <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Total Properties Growth</h2>
@@ -1324,7 +1425,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <!-- Modal for Units Chart -->
-<div id="units-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+<div id="units-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closeUnitsChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
         <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Total Units Growth</h2>
@@ -1336,7 +1437,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <!-- Modal for Occupancy Chart -->
-<div id="occupancy-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
+<div id="occupancy-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closeOccupancyChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
         <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Occupancy & Revenue</h2>
