@@ -46,6 +46,7 @@
                         <option value="asst_manager">Asst Manager</option>
                     </select>
                     <button id="property-table-clear" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;background:#f1f5f9;">Clear</button>
+                    <button id="property-table-export" type="button" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;background:#e6fffa;color:#064e3b;">Export CSV</button>
                 </div>
                 <!-- New: Toggle to disable pagination and show all rows -->
                 <div style="display:flex;align-items:center;gap:8px;">
@@ -221,6 +222,7 @@
             const searchInput = document.getElementById('property-table-search');
             const columnSelect = document.getElementById('property-table-column');
             const clearBtn = document.getElementById('property-table-clear');
+            const exportBtn = document.getElementById('property-table-export');
 
             function applyFilter(){
                 const q = (searchInput.value || '').trim().toLowerCase();
@@ -240,6 +242,79 @@
             searchInput.addEventListener('input', ()=>{ applyFilter(); });
             columnSelect.addEventListener('change', ()=>{ applyFilter(); });
             clearBtn.addEventListener('click', ()=>{ searchInput.value=''; columnSelect.value='all'; filtered = fullData.slice(); sortKey=null; sortDir=1; currentPage=1; renderTable(); });
+
+            // CSV export: serialize current filtered rows (visible columns) to CSV
+            function escapeCsv(value){
+                if (value === null || value === undefined) return '';
+                const s = String(value);
+                if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+                    return '"' + s.replace(/"/g, '""') + '"';
+                }
+                return s;
+            }
+
+            function formatCurrency(n){
+                if (n === null || n === undefined || n === '') return '';
+                try{ return '$' + Number(n).toLocaleString(); }catch(e){ return String(n); }
+            }
+
+            function formatOccupancy(n){
+                if (n === null || n === undefined || n === '') return '';
+                try{ return Number(n).toFixed(1) + '%'; }catch(e){ return String(n); }
+            }
+
+            function exportCsv(){
+                // Ensure any global loading overlay is hidden while doing client-side export
+                try{ const loadingOverlay = document.getElementById('loadingOverlay'); if(loadingOverlay) loadingOverlay.style.display = 'none'; }catch(e){}
+                // columns in desired order
+                const headers = [
+                    'Property Number','Property Name','Investor','Regional Manager','Regional Director','Asst Manager',
+                    'Total Units','Occupied Units','Latest Snapshot','Occupancy %','Effective Rent','Market Rent','Move Outs','Avg $/sqft'
+                ];
+                const rows = [headers.map(escapeCsv).join(',')];
+                const data = filtered.slice();
+                data.forEach(r => {
+                    const latest = r.latest_snapshot_date || r.snapshotdate || r.latestSnapshotDate || '';
+                    const occ = (r.occupancy_pct !== undefined && r.occupancy_pct !== null) ? Number(r.occupancy_pct).toFixed(1) : (r.percentage_occupacy || '');
+                    const eff = (r.effective_rent!==null && r.effective_rent!==undefined && r.effective_rent!=='') ? formatCurrency(r.effective_rent) : '';
+                    const mkt = (r.market_rent!==null && r.market_rent!==undefined && r.market_rent!=='') ? formatCurrency(r.market_rent) : '';
+                    const mo = (r.total_move_outs!==null && r.total_move_outs!==undefined) ? r.total_move_outs : '';
+                    const sqft = (r.avg_amount_per_sqft!==null && r.avg_amount_per_sqft!==undefined && r.avg_amount_per_sqft!=='') ? ('$'+Number(r.avg_amount_per_sqft).toFixed(2)) : '';
+                    const row = [
+                        r.property_number || '',
+                        r.property_name || '',
+                        r.investor || '',
+                        r.regional_area_manager || '',
+                        r.regional_director || '',
+                        r.asst_manager || '',
+                        r.total_units || '',
+                        r.occupied_units || '',
+                        latest || '',
+                        occ || '',
+                        eff || '',
+                        mkt || '',
+                        mo || '',
+                        sqft || ''
+                    ];
+                    rows.push(row.map(escapeCsv).join(','));
+                });
+
+                const csv = rows.join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                // determine filename from selected period text in header
+                let periodText = '';
+                try{ const span = document.querySelector('#property-table-fragment h2 span'); periodText = span ? span.textContent.replace(/[^0-9A-Za-z-]/g,'_') : ''; }catch(e){ periodText = ''; }
+                const filename = `Properties_KPIs_Data${periodText ? '_' + periodText : ''}.csv`;
+                const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+                // Hide overlay in case something elsewhere left it visible (both local and global)
+                try{ const loadingOverlay = document.getElementById('loadingOverlay'); if(loadingOverlay) loadingOverlay.style.display = 'none'; }catch(e){}
+                try{ const globalOverlay = document.getElementById('globalLoadingOverlay'); if(globalOverlay) globalOverlay.style.display = 'none'; }catch(e){}
+                // Safety: ensure overlays are cleared shortly after download starts in case other code set them
+                setTimeout(()=>{ try{ const loadingOverlay = document.getElementById('loadingOverlay'); if(loadingOverlay) loadingOverlay.style.display = 'none'; }catch(e){} try{ const globalOverlay = document.getElementById('globalLoadingOverlay'); if(globalOverlay) globalOverlay.style.display = 'none'; }catch(e){} }, 1000);
+            }
+
+            if (exportBtn) exportBtn.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); exportCsv(); });
 
             // Sorting on header click
             // Initialize header affordances (indicator, title, keyboard accessibility)
