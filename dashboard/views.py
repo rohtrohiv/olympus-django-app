@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.db.models import Max, Sum, Avg, Count, Q, F
-from .models import OlympusLeaseTrendAnalysis
+from .models import OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly
 from datetime import datetime, date, timedelta
 from django.db.models.functions import ExtractYear, ExtractMonth
 from .services import DashboardService
@@ -619,132 +619,7 @@ def analytics_query(request):
 					'data': chart_values,
 					'borderColor': color,
 					'backgroundColor': bg_color,
-					'tension': 0.4
 				})
-
-			response_data['chart_data'] = {
-				'labels': chart_labels,
-				'datasets': datasets
-			}
-		else:
-			# Time-series chart by snapshot date
-			from collections import defaultdict
-			from datetime import datetime, timedelta
-			import calendar
-		
-			# Build date -> rows mapping so we can compute "latest-as-of" snapshots per date
-			date_rows = defaultdict(list)
-			selected_metrics = metrics if metrics else ['percentage_occupacy']
-			for item in all_data:
-				raw_date = item.get('snapshotdate')
-				if not raw_date:
-					continue
-				from datetime import date as _date, datetime as _datetime
-				if isinstance(raw_date, (_date, _datetime)):
-					date_key = raw_date.strftime('%Y-%m-%d')
-				else:
-					date_key = str(raw_date)
-				date_rows[date_key].append(item)
-		
-			chart_labels = []
-			datasets = []
-		
-			# Enhanced date handling based on date range
-			if date_range == 'last_30_days' or date_range == 'custom':
-				# For last 30 days or custom range, show individual dates
-				sorted_dates = sorted(date_rows.keys())
-				if date_range == 'custom':
-					chart_labels = []
-					date_range_keys = sorted_dates
-					for date_key in sorted_dates:
-						try:
-							if len(date_key) > 8 and '-' in date_key:  # YYYY-MM-DD format
-								date_obj = datetime.strptime(date_key, '%Y-%m-%d')
-								chart_labels.append(date_obj.strftime('%m/%d/%y'))
-							elif len(date_key) <= 8 and '-' in date_key:  # Mon-YYYY format
-								month_name, year = date_key.split('-')
-								month_num = list(calendar.month_abbr).index(month_name)
-								date_obj = datetime(int(year), month_num, 1)
-								chart_labels.append(date_obj.strftime('%b %Y'))
-							else:
-								chart_labels.append(date_key)
-						except (ValueError, IndexError):
-							chart_labels.append(date_key)
-				else:
-					# Generate labels for all dates in the last 30 days
-					today = datetime.now()
-					date_range_labels = []
-					date_range_keys = []
-					for i in range(30):
-						check_date = today - timedelta(days=i)
-						date_key = check_date.strftime('%Y-%m-%d')
-						date_label = check_date.strftime('%m/%d')
-						date_range_keys.insert(0, date_key)
-						date_range_labels.insert(0, date_label)
-					# Also check for month-year format dates and convert them to month-end YYYY-MM-DD
-					month_year_dates = []
-					for date_key in sorted_dates:
-						if len(date_key) <= 8 and '-' in date_key:
-							try:
-								month_name, year = date_key.split('-')
-								month_num = list(calendar.month_abbr).index(month_name)
-								last_day = calendar.monthrange(int(year), month_num)[1]
-								converted_date = f"{year}-{month_num:02d}-{last_day:02d}"
-								month_year_dates.append((converted_date, date_key))
-							except (ValueError, IndexError):
-								pass
-					for converted_date, original_key in month_year_dates:
-						try:
-							date_obj = datetime.strptime(converted_date, '%Y-%m-%d')
-							if (today - date_obj).days <= 30:
-								date_label = date_obj.strftime('%m/%d')
-								if converted_date not in date_range_keys:
-									# place converted_date in chronological position
-									insert_pos = 0
-									for i, existing_key in enumerate(date_range_keys):
-										if existing_key < converted_date:
-											insert_pos = i + 1
-										else:
-											break
-									date_range_keys.insert(insert_pos, converted_date)
-									date_range_labels.insert(insert_pos, date_label)
-									# map original rows to converted key
-									if original_key in date_rows:
-										date_rows[converted_date] = date_rows[original_key]
-						except ValueError:
-							pass
-					chart_labels = date_range_labels
-					date_range_keys = date_range_keys
-				final_date_keys = date_range_keys
-			else:
-				# For other date ranges, group by month and show month-end data
-				monthly_rows = defaultdict(list)
-				for date_key in date_rows.keys():
-					try:
-						if len(date_key) > 8 and '-' in date_key:
-							date_obj = datetime.strptime(date_key, '%Y-%m-%d')
-							month_key = date_obj.strftime('%Y-%m')
-						elif len(date_key) <= 8 and '-' in date_key:
-							month_name, year = date_key.split('-')
-							month_num = list(calendar.month_abbr).index(month_name)
-							month_key = f"{year}-{month_num:02d}"
-						else:
-							continue
-						monthly_rows[month_key].extend(date_rows[date_key])
-					except (ValueError, IndexError):
-						continue
-				# Sort months and create labels
-				sorted_months = sorted(monthly_rows.keys())[-24:]
-				chart_labels = []
-				for month_key in sorted_months:
-					try:
-						month_obj = datetime.strptime(month_key, '%Y-%m')
-						chart_labels.append(month_obj.strftime('%b %Y'))
-					except ValueError:
-						chart_labels.append(month_key)
-				# Use monthly_rows as our date bucket source
-				date_rows = monthly_rows
-				final_date_keys = sorted_months
 		
 			# Create a dataset for each selected metric
 			palette = ['#1E40AF', '#059669', '#5B21B6', '#EA580C', '#7C2D12']  # calm, readable colors
@@ -755,6 +630,11 @@ def analytics_query(request):
 			for i, metric in enumerate(selected_metrics[:6]):  # Limit to 6 metrics for readability
 				metric_label = table_fields.get(metric, metric.replace('_', ' ').title())
 				chart_values = []
+				# ensure date_rows and final_date_keys exist (some fallback branches build them earlier)
+				if 'final_date_keys' not in locals():
+					final_date_keys = []
+				if 'date_rows' not in locals():
+					date_rows = {}
 				for date_key in final_date_keys:
 					# For each date bucket, collect rows and compute aggregate using helpers
 					rows_for_bucket = date_rows.get(date_key, []) if date_rows else []
@@ -1048,12 +928,45 @@ def parse_period(period):
 @login_required
 def dashboard(request):
 	user = request.user
-	# If the user didn't supply any period-related parameters, default to ALL years
+	# If the user didn't supply any period-related parameters, default to the
+	# latest available month (server-side) rather than the full 'all years' set.
 	period_params = ['period_mode', 'period_year', 'period_quarter', 'period_month', 'period']
 	has_period_param = any([p in request.GET and request.GET.get(p) for p in period_params])
 	if not has_period_param:
-		# prefer the 'all years' dataset on first landing
-		params = {'period_mode': 'year', 'period_year': 'all'}
+		# Inspect available periods via the DashboardService so the server picks
+		# the latest month present in the DB. Fall back to 'all years' when no
+		# month data is available (e.g., empty DB during local dev).
+		svc_probe = DashboardPageService({})
+		svc_periods = svc_probe.get_context().get('periods') or {}
+		# periods structure: { '2025': { 'months': [...], 'quarters': {...} }, ... }
+		if svc_periods:
+			# choose newest year then newest month within that year's quarters
+			try:
+				latest_year = next(iter(sorted(svc_periods.keys(), reverse=True)))
+				# Find latest month by traversing quarters (quarters contain month names)
+				quarters = svc_periods.get(latest_year, {}).get('quarters', {})
+				if quarters:
+					latest_quarter = next(iter(sorted(quarters.keys(), reverse=True)))
+					months = quarters.get(latest_quarter, [])
+					if months:
+						latest_month = sorted(months, key=lambda m: datetime.strptime(m, '%b'))[-1]
+						params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
+					else:
+						# no months found -> fall back to all years
+						params = {'period_mode': 'year', 'period_year': 'all'}
+				else:
+					# no quarters -> try months top-level (compat)
+					months_top = svc_periods.get(latest_year, {}).get('months') or []
+					if months_top:
+						latest_month = sorted(months_top, key=lambda m: datetime.strptime(m, '%b'))[-1]
+						params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
+					else:
+						params = {'period_mode': 'year', 'period_year': 'all'}
+			except Exception:
+				params = {'period_mode': 'year', 'period_year': 'all'}
+		else:
+			# no period data available at all; preserve previous default
+			params = {'period_mode': 'year', 'period_year': 'all'}
 	else:
 		# pass through user-supplied GET parameters
 		params = request.GET
@@ -1085,28 +998,384 @@ def dashboard(request):
 	# sort lists
 	inv_reg_to_communities = {k: sorted(v) for k, v in inv_reg_to_communities.items()}
 
+	# Build renewals chart from monthly KPIs table (if available). This yields
+	# labels + two datasets: Expirations and Renewals. We keep a safe fallback
+	# in case the monthly table is missing or the query fails (so local dev
+	# without the production table won't crash the dashboard).
+	# Consolidated monthly KPI aggregation: build one grouped query (year or year+month)
+	try:
+		from django.db.models import Sum, Avg, Count
+		monthly_qs = OlympusLeaseKpisTrendMonthly.objects.all()
+		# Apply basic filters matching the UI
+		inv = params.get('investor') if hasattr(params, 'get') else params.get('investor', '')
+		regional = params.get('regional_manager') if hasattr(params, 'get') else params.get('regional_manager', '')
+		community = params.get('community') if hasattr(params, 'get') else params.get('community', '')
+		if inv:
+			monthly_qs = monthly_qs.filter(investor=inv)
+		if regional:
+			monthly_qs = monthly_qs.filter(regional_area_manager=regional)
+		if community:
+			monthly_qs = monthly_qs.filter(property_name=community)
+
+		# Business rule: exclude BLACKSTONE/LIVCOR for periods after June 2025
+		# unless the user explicitly filtered by investor.
+		try:
+			def _period_after_jun_2025_local(mode, year, months_list, quarter):
+				import re, calendar
+				try:
+					if mode == 'month' and months_list:
+						# months_list may be a list like ['Oct'] or a single selected period string
+						mval = months_list if isinstance(months_list, str) else (months_list[0] if months_list else '')
+						mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', mval)
+						if mm:
+							mon_abbr, yr = mm.groups()
+							mon_num = list(calendar.month_abbr).index(mon_abbr)
+							yr = int(yr)
+							return (yr > 2025) or (yr == 2025 and mon_num > 6)
+					if mode == 'quarter' and quarter:
+						mm = re.search(r'Q(\d)', quarter, re.I)
+						yy = re.search(r'(\d{4})', quarter)
+						if mm and yy:
+							qnum = int(mm.group(1))
+							yr = int(yy.group(1))
+							return (yr > 2025) or (yr == 2025 and qnum >= 3)
+					if mode == 'year' and year and str(year).isdigit():
+						return int(year) > 2025
+				except Exception:
+					return False
+				return False
+
+			sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
+			sel_period = svc_ctx.get('selected_period') or svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
+			year, months = parse_period(sel_period) if sel_period else (None, None)
+			if _period_after_jun_2025_local(sel_mode, year, sel_period, svc_ctx.get('period_quarter')) and not inv:
+				monthly_qs = monthly_qs.exclude(investor__iexact='BLACKSTONE/LIVCOR')
+		except Exception:
+			pass
+
+		# Period selection and bucket decision
+		# Prefer the service-provided `selected_period`. If that is missing (the
+		# PageService may set `period_month`/`period_quarter` instead), fall back
+		# to those fields so the monthly aggregation is narrowed correctly.
+		sel_period = svc_ctx.get('selected_period')
+		if not sel_period:
+			# try explicit month/quarter/year values from the service context
+			sel_period = svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
+		sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
+		year, months = parse_period(sel_period) if sel_period else (None, None)
+		import calendar as _calendar
+		show_by_year = (sel_mode == 'year') or (svc_ctx.get('period_year') in (None, 'all'))
+
+		# Narrow the queryset when a specific year/months are requested
+		if not show_by_year:
+			if year and months:
+				month_nums = []
+				for m in months:
+					try:
+						month_nums.append(list(_calendar.month_abbr).index(m))
+					except Exception:
+						pass
+				if month_nums:
+					monthly_qs = monthly_qs.filter(enddateofmonth__month__in=month_nums, enddateofmonth__year=int(year))
+				else:
+					monthly_qs = monthly_qs.filter(enddateofmonth__year=int(year))
+			elif year and year != 'all':
+				try:
+					monthly_qs = monthly_qs.filter(enddateofmonth__year=int(year))
+				except Exception:
+					pass
+
+		# Build grouped aggregation that returns all needed fields per bucket
+		if show_by_year:
+			grouped = (monthly_qs
+					 .annotate(year=ExtractYear('enddateofmonth'))
+					 .values('year')
+					 .annotate(cnt=Count('property_number'),
+					           expirations_sum=Sum('expirations'),
+					           renewed_sum=Sum('renewed'),
+					           controllable_sum=Sum('controllable_expense'),
+					           non_controllable_sum=Sum('non_controllable_expense'),
+					           service_requests_sum=Sum('service_request'),
+					           exposure_sum=Sum('exposure'),
+					           delinquency_sum=Sum('delinquency'),
+					           renewal_conv_avg=Avg('renewel_conversion'),
+					           avg_turn=Avg('average_turn_time'))
+					 .order_by('year'))
+			rows = list(grouped)[-6:]
+		else:
+			grouped = (monthly_qs
+				 .annotate(year=ExtractYear('enddateofmonth'), month=ExtractMonth('enddateofmonth'))
+				 .values('year', 'month')
+				 .annotate(cnt=Count('property_number'),
+				           expirations_sum=Sum('expirations'),
+				           renewed_sum=Sum('renewed'),
+				           controllable_sum=Sum('controllable_expense'),
+				           non_controllable_sum=Sum('non_controllable_expense'),
+				           service_requests_sum=Sum('service_request'),
+				           exposure_sum=Sum('exposure'),
+				           delinquency_sum=Sum('delinquency'),
+				           renewal_conv_avg=Avg('renewel_conversion'),
+				           avg_turn=Avg('average_turn_time'))
+				 .order_by('year', 'month'))
+			rows = list(grouped)[-6:]
+
+		# Build charts and KPI aggregates from rows
+		labels = []
+		expirations = []
+		renewals = []
+		elabels = []
+		controllable = []
+		non_controllable = []
+		# KPI accumulator
+		total_service_requests = 0
+		total_exposure = 0
+		total_delinquency = 0
+		# For pooled averages (avg_turn_time, renewal_conv) compute numerator/denominator
+		turn_num = 0.0
+		turn_den = 0
+		rc_num = 0.0
+		rc_den = 0
+		from datetime import datetime as _dt
+		for r in rows:
+			if show_by_year:
+				y = int(r.get('year') or 0)
+				labels.append(str(y) if y else '')
+			else:
+				y = int(r.get('year') or 0)
+				m = int(r.get('month') or 0)
+				if y and m:
+					try:
+						labels.append(_dt(y, m, 1).strftime('%b-%y'))
+					except Exception:
+						labels.append(f"{m}-{y}")
+				else:
+					labels.append('')
+
+			expirations.append(int(r.get('expirations_sum') or 0))
+			renewals.append(int(r.get('renewed_sum') or 0))
+
+			# expense labels mirror renewals labels
+			elabels.append(labels[-1])
+			controllable.append(round((r.get('controllable_sum') or 0) / 1000.0, 2))
+			non_controllable.append(round((r.get('non_controllable_sum') or 0) / 1000.0, 2))
+
+			# KPIs accumulation
+			total_service_requests += int(r.get('service_requests_sum') or 0)
+			total_exposure += int(r.get('exposure_sum') or 0)
+			total_delinquency += int(r.get('delinquency_sum') or 0)
+
+			cnt = int(r.get('cnt') or 0)
+			avg_turn = r.get('avg_turn')
+			if avg_turn is not None and cnt:
+				turn_num += float(avg_turn) * cnt
+				turn_den += cnt
+			rc = r.get('renewal_conv_avg')
+			if rc is not None and cnt:
+				rc_num += float(rc) * cnt
+				rc_den += cnt
+
+		# Build chart payloads
+		chart_renewals = {
+			'labels': labels,
+			'datasets': [
+				{'label': 'Expirations', 'data': expirations, 'backgroundColor': '#E5E7EB', 'borderColor': '#CBD5E1'},
+				{'label': 'Renewals', 'data': renewals, 'backgroundColor': '#0E555A', 'borderColor': '#0E555A'}
+			]
+		}
+
+		chart_expense = {
+			'labels': elabels,
+			'datasets': [
+				{'label': 'Controllable', 'data': controllable, 'backgroundColor': '#0E555A'},
+				{'label': 'Non-Controllable', 'data': non_controllable, 'backgroundColor': '#C69A58'}
+			]
+		}
+
+		# Compute KPI overrides
+		kpi_overrides = {}
+		kpi_overrides['service_requests'] = int(total_service_requests)
+		kpi_overrides['exposure'] = int(total_exposure)
+		kpi_overrides['delinquency'] = int(total_delinquency)
+		if turn_den:
+			kpi_overrides['avg_turn_time'] = round(turn_num / turn_den, 1)
+		if rc_den:
+			kpi_overrides['renewal_conversion'] = round(rc_num / rc_den, 1)
+
+		# NOTE: KPI overrides and chart payloads will be applied to the template context
+		# after the primary context dict is built further below. We store them in
+		# local variables here (chart_renewals, chart_expense, kpi_overrides).
+
+	except Exception:
+		# On any failure, provide empty chart payloads and no KPI overrides
+		chart_renewals = {'labels': [], 'datasets': []}
+		chart_expense = {'labels': [], 'datasets': []}
+		kpi_overrides = {}
+
+	# Build Move-Out Reasons chart from monthly moveout reasons table.
+	# initialize with default to ensure context serialization can't fail
+	chart_moveout = {'labels': [], 'datasets': []}
+	try:
+		from django.db.models import Sum
+		from dashboard.models import OlympusLeaseMoveoutReasonsTrendMonthly
+		mo_qs = OlympusLeaseMoveoutReasonsTrendMonthly.objects.all()
+		# apply same basic filters
+		inv = params.get('investor') if hasattr(params, 'get') else params.get('investor', '')
+		regional = params.get('regional_manager') if hasattr(params, 'get') else params.get('regional_manager', '')
+		community = params.get('community') if hasattr(params, 'get') else params.get('community', '')
+		if inv:
+			mo_qs = mo_qs.filter(investor=inv)
+		if regional:
+			mo_qs = mo_qs.filter(regional_area_manager=regional)
+		if community:
+			mo_qs = mo_qs.filter(property_name=community)
+
+		# period / bucket decision
+		# Prefer service-provided selection; fall back to explicit month/quarter/year
+		sel_period = svc_ctx.get('selected_period')
+		if not sel_period:
+			sel_period = svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
+		sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
+		year, months = parse_period(sel_period) if sel_period else (None, None)
+		import calendar as _calendar
+		show_by_year = (sel_mode == 'year') or (svc_ctx.get('period_year') in (None, 'all'))
+
+		# narrow when specific year/month selected
+		if not show_by_year:
+			if year and months:
+				month_nums = []
+				for m in months:
+					try:
+						month_nums.append(list(_calendar.month_abbr).index(m))
+					except Exception:
+						pass
+				if month_nums:
+					mo_qs = mo_qs.filter(enddateofmonth__month__in=month_nums, enddateofmonth__year=int(year))
+				else:
+					mo_qs = mo_qs.filter(enddateofmonth__year=int(year))
+			elif year and year != 'all':
+				try:
+					mo_qs = mo_qs.filter(enddateofmonth__year=int(year))
+				except Exception:
+					pass
+
+		# Pick top N categories overall to keep chart readable
+		top_n = 6
+		top_cats_qs = mo_qs.values('moveout_category').annotate(total=Sum('move_out_count')).order_by('-total')[:top_n]
+		top_cats = [r.get('moveout_category') for r in list(top_cats_qs) if r.get('moveout_category')]
+
+		# grouped single query: bucket + category -> sum
+		if show_by_year:
+			grouped = (mo_qs
+					 .annotate(year=ExtractYear('enddateofmonth'))
+					 .values('year', 'moveout_category')
+					 .annotate(sum_count=Sum('move_out_count'))
+					 .order_by('year'))
+		else:
+			grouped = (mo_qs
+					 .annotate(year=ExtractYear('enddateofmonth'), month=ExtractMonth('enddateofmonth'))
+					 .values('year', 'month', 'moveout_category')
+					 .annotate(sum_count=Sum('move_out_count'))
+					 .order_by('year', 'month'))
+
+		rows = list(grouped)
+
+		# build labels (last 6 buckets) and initialize series map
+		labels = []
+		if show_by_year:
+			years = sorted({int(r.get('year')) for r in rows if r.get('year') is not None})
+			labels = [str(y) for y in years][-6:]
+		else:
+			from datetime import datetime as _dt
+			month_keys = []
+			for r in rows:
+				y = int(r.get('year') or 0)
+				m = int(r.get('month') or 0)
+				if y and m:
+					month_keys.append((y, m))
+			month_keys = sorted(set(month_keys))
+			labels = [ _dt(y, m, 1).strftime('%b-%y') for (y,m) in month_keys][-6:]
+
+		# initialize series for top categories (if none found, use any categories present)
+		if not top_cats:
+			top_cats = sorted({r.get('moveout_category') for r in rows if r.get('moveout_category')})[:top_n]
+
+		series_map = {cat: [0]*len(labels) for cat in top_cats}
+
+		# fill series_map with sums from rows
+		for r in rows:
+			cat = r.get('moveout_category')
+			if not cat or cat not in series_map:
+				continue
+			if show_by_year:
+				key = str(int(r.get('year') or 0))
+				if key in labels:
+					idx = labels.index(key)
+					series_map[cat][idx] = int(r.get('sum_count') or 0)
+			else:
+				y = int(r.get('year') or 0)
+				m = int(r.get('month') or 0)
+				try:
+					key = _dt(y, m, 1).strftime('%b-%y')
+				except Exception:
+					continue
+				if key in labels:
+					idx = labels.index(key)
+					series_map[cat][idx] = int(r.get('sum_count') or 0)
+
+		# prepare Chart.js datasets
+		palette = ['#1E40AF', '#059669', '#5B21B6', '#EA580C', '#7C2D12', '#0E555A']
+		datasets = []
+		for i, cat in enumerate(top_cats):
+			datasets.append({'label': cat, 'data': series_map.get(cat, []), 'backgroundColor': palette[i % len(palette)]})
+
+		chart_moveout = {'labels': labels, 'datasets': datasets}
+	except Exception:
+		# keep default empty chart_moveout if anything fails
+		pass
+
+
 	context = {
 		'user': user,
 		'properties': svc_ctx.get('properties_page'),
 		'kpi': svc_ctx.get('kpi'),
-		'period_options': svc_ctx.get('periods'),
-		'selected_period': svc_ctx.get('selected_period'),
+	'period_options': svc_ctx.get('periods'),
+	# Ensure templates see a concrete selected_period so client UI (filter pane)
+	# can initialize correctly. Prefer svc_ctx.selected_period, otherwise
+	# fall back to the explicit period_month/period_quarter/period_year values
+	# that the PageService may set when defaulting to the latest month.
+	'selected_period': (svc_ctx.get('selected_period') or svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')),
 		'selected_year': svc_ctx.get('period_year'),
 		'selected_quarter': svc_ctx.get('period_quarter'),
 		'selected_month': svc_ctx.get('period_month'),
 		'selected_period_mode': svc_ctx.get('period_mode'),
-		# Use unfiltered properties/dropdown maps so table/modal stay stable across filter changes
-		'all_properties': svc_unfiltered_ctx.get('properties_list'),
-		'investors': svc_unfiltered_ctx.get('investors'),
+		# Use filtered properties so the table reflects applied filters (period/investor/etc.)
+		'all_properties': svc_ctx.get('properties_list'),
+		# Conditionally exclude BLACKSTONE/LIVCOR from the investors dropdown for
+		# periods after June 2025 unless the user explicitly selected that investor.
+		'unfiltered_investors': svc_unfiltered_ctx.get('investors'),
+		'investors': None,
 		'regional_managers': svc_unfiltered_ctx.get('managers'),
-		'communities': svc_unfiltered_ctx.get('properties_list'),
+		'communities': svc_ctx.get('properties_list'),
 		'inv_to_regional': svc_unfiltered_ctx.get('investor_managers'),
 		'inv_reg_to_communities': inv_reg_to_communities,
 		'inv_to_regional_json': json.dumps(svc_unfiltered_ctx.get('investor_managers', {})),
 		'inv_reg_to_communities_json': json.dumps(inv_reg_to_communities),
 		'chart_rent_json': json.dumps(svc_ctx.get('chart_rent', {})),
 		'chart_occrev_json': json.dumps(svc_ctx.get('chart_occrev', {})),
+		'chart_renewals_json': json.dumps(chart_renewals),
+		'chart_expense_json': json.dumps(chart_expense),
+		'chart_moveout_json': json.dumps(chart_moveout),
 	}
+
+	# Apply KPI overrides computed by the consolidated monthly aggregation (if any)
+	try:
+		kpi = context.get('kpi') or {}
+		for k, v in (kpi_overrides or {}).items():
+			kpi[k] = v
+		context['kpi'] = kpi
+	except Exception:
+		# keep existing KPIs on unexpected failures
+		pass
 
 	chart_props = dict(svc_ctx.get('chart_properties', {}) or {})
 
@@ -1114,6 +1383,53 @@ def dashboard(request):
 	context['selected_investor'] = request.GET.get('investor','')
 	context['selected_regional_manager'] = request.GET.get('regional_manager','')
 	context['selected_community'] = request.GET.get('community','')
+
+	# Build conditional investors list: start from unfiltered set provided by PageService
+	try:
+		_unfiltered_investors = context.pop('unfiltered_investors', svc_unfiltered_ctx.get('investors') or [])
+		# Determine whether selected period is after June 2025 using same logic as earlier
+		def _period_after_jun_2025_local(mode, year, months_list, quarter):
+			import re, calendar
+			try:
+				if mode == 'month' and months_list:
+					mval = months_list if isinstance(months_list, str) else (months_list[0] if months_list else '')
+					mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', mval)
+					if mm:
+						mon_abbr, yr = mm.groups()
+						mon_num = list(calendar.month_abbr).index(mon_abbr)
+						yr = int(yr)
+						return (yr > 2025) or (yr == 2025 and mon_num > 6)
+				if mode == 'quarter' and quarter:
+					mm = re.search(r'Q(\d)', quarter, re.I)
+					yy = re.search(r'(\d{4})', quarter)
+					if mm and yy:
+						qnum = int(mm.group(1))
+						yr = int(yy.group(1))
+						return (yr > 2025) or (yr == 2025 and qnum >= 3)
+				if mode == 'year' and year and str(year).isdigit():
+					return int(year) > 2025
+			except Exception:
+				return False
+			return False
+
+		sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
+		sel_period = svc_ctx.get('selected_period') or svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
+		year, months = parse_period(sel_period) if sel_period else (None, None)
+		exclude_blackstone = _period_after_jun_2025_local(sel_mode, year, sel_period, svc_ctx.get('period_quarter'))
+		selected_inv = context.get('selected_investor', '')
+		if exclude_blackstone and not selected_inv:
+			# Exclude the specific investor from the dropdown
+			context['investors'] = [i for i in _unfiltered_investors if i.upper() != 'BLACKSTONE/LIVCOR']
+		else:
+			# Preserve the full list; ensure selected investor is present if explicitly chosen
+			if selected_inv and selected_inv not in _unfiltered_investors:
+				# keep selected investor visible even if not in unfiltered (edge-case)
+				context['investors'] = [_unfiltered_investors + [selected_inv]]
+			else:
+				context['investors'] = _unfiltered_investors
+	except Exception:
+		# On failure default to unmodified list
+		context['investors'] = svc_unfiltered_ctx.get('investors')
 
 	is_xhr = request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest' or request.headers.get('x-requested-with') == 'XMLHttpRequest'
 	if is_xhr:

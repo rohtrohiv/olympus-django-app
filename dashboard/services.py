@@ -182,6 +182,41 @@ class DashboardService:
         if selected_community:
             qs = qs.filter(property_name=selected_community)
 
+        # Business rule: exclude BLACKSTONE/LIVCOR data for periods after June 2025.
+        # This investor's data should only be used for periods up to and including June 2025.
+        def _period_after_jun_2025(mode, year, month, quarter):
+            try:
+                if mode == 'month' and month:
+                    # month is like 'Oct-2025' or 'Oct 2025'
+                    import re
+                    m = re.match(r'([A-Za-z]{3})[- ](\d{4})', month)
+                    if m:
+                        mon_abbr, yr = m.groups()
+                        mon_num = list(__import__('calendar').month_abbr).index(mon_abbr)
+                        yr = int(yr)
+                        return (yr > 2025) or (yr == 2025 and mon_num > 6)
+                if mode == 'quarter' and quarter:
+                    # quarter like 'Q3-2025' or 'Q3-2025'
+                    import re
+                    mm = re.search(r'Q(\d)', quarter, re.I)
+                    yy = re.search(r'(\d{4})', quarter)
+                    if mm and yy:
+                        qnum = int(mm.group(1))
+                        yr = int(yy.group(1))
+                        # Q3 begins in July
+                        return (yr > 2025) or (yr == 2025 and qnum >= 3)
+                if mode == 'year' and year and str(year).isdigit():
+                    y = int(year)
+                    return y > 2025
+            except Exception:
+                return False
+            return False
+
+        exclude_blackstone = _period_after_jun_2025(period_mode, period_year, period_month, period_quarter)
+        # Only apply exclusion when the caller hasn't explicitly requested a particular investor
+        if exclude_blackstone and not selected_investor:
+            qs = qs.exclude(investor__iexact='BLACKSTONE/LIVCOR')
+
         # Determine the initial latest-month selection: prefer explicit period params, otherwise latest available
         if not (period_year or period_quarter or period_month or selected_period) and sorted_periods:
             latest_year = next(iter(sorted(sorted_periods.keys(), reverse=True)))
@@ -265,10 +300,9 @@ class DashboardService:
             SELECT
               COUNT(*) AS total_properties,
               COALESCE(SUM(total_units),0) AS total_units,
-              COALESCE(SUM(occupied_units),0) AS occupied_units,
-              COALESCE(AVG(percentage_occupacy),0) AS avg_occupancy
+              COALESCE(SUM(occupied_units),0) AS occupied_units
             FROM (
-              SELECT DISTINCT ON (property_number) property_number, total_units, occupied_units, percentage_occupacy, snapshotdate
+              SELECT DISTINCT ON (property_number) property_number, total_units, occupied_units, snapshotdate
               FROM web_ai.lease_trend_summary
               {where_sql}
               ORDER BY property_number, snapshotdate DESC
@@ -281,15 +315,23 @@ class DashboardService:
                     total_properties = int(row[0] or 0)
                     total_units = int(row[1] or 0)
                     occupied_units = int(row[2] or 0)
-                    avg_occupancy = round(float(row[3] or 0), 2)
+                    # compute portfolio-weighted occupancy (occupied / total * 100)
+                    if total_units:
+                        avg_occupancy = round((occupied_units / total_units) * 100.0, 2)
+                    else:
+                        avg_occupancy = 0.0
         else:
             if last_day_qs.exists():
-                unique_props = last_day_qs.values('property_number', 'property_name', 'total_units').distinct()
+                # compute portfolio-weighted occupancy using sums of units
+                agg = last_day_qs.aggregate(total_units_sum=Sum('total_units'), occupied_units_sum=Sum('occupied_units'))
+                total_units = int(agg.get('total_units_sum') or 0)
+                occupied_units = int(agg.get('occupied_units_sum') or 0)
+                unique_props = last_day_qs.values('property_number', 'property_name').distinct()
                 total_properties = unique_props.count()
-                total_units = sum([row['total_units'] or 0 for row in unique_props])
-                occ = last_day_qs.aggregate(occ=Avg('percentage_occupacy'))['occ']
-                avg_occupancy = round(occ or 0, 2)
-                occupied_units = last_day_qs.aggregate(sum_occ=Sum('occupied_units'))['sum_occ'] or 0
+                if total_units:
+                    avg_occupancy = round((occupied_units / total_units) * 100.0, 2)
+                else:
+                    avg_occupancy = 0.0
 
         kpi = {
             'total_properties': total_properties,
@@ -309,9 +351,13 @@ class DashboardService:
             kpi_snapshot_date = None
 
         # Table: prepare a small paginated property list from last_day_qs (10 per page)
+        # Include additional metric fields so the client table can display
+        # latest snapshot, occupancy%, rents, moves and application counts.
         prop_values = last_day_qs.values(
             'property_number', 'property_name', 'total_units', 'investor', 'regional_area_manager',
-            'regional_director', 'asst_manager', 'occupied_units'
+            'regional_director', 'asst_manager', 'occupied_units',
+            'snapshotdate', 'percentage_occupacy', 'effective_rent', 'market_rent',
+            'total_move_ins', 'total_move_outs', 'applications', 'avg_amount_per_sqft'
         ).distinct()
         # Use in-memory paginator so view can render `properties` as page object
         paginator = Paginator(list(prop_values), 10)
@@ -323,8 +369,57 @@ class DashboardService:
         # reflects the same latest-per-property rows used for the table/pagination.
         try:
             prop_list = list(prop_values)
+            # --- Aggregate per-property move-out totals from moveout reasons table ---
+            try:
+                from dashboard.models import OlympusLeaseMoveoutReasonsTrendMonthly
+                # use top-level Sum import (avoid local import which makes Sum a local name)
+                # Determine selected year/months from the selected period so we query the same buckets
+                sel_period = selected_period or (period_month or period_quarter or period_year)
+                sel_mode = period_mode
+                mo_qs = OlympusLeaseMoveoutReasonsTrendMonthly.objects.all()
+                # Apply same filters as for properties
+                if selected_investor:
+                    mo_qs = mo_qs.filter(investor=selected_investor)
+                if selected_regional_manager:
+                    mo_qs = mo_qs.filter(regional_area_manager=selected_regional_manager)
+                if selected_community:
+                    mo_qs = mo_qs.filter(property_name=selected_community)
+
+                # Narrow by selected period: if month(s) available, filter by those month numbers and year
+                def _period_to_year_months(mode, month_val, quarter_val, year_val):
+                    import calendar as _cal
+                    if mode == 'month' and month_val:
+                        import re
+                        m = re.match(r'([A-Za-z]{3})[- ](\d{4})', month_val)
+                        if m:
+                            mon_abbr, yy = m.groups()
+                            mn = list(_cal.month_abbr).index(mon_abbr)
+                            return int(yy), [mn]
+                    if mode == 'quarter' and quarter_val:
+                        import re
+                        qm = re.search(r'Q(\d)', quarter_val, re.I)
+                        yy = re.search(r'(\d{4})', quarter_val)
+                        if qm and yy:
+                            qnum = int(qm.group(1))
+                            y = int(yy.group(1))
+                            start = (qnum-1)*3 + 1
+                            months = [m for m in range(start, start+3)]
+                            return y, months
+                    if mode == 'year' and year_val and str(year_val).isdigit():
+                        return int(year_val), list(range(1,13))
+                    return None, None
+
+                year_for_mo, months_for_mo = _period_to_year_months(sel_mode, period_month, period_quarter, period_year)
+                if year_for_mo and months_for_mo:
+                    mo_qs = mo_qs.filter(enddateofmonth__year=year_for_mo, enddateofmonth__month__in=months_for_mo)
+
+                # Aggregate per property
+                mo_agg = mo_qs.values('property_number').annotate(total_move_outs_sum=Sum('move_out_count'))
+                mo_map = {r['property_number']: int(r['total_move_outs_sum'] or 0) for r in mo_agg}
+            except Exception:
+                mo_map = {}
             # Include additional fields so modals and client-side JSON have
-            # investor / manager / director / asst_manager / occupied_units
+            # investor / manager / director / asst_manager / occupied_units and metric columns
             properties_full = sorted([
                 {
                     'property_number': r.get('property_number'),
@@ -334,7 +429,17 @@ class DashboardService:
                     'investor': r.get('investor') or '',
                     'regional_area_manager': r.get('regional_area_manager') or '',
                     'regional_director': r.get('regional_director') or '',
-                    'asst_manager': r.get('asst_manager') or ''
+                    'asst_manager': r.get('asst_manager') or '',
+                    # metrics that may be present on summary rows or raw rows
+                    'latest_snapshot_date': r.get('snapshotdate') or r.get('latest_snapshot_date') or None,
+                    'occupancy_pct': (r.get('occupancy_pct') if r.get('occupancy_pct') is not None else r.get('percentage_occupacy')),
+                    'effective_rent': r.get('effective_rent'),
+                    'market_rent': r.get('market_rent'),
+                    'total_move_ins': r.get('total_move_ins') or 0,
+                    # prefer aggregated move-out totals from the moveout reasons table when available
+                    'total_move_outs': (mo_map.get(r.get('property_number')) if mo_map.get(r.get('property_number')) is not None else (r.get('total_move_outs') or 0)),
+                    'applications': r.get('applications') or 0,
+                    'avg_amount_per_sqft': r.get('avg_amount_per_sqft')
                 } for r in prop_list
             ], key=lambda x: (x['property_name'] or '').lower())
         except Exception:
@@ -509,7 +614,17 @@ class DashboardService:
 
             eff_series.append(round(sum(eff_vals) / len(eff_vals), 2) if eff_vals else 0)
             mkt_series.append(round(sum(mkt_vals) / len(mkt_vals), 2) if mkt_vals else 0)
-            occ_series.append(round(sum(occ_vals) / len(occ_vals), 2) if occ_vals else 0)
+            # compute portfolio-weighted occupancy for the bucket using occupied_units/total_units
+            try:
+                total_units_bucket = sum(int(row.get('total_units') or 0) for (sd, row) in bucket.values())
+                occupied_units_bucket = sum(int(row.get('occupied_units') or 0) for (sd, row) in bucket.values())
+                if total_units_bucket:
+                    occ_val = round((occupied_units_bucket / total_units_bucket) * 100.0, 2)
+                else:
+                    occ_val = 0
+            except Exception:
+                occ_val = round(sum(occ_vals) / len(occ_vals), 2) if occ_vals else 0
+            occ_series.append(occ_val)
             rev_series.append(round(rev_sum / 1000.0, 2))  # k$
 
         chart_rent = {

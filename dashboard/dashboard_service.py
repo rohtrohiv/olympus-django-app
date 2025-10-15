@@ -40,6 +40,44 @@ class DashboardPageService:
             where.append('property_name = %s')
             params.append(sel_comm)
         where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
+        # Business rule: exclude BLACKSTONE/LIVCOR for periods after June 2025
+        # when no explicit investor filter is provided.
+        try:
+            period_month = self.params.get('period_month') or self.params.get('period')
+            period_quarter = self.params.get('period_quarter')
+            period_year = self.params.get('period_year')
+            def _period_after_jun_2025_p(period_mode, y, m, q):
+                import re, calendar
+                try:
+                    if period_mode == 'month' and m:
+                        mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', m)
+                        if mm:
+                            mon_abbr, yr = mm.groups()
+                            mon_num = list(calendar.month_abbr).index(mon_abbr)
+                            yr = int(yr)
+                            return (yr > 2025) or (yr == 2025 and mon_num > 6)
+                    if period_mode == 'quarter' and q:
+                        mm = re.search(r'Q(\d)', q, re.I)
+                        yy = re.search(r'(\d{4})', q)
+                        if mm and yy:
+                            qnum = int(mm.group(1))
+                            yr = int(yy.group(1))
+                            return (yr > 2025) or (yr == 2025 and qnum >= 3)
+                    if period_mode == 'year' and y and str(y).isdigit():
+                        return int(y) > 2025
+                except Exception:
+                    return False
+                return False
+
+            period_mode = self.params.get('period_mode') or ''
+            if not sel_inv and _period_after_jun_2025_p(period_mode, period_year, period_month, period_quarter):
+                # add exclusion clause
+                where = where + ["investor <> %s"]
+                params = params + ['BLACKSTONE/LIVCOR']
+                where_sql = ('WHERE ' + ' AND '.join(where))
+        except Exception:
+            pass
+
         return where_sql, params
 
     def _fetch_latest_rows(self, where_sql, params):
@@ -105,6 +143,25 @@ class DashboardPageService:
 
     def _fetch_yearly_portfolio_summary(self, where_sql, params, start_date, end_date):
         # Runs the provided yearly aggregation CTE (parameterized start/end dates)
+        # Build WHERE clause for the property_yearly_latest CTE. We need to
+        # include any provided filter predicate (where_sql) but also inject
+        # a business-rule exclusion for BLACKSTONE/LIVCOR rows that occur in
+        # 2025 after June when the caller hasn't explicitly filtered by investor.
+        base_where = f'"snapshot_date" BETWEEN %s AND %s'
+        where_pred = ''
+        extra_params = []
+        if where_sql:
+            # where_sql comes in with a leading 'WHERE ' when provided by _build_where
+            where_pred = ' AND ' + where_sql[6:]
+
+        # If caller did not explicitly filter by investor (no investor param in params)
+        # then add exclusion of BLACKSTONE/LIVCOR rows for year=2025 and month>6 so that
+        # the 2025 yearly aggregates exclude that investor's properties for months after June.
+        has_investor_param = any((isinstance(p, str) and p.upper() == 'BLACKSTONE/LIVCOR') for p in params)
+        if not has_investor_param:
+            where_pred += " AND NOT (investor = %s AND EXTRACT(YEAR FROM snapshot_date) = 2025 AND EXTRACT(MONTH FROM snapshot_date) > 6)"
+            extra_params.append('BLACKSTONE/LIVCOR')
+
         yearly_sql = f"""
         WITH property_yearly_latest AS (
             SELECT DISTINCT ON ("property_number", DATE_TRUNC('year', "snapshot_date"))
@@ -144,8 +201,7 @@ class DashboardPageService:
                 "down",
                 "vacant_units_without_down_admin"
             FROM web_ai.olympus_lease_trend_analysis
-            WHERE "snapshot_date" BETWEEN %s AND %s
-            { 'AND ' + where_sql[6:] if where_sql else '' }
+            WHERE {base_where}{where_pred}
             ORDER BY
                 "property_number",
                 DATE_TRUNC('year', "snapshot_date"),
@@ -184,8 +240,8 @@ class DashboardPageService:
 
         SELECT * FROM yearly_portfolio_summary ORDER BY year DESC;
         """
-        # parameters: start_date, end_date plus any filter params
-        exec_params = [start_date, end_date] + params
+        # parameters: start_date, end_date plus any filter params and any extra exclusion params
+        exec_params = [start_date, end_date] + params + extra_params
         with connection.cursor() as cur:
             cur.execute(yearly_sql, exec_params)
             cols = [c[0] for c in cur.description]

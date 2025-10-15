@@ -66,10 +66,12 @@
                     <th data-sort-key="asst_manager" style="padding:8px 12px;cursor:pointer;user-select:none;">Asst Manager<span class="sort-indicator"></span></th>
                     <th data-sort-key="total_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Total Units<span class="sort-indicator"></span></th>
                     <th data-sort-key="occupied_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Occupied Units<span class="sort-indicator"></span></th>
-                    <!-- <th style="padding:8px 12px;">Latest Snapshot</th>
-                    <th style="padding:8px 12px;">Occupancy %</th>
-                    <th style="padding:8px 12px;">Effective Rent</th>
-                    <th style="padding:8px 12px;">Market Rent</th> -->
+                    <th data-sort-key="latest_snapshot_date" style="padding:8px 12px;cursor:pointer;user-select:none;">Latest Snapshot<span class="sort-indicator"></span></th>
+                    <th data-sort-key="occupancy_pct" style="padding:8px 12px;cursor:pointer;user-select:none;">Occupancy %<span class="sort-indicator"></span></th>
+                    <th data-sort-key="effective_rent" style="padding:8px 12px;cursor:pointer;user-select:none;">Effective Rent<span class="sort-indicator"></span></th>
+                    <th data-sort-key="market_rent" style="padding:8px 12px;cursor:pointer;user-select:none;">Market Rent<span class="sort-indicator"></span></th>
+                    <th data-sort-key="total_move_outs" style="padding:8px 12px;cursor:pointer;user-select:none;">Move Outs<span class="sort-indicator"></span></th>
+                    <th data-sort-key="avg_amount_per_sqft" style="padding:8px 12px;cursor:pointer;user-select:none;">Avg $/sqft<span class="sort-indicator"></span></th>
                 </tr>
             </thead>
             <tbody id="property-table-body">
@@ -155,15 +157,17 @@
                 const start = (currentPage-1)*pageSize;
                 const pageItems = paginationDisabled ? filtered.slice() : filtered.slice(start, start+pageSize);
                 if (!pageItems.length){
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;">No data available.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:16px;">No data available.</td></tr>';
                     renderPagination();
                     return;
                 }
                 const rowsHtml = pageItems.map(r => {
-                    const latest = r.latest_snapshot_date || r.snapshotdate || '';
-                    const occ = r.occupancy_pct || r.percentage_occupacy || '';
-                    const eff = (r.effective_rent!==null && r.effective_rent!==undefined) ? ('$'+Number(r.effective_rent).toLocaleString()) : '-';
-                    const mkt = (r.market_rent!==null && r.market_rent!==undefined) ? ('$'+Number(r.market_rent).toLocaleString()) : '-';
+                    const latest = r.latest_snapshot_date || r.snapshotdate || r.latestSnapshotDate || '';
+                    const occ = (r.occupancy_pct !== undefined && r.occupancy_pct !== null) ? Number(r.occupancy_pct).toFixed(1) : (r.percentage_occupacy || '');
+                    const eff = (r.effective_rent!==null && r.effective_rent!==undefined && r.effective_rent!=='') ? ('$'+Number(r.effective_rent).toLocaleString()) : '-';
+                    const mkt = (r.market_rent!==null && r.market_rent!==undefined && r.market_rent!=='') ? ('$'+Number(r.market_rent).toLocaleString()) : '-';
+                    const mo = (r.total_move_outs!==null && r.total_move_outs!==undefined) ? r.total_move_outs : '-';
+                    const sqft = (r.avg_amount_per_sqft!==null && r.avg_amount_per_sqft!==undefined && r.avg_amount_per_sqft!=='') ? ('$'+Number(r.avg_amount_per_sqft).toFixed(2)) : '-';
                     return `<tr>
                         <td style="padding:8px 12px;">${r.property_number || ''}</td>
                         <td style="padding:8px 12px;">${r.property_name || ''}</td>
@@ -173,6 +177,12 @@
                         <td style="padding:8px 12px;">${r.asst_manager || ''}</td>
                         <td style="padding:8px 12px;">${r.total_units || ''}</td>
                         <td style="padding:8px 12px;">${r.occupied_units || ''}</td>
+                        <td style="padding:8px 12px;">${latest || ''}</td>
+                        <td style="padding:8px 12px;">${occ || ''}</td>
+                        <td style="padding:8px 12px;">${eff}</td>
+                        <td style="padding:8px 12px;">${mkt}</td>
+                        <td style="padding:8px 12px;">${mo}</td>
+                        <td style="padding:8px 12px;">${sqft}</td>
                     </tr>`;
                 }).join('\n');
                 tbody.innerHTML = rowsHtml;

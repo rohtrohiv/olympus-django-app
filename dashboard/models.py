@@ -84,3 +84,61 @@ class LeaseTrendSummary(models.Model):
 		# Use a quoted schema-qualified table name so Django issues queries like:
 		# SELECT ... FROM "web_ai"."lease_trend_summary"
 		db_table = '"web_ai"."lease_trend_summary"'
+
+
+class OlympusLeaseKpisTrendMonthly(models.Model):
+	"""Unmanaged mapping for the monthly KPIs table used by the dashboard.
+
+	This mirrors the Postgres table `web_ai.olympus_lease_kpis_trend_monthly` and
+	is intended for read-only access (managed = False).
+	"""
+	property_name = models.CharField(max_length=255, blank=True, null=True)
+	investor = models.CharField(max_length=255, blank=True, null=True)
+	regional_area_manager = models.CharField(max_length=255, blank=True, null=True)
+	regional_director = models.CharField(max_length=255, blank=True, null=True)
+	senior_regional = models.CharField(max_length=255, blank=True, null=True)
+	asst_manager = models.CharField(max_length=255, blank=True, null=True)
+	property_number = models.IntegerField()
+	enddateofmonth = models.DateField()
+	kpi_month = models.CharField(max_length=20, blank=True, null=True)
+	exposure = models.IntegerField(blank=True, null=True)
+	delinquency = models.IntegerField(blank=True, null=True)
+	average_turn_time = models.IntegerField(blank=True, null=True)
+	service_request = models.IntegerField(blank=True, null=True)
+	renewel_conversion = models.IntegerField(blank=True, null=True)
+	expirations = models.IntegerField(blank=True, null=True)
+	renewed = models.IntegerField(blank=True, null=True)
+	controllable_expense = models.BigIntegerField(blank=True, null=True)
+	total_operating_expense = models.BigIntegerField(blank=True, null=True)
+	# Column name contains a percent sign in the DB; map to a safer Python attribute
+	rent_renewal_increase_pct = models.FloatField(db_column='rent_renewal_increase_%', blank=True, null=True)
+	non_controllable_expense = models.BigIntegerField(blank=True, null=True)
+
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."olympus_lease_kpis_trend_monthly"'
+
+
+class OlympusLeaseMoveoutReasonsTrendMonthly(models.Model):
+	"""Unmanaged mapping for the move-out reasons monthly table.
+
+	Mirror of Postgres table: web_ai.olympus_lease_moveout_reasons_trend_monthly
+	Columns were introspected from the DB and mapped to safe Django fields.
+	"""
+	property_name = models.CharField(max_length=70, blank=True, null=True)
+	investor = models.CharField(max_length=255, blank=True, null=True)
+	regional_area_manager = models.CharField(max_length=100, blank=True, null=True)
+	regional_director = models.CharField(max_length=100, blank=True, null=True)
+	senior_regional = models.CharField(max_length=100, blank=True, null=True)
+	asst_manager = models.CharField(max_length=100, blank=True, null=True)
+	# moveout_category is NOT NULL in the DB
+	moveout_category = models.CharField(max_length=50)
+	enddateofmonth = models.DateField()
+	property_number = models.IntegerField()
+	# large/kpi-style text field; DB max length observed as 4000
+	kpi_month = models.CharField(max_length=4000, blank=True, null=True)
+	move_out_count = models.IntegerField(blank=True, null=True)
+
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."olympus_lease_moveout_reasons_trend_monthly"'
