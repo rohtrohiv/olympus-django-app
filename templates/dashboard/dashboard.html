@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Property Analytics – Olympus{% endblock %}
+{% block title %}Property Analytics - Olympus{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -118,6 +118,38 @@ div[style*="width:100%"].drawer-open {
 .filter-pane h3{margin:0 0 8px;color:#0B3A3F;font-size:14px}
 .filter-section{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px}
 .filter-actions{display:flex;gap:8px;align-items:center}
+
+/* Multi-select chips styling */
+.filter-chips{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;min-height:24px}
+.filter-chip{
+    display:inline-flex;align-items:center;gap:4px;padding:4px 8px;
+    background:#eef6fb;border:1px solid #b3dce8;border-radius:12px;
+    font-size:11px;font-weight:600;color:#0B3A3F;
+}
+.filter-chip-remove{
+    cursor:pointer;padding:0 4px;color:#4f6bed;font-weight:700;
+    border:none;background:none;font-size:14px;line-height:1;
+}
+.filter-chip-remove:hover{color:#d92f44}
+
+/* Multi-select dropdown styling */
+select[multiple] {
+    cursor: pointer;
+}
+select[multiple] option {
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin: 2px 0;
+}
+select[multiple] option:hover {
+    background: #eef6fb !important;
+}
+select[multiple] option:checked {
+    background: #59E6F6 !important;
+    color: #063235;
+    font-weight: 600;
+}
 .filter-close{margin-left:auto;background:none;border:none;padding:8px;border-radius:8px;cursor:pointer;color:#4f6bed}
 
 /* When filter pane is open, use padding and width to keep content within viewport */
@@ -450,25 +482,30 @@ div[style*="width:100%"].drawer-open {
                 </div>
 
                 <form method="get" action="/dashboard" id="filter-period-form">
-                    <!-- Year select -->
-                    <select name="period_year" id="filterPeriodYear" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:block;">
+                    <!-- Year select - now multi-select -->
+                    <div style="font-size:10px;color:var(--muted);margin-bottom:6px;" id="yearMultiHint">Click to select multiple years</div>
+                    <select name="period_year" id="filterPeriodYear" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:block;min-height:100px;">
                         <option value="all" {% if selected_year == 'all' %}selected{% endif %}>All Years</option>
                         {% for year, data in period_options.items %}
                             <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
                         {% endfor %}
                     </select>
+                    <div id="yearChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
 
-                    <!-- Quarter select (hidden by default) -->
-                    <select name="period_quarter" id="filterPeriodQuarter" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;">
+                    <!-- Quarter select - now multi-select and independent -->
+                    <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:6px;display:none;" id="quarterMultiHint">Click to select multiple quarters</div>
+                    <select name="period_quarter" id="filterPeriodQuarter" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;min-height:100px;">
                         {% for year, data in period_options.items %}
                             {% for quarter, months in data.quarters.items %}
-                                <option value="{{ quarter }}-{{ year }}" data-year="{{ year }}">{{ quarter }} {{ year }}</option>
+                                <option value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ quarter }} {{ year }}</option>
                             {% endfor %}
                         {% endfor %}
                     </select>
+                    <div id="quarterChips" class="filter-chips" style="margin-top:8px;display:none;flex-wrap:wrap;gap:6px;"></div>
 
-                    <!-- Month select (hidden by default) -->
-                    <select name="period_month" id="filterPeriodMonth" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;">
+                    <!-- Month select (hidden by default) - now multi-select -->
+                    <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:6px;display:none;" id="monthMultiHint">Click to select multiple months</div>
+                    <select name="period_month" id="filterPeriodMonth" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;min-height:100px;">
                         {% for year, data in period_options.items %}
                             {% for quarter, months in data.quarters.items %}
                                 {% for month in months %}
@@ -478,49 +515,53 @@ div[style*="width:100%"].drawer-open {
                             {% endfor %}
                         {% endfor %}
                     </select>
+                    <div id="monthChips" class="filter-chips" style="margin-top:8px;display:none;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
             <div class="filter-section">
-                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Investor</div>
+                <div style="font-weight:700;margin-bottom:4px;color:#0B3A3F">Investor</div>
+                <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Click to select multiple</div>
                 <form method="get" action="/dashboard" id="filter-investor-form">
-                    <select name="investor" id="filterInvestor" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff">
-                        <option value="">All Investors</option>
+                    <select name="investor" id="filterInvestor" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;min-height:80px;">
                         {% for inv in investors %}
-                            <option value="{{ inv }}" {% if inv == selected_investor %}selected{% endif %}>{{ inv }}</option>
+                            <option value="{{ inv }}" {% if inv in selected_investor %}selected{% endif %}>{{ inv }}</option>
                         {% endfor %}
                     </select>
+                    <div id="investorChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
             <div class="filter-section">
-                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Regional Manager</div>
+                <div style="font-weight:700;margin-bottom:4px;color:#0B3A3F">Regional Manager</div>
+                <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Click to select multiple</div>
                 <form method="get" action="/dashboard" id="filter-regional-form">
-                    <select name="regional_manager" id="filterRegional" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff">
-                        <option value="">All Regional Managers</option>
+                    <select name="regional_manager" id="filterRegional" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;min-height:80px;">
                         {% for rm in regional_managers %}
-                            <option value="{{ rm }}" {% if rm == selected_regional_manager %}selected{% endif %}>{{ rm }}</option>
+                            <option value="{{ rm }}" {% if rm in selected_regional_manager %}selected{% endif %}>{{ rm }}</option>
                         {% endfor %}
                     </select>
+                    <div id="regionalChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
             <div class="filter-section">
-                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Community</div>
+                <div style="font-weight:700;margin-bottom:4px;color:#0B3A3F">Community</div>
+                <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Click to select multiple</div>
                 <form method="get" action="/dashboard" id="filter-community-form">
-                    <select name="community" id="filterCommunity" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff">
-                        <option value="">All Communities</option>
+                    <select name="community" id="filterCommunity" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;min-height:80px;">
                         {% for c in communities %}
                             {% if c.community_name %}
-                                <option value="{{ c.community_name }}" {% if c.community_name == selected_community %}selected{% endif %}>{{ c.community_name }}</option>
+                                <option value="{{ c.community_name }}" {% if c.community_name in selected_community %}selected{% endif %}>{{ c.community_name }}</option>
                             {% elif c.name %}
-                                <option value="{{ c.name }}" {% if c.name == selected_community %}selected{% endif %}>{{ c.name }}</option>
+                                <option value="{{ c.name }}" {% if c.name in selected_community %}selected{% endif %}>{{ c.name }}</option>
                             {% elif c.community %}
-                                <option value="{{ c.community }}" {% if c.community == selected_community %}selected{% endif %}>{{ c.community }}</option>
+                                <option value="{{ c.community }}" {% if c.community in selected_community %}selected{% endif %}>{{ c.community }}</option>
                             {% elif c.property_name %}
-                                <option value="{{ c.property_name }}" {% if c.property_name == selected_community %}selected{% endif %}>{{ c.property_name }}</option>
+                                <option value="{{ c.property_name }}" {% if c.property_name in selected_community %}selected{% endif %}>{{ c.property_name }}</option>
                             {% else %}
-                                <option value="{{ c }}" {% if c == selected_community %}selected{% endif %}>{{ c }}</option>
+                                <option value="{{ c }}" {% if c in selected_community %}selected{% endif %}>{{ c }}</option>
                             {% endif %}
                         {% endfor %}
                     </select>
+                    <div id="communityChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
             <div class="filter-actions" style="margin-top:6px;">
@@ -587,6 +628,7 @@ div[style*="width:100%"].drawer-open {
 {% endblock %}
 
 {% block extra_scripts %}
+<script id="initialSelectedMonthsData" type="application/json">{{ selected_month_json|safe }}</script>
 <!-- NOTE: base.html already provides hamburger/drawer functionality, so we don't duplicate it here -->
 <script>
 // Filter pane toggle logic
@@ -617,90 +659,148 @@ div[style*="width:100%"].drawer-open {
     // Close on Escape
     document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ if(filterPane.classList.contains('open')) setFilter(false) } });
 
+    // Multi-select chips rendering and removal
+    function renderChips(selectEl, chipsContainerId){
+        const container = document.getElementById(chipsContainerId);
+        if(!container || !selectEl) return;
+        container.innerHTML = '';
+        const selected = Array.from(selectEl.selectedOptions);
+        selected.forEach(opt => {
+            const chip = document.createElement('div');
+            chip.className = 'filter-chip';
+            // Use a button with type="button" to avoid form submit and make sure
+            // clicking the remove button does not propagate to document click
+            chip.innerHTML = `<span>${opt.textContent}</span><button type="button" class="filter-chip-remove" data-value="${opt.value}" aria-label="Remove ${opt.textContent}">×</button>`;
+            container.appendChild(chip);
+            const removeBtn = chip.querySelector('.filter-chip-remove');
+            removeBtn.addEventListener('click', function(ev){
+                // Prevent the click from bubbling up and closing the filter pane
+                ev.stopPropagation();
+                ev.preventDefault();
+                opt.selected = false;
+                renderChips(selectEl, chipsContainerId);
+            });
+        });
+    }
+
+    const selInvestor = document.getElementById('filterInvestor');
+    const selRegional = document.getElementById('filterRegional');
+    const selCommunity = document.getElementById('filterCommunity');
+    
+    // Enhanced multi-select: allow toggling without Ctrl/Cmd key
+    function makeMultiSelectToggleable(selectEl, chipsContainerId){
+        if(!selectEl) return;
+        
+        // Initial render
+        renderChips(selectEl, chipsContainerId);
+        
+        // On change, re-render chips
+        selectEl.addEventListener('change', () => renderChips(selectEl, chipsContainerId));
+        
+        // Make click toggle selection without requiring Ctrl/Cmd
+        selectEl.addEventListener('mousedown', function(e){
+            e.preventDefault();
+            const option = e.target;
+            if(option.tagName === 'OPTION'){
+                // Toggle the option
+                option.selected = !option.selected;
+                // Trigger change event to update chips
+                selectEl.dispatchEvent(new Event('change'));
+            }
+        });
+        
+        // Prevent default behavior on focus that auto-selects first item
+        selectEl.addEventListener('focus', function(e){
+            e.preventDefault();
+        });
+    }
+    
+    makeMultiSelectToggleable(selInvestor, 'investorChips');
+    makeMultiSelectToggleable(selRegional, 'regionalChips');
+    makeMultiSelectToggleable(selCommunity, 'communityChips');
+
     // Period mode toggle logic (Year / Quarter / Month)
     const periodModeBtns = document.querySelectorAll('.period-mode-btn');
     const selYear = document.getElementById('filterPeriodYear');
     const selQuarter = document.getElementById('filterPeriodQuarter');
     const selMonth = document.getElementById('filterPeriodMonth');
+    const yearMultiHint = document.getElementById('yearMultiHint');
+    const quarterMultiHint = document.getElementById('quarterMultiHint');
+    const monthMultiHint = document.getElementById('monthMultiHint');
+    const yearChips = document.getElementById('yearChips');
+    const quarterChips = document.getElementById('quarterChips');
+    const monthChips = document.getElementById('monthChips');
     let activeMode = 'year';
+
+    // Wire multi-select behavior for all period selects
+    makeMultiSelectToggleable(selYear, 'yearChips');
+    makeMultiSelectToggleable(selQuarter, 'quarterChips');
+    makeMultiSelectToggleable(selMonth, 'monthChips');
 
     function setMode(mode){
         activeMode = mode;
         periodModeBtns.forEach(b=>{ b.style.background = (b.dataset.mode === mode) ? '#eef6fb' : 'transparent'; b.setAttribute('aria-pressed', b.dataset.mode === mode); });
+        
+        // Show/hide appropriate dropdowns and their hints/chips
         selYear.style.display = (mode === 'year') ? 'block' : 'none';
+        if(yearMultiHint) yearMultiHint.style.display = (mode === 'year') ? 'block' : 'none';
+        if(yearChips) yearChips.style.display = (mode === 'year') ? 'flex' : 'none';
+        
         selQuarter.style.display = (mode === 'quarter') ? 'block' : 'none';
+        if(quarterMultiHint) quarterMultiHint.style.display = (mode === 'quarter') ? 'block' : 'none';
+        if(quarterChips) quarterChips.style.display = (mode === 'quarter') ? 'flex' : 'none';
+        
         selMonth.style.display = (mode === 'month') ? 'block' : 'none';
+        if(monthMultiHint) monthMultiHint.style.display = (mode === 'month') ? 'block' : 'none';
+        if(monthChips) monthChips.style.display = (mode === 'month') ? 'flex' : 'none';
     }
     periodModeBtns.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+    
     // Initialize mode (if server provided a selection, auto-detect Year/Quarter/Month)
     const initialSelectedPeriod = "{{ selected_period|default:'' }}";
     const initialSelectedYear = "{{ selected_year|default:'' }}";
+    // Read server-supplied selected months (rendered into a JSON script block)
+    const initialSelectedMonths = JSON.parse(document.getElementById('initialSelectedMonthsData').textContent || '[]');
 
     function detectAndInit(){
-        if(!initialSelectedPeriod && !initialSelectedYear){ setMode('year'); return; }
+        if(!initialSelectedPeriod && !initialSelectedYear){ 
+            setMode('year'); 
+            // Render chips for any pre-selected years
+            renderChips(selYear, 'yearChips');
+            return; 
+        }
         if(initialSelectedPeriod.match(/Q[1-4]/)){
             setMode('quarter');
             Array.from(selQuarter.options).forEach(opt=>{ if(opt.value===initialSelectedPeriod) opt.selected=true; });
-        } else if(initialSelectedPeriod.match(/Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/)){
+            // Re-render chips after selecting options
+            renderChips(selQuarter, 'quarterChips');
+        } else if(initialSelectedPeriod.match(/Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/) || (initialSelectedMonths && initialSelectedMonths.length > 0)){
             setMode('month');
-            Array.from(selMonth.options).forEach(opt=>{ if(opt.value===initialSelectedPeriod) opt.selected=true; });
+            // Support multi-month: mark all selected months
+            if(initialSelectedMonths && initialSelectedMonths.length > 0){
+                Array.from(selMonth.options).forEach(opt=>{ if(initialSelectedMonths.indexOf(opt.value) !== -1) opt.selected=true; });
+            } else {
+                Array.from(selMonth.options).forEach(opt=>{ if(opt.value===initialSelectedPeriod) opt.selected=true; });
+            }
+            // re-render chips after selecting options
+            renderChips(selMonth, 'monthChips');
         } else if(initialSelectedYear){
             setMode('year');
             Array.from(selYear.options).forEach(opt=>{ if(opt.value===initialSelectedYear) opt.selected=true; });
+            // Re-render chips after selecting options
+            renderChips(selYear, 'yearChips');
         } else {
             setMode('year');
+            renderChips(selYear, 'yearChips');
         }
     }
 
     detectAndInit();
 
-    // --- New: Filter quarter and month options by selected year/quarter ---
-    // Cache original options so we can rebuild filtered lists
-    const origQuarterOptions = Array.from(selQuarter.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year') }));
-    const origMonthOptions = Array.from(selMonth.options).map(opt => ({ value: opt.value, text: opt.textContent, year: opt.dataset ? opt.dataset.year : opt.getAttribute('data-year'), quarter: opt.dataset ? opt.dataset.quarter : opt.getAttribute('data-quarter') }));
+    // NOTE: Quarter and Month dropdowns are now INDEPENDENT - they show all available options
+    // The filtering logic has been removed to allow independent selection
 
-    function rebuildQuarterOptionsForYear(year){
-        selQuarter.innerHTML='';
-        origQuarterOptions.filter(o=>!year || o.year===year).forEach(o=>{
-            const opt=document.createElement('option'); opt.value=o.value; opt.textContent=o.text; opt.setAttribute('data-year',o.year); selQuarter.appendChild(opt);
-        });
-        if(selQuarter.options.length) selQuarter.selectedIndex=0;
-    }
-
-    function rebuildMonthOptionsForYearAndQuarter(year, quarter){
-        selMonth.innerHTML='';
-        origMonthOptions.filter(o=>{
-            if(year && o.year!==year) return false;
-            if(quarter && o.quarter!==quarter) return false;
-            return true;
-        }).forEach(o=>{
-            const opt=document.createElement('option'); opt.value=o.value; opt.textContent=o.text; opt.setAttribute('data-year',o.year); opt.setAttribute('data-quarter',o.quarter); selMonth.appendChild(opt);
-        });
-        if(selMonth.options.length) selMonth.selectedIndex=0;
-    }
-
-    // When year changes, update quarter and month lists
-    selYear.addEventListener('change', function(){
-        const y = this.value;
-        rebuildQuarterOptionsForYear(y);
-        const selectedQ = selQuarter.options.length ? selQuarter.options[0].getAttribute('data-quarter') || null : null;
-        rebuildMonthOptionsForYearAndQuarter(y, null);
-    });
-
-    // When quarter changes, update month list to show only months in that quarter/year
-    selQuarter.addEventListener('change', function(){
-        const y = selYear.value;
-        const q = this.options[this.selectedIndex].getAttribute('data-quarter');
-        rebuildMonthOptionsForYearAndQuarter(y, q);
-        if(selMonth.options.length) selMonth.selectedIndex = 0;
-    });
-
-    // Call once on load to ensure lists reflect initial selected year
-    if(selYear.value){
-        rebuildQuarterOptionsForYear(selYear.value);
-    }
-
-    // --- Dependent dropdowns: community -> regional -> investor (reverse cascade) ---
+    // --- Dependent dropdowns (multi-select aware) ---
     try{
         const invToRegional = JSON.parse('{{ inv_to_regional_json|default:"{}"|escapejs }}');
         const invRegToCommunities = JSON.parse('{{ inv_reg_to_communities_json|default:"{}"|escapejs }}');
@@ -708,96 +808,137 @@ div[style*="width:100%"].drawer-open {
         const selRegional = document.getElementById('filterRegional');
         const selCommunity = document.getElementById('filterCommunity');
 
-        // Cache original option lists so we can restore them when clearing filters
         const origInvOptions = selInv ? Array.from(selInv.options).map(o=>({value:o.value,text:o.textContent})) : [];
         const origRegionalOptions = selRegional ? Array.from(selRegional.options).map(o=>({value:o.value,text:o.textContent})) : [];
-    const origCommunityOptions = selCommunity ? Array.from(selCommunity.options).map(o=>({value:o.value,text:o.textContent})) : [];
+        const origCommunityOptions = selCommunity ? Array.from(selCommunity.options).map(o=>({value:o.value,text:o.textContent})) : [];
 
-        // Build reverse map: community -> { investors: Set, regionals: Set }
-        const communityMap = {};
+        // Build forward/reverse maps to support multi-select union filtering
+        const communityMap = {}; // community -> { investors:Set, regionals:Set }
+        const invToRegionalsMap = {}; // inv -> Set(regionals)
+        const regionalToInvestorsMap = {}; // regional -> Set(investors)
+        const invToCommunitiesMap = {}; // inv -> Set(communities)
+        const regionalToCommunitiesMap = {}; // regional -> Set(communities)
+
         Object.keys(invRegToCommunities).forEach(key => {
             const parts = key.split('|||');
             const inv = parts[0] || '';
             const rm = parts[1] || '';
             const comms = invRegToCommunities[key] || [];
+            // forward maps
+            if(inv){ invToRegionalsMap[inv] = invToRegionalsMap[inv] || new Set(); if(rm) invToRegionalsMap[inv].add(rm); }
+            if(rm){ regionalToInvestorsMap[rm] = regionalToInvestorsMap[rm] || new Set(); if(inv) regionalToInvestorsMap[rm].add(inv); }
             comms.forEach(c => {
                 if(!communityMap[c]) communityMap[c] = { investors: new Set(), regionals: new Set() };
                 if(inv) communityMap[c].investors.add(inv);
                 if(rm) communityMap[c].regionals.add(rm);
+
+                if(inv){ invToCommunitiesMap[inv] = invToCommunitiesMap[inv] || new Set(); invToCommunitiesMap[inv].add(c); }
+                if(rm){ regionalToCommunitiesMap[rm] = regionalToCommunitiesMap[rm] || new Set(); regionalToCommunitiesMap[rm].add(c); }
             });
         });
 
-        function restoreSelect(sel, origOptions){
+        function getSelectedValues(sel){ if(!sel) return []; return Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean); }
+
+        function rebuildSelectMulti(sel, allowedSet, origOptions, keepSelected){
             if(!sel) return;
+            const keep = new Set((keepSelected||[]));
+            const allowedEmpty = !allowedSet || allowedSet.size === 0;
+            const newOptions = [];
+            // keep original order; include option if allowed or explicitly kept
+            origOptions.forEach(o => {
+                if(allowedEmpty || allowedSet.has(o.value) || keep.has(o.value)){
+                    newOptions.push(o);
+                }
+            });
+            // ensure any explicitly kept values are present even if they weren't in origOptions
+            keep.forEach(v => {
+                if(!newOptions.find(x=>x.value===v)) newOptions.push({value:v, text:v});
+            });
+
             sel.innerHTML = '';
-            origOptions.forEach(o=>{ const opt=document.createElement('option'); opt.value=o.value; opt.textContent=o.text; sel.appendChild(opt); });
+            newOptions.forEach(o => {
+                const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.text;
+                if(keep.has(o.value)) opt.selected = true;
+                sel.appendChild(opt);
+            });
+            // rebind helper behavior
+            renderChips(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
+            makeMultiSelectToggleable(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
         }
 
-        function rebuildRegionalForCommunity(community){
-            if(!selRegional) return;
-            if(!community){ restoreSelect(selRegional, origRegionalOptions); return; }
-            const regionals = communityMap[community] ? Array.from(communityMap[community].regionals) : [];
-            selRegional.innerHTML = '';
-            const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Regional Managers'; selRegional.appendChild(allOpt);
-            regionals.forEach(rm => { const o=document.createElement('option'); o.value=rm; o.textContent=rm; selRegional.appendChild(o); });
-        }
-
-        function rebuildInvestorForCommunity(community){
-            if(!selInv) return;
-            if(!community){ restoreSelect(selInv, origInvOptions); return; }
-            const investors = communityMap[community] ? Array.from(communityMap[community].investors) : [];
-            selInv.innerHTML = '';
-            const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Investors'; selInv.appendChild(allOpt);
-            investors.forEach(inv => { const o=document.createElement('option'); o.value=inv; o.textContent=inv; selInv.appendChild(o); });
-        }
-
-        // When community changes: populate regionals and investors related to that community
-        if(selCommunity){
-            selCommunity.addEventListener('change', function(){
-                const c = this.value;
-                if(!c){ // restore originals
-                    restoreSelect(selRegional, origRegionalOptions);
-                    restoreSelect(selInv, origInvOptions);
+        // When investor selection changes -> update regionals and communities (union of mappings)
+        if(selInv){
+            selInv.addEventListener('change', function(){
+                const selectedInvs = getSelectedValues(selInv);
+                const regionalAllowed = new Set();
+                const communityAllowed = new Set();
+                selectedInvs.forEach(inv => {
+                    const rset = invToRegionalsMap[inv]; if(rset) rset.forEach(v=>regionalAllowed.add(v));
+                    const cset = invToCommunitiesMap[inv]; if(cset) cset.forEach(v=>communityAllowed.add(v));
+                });
+                const keepRegional = getSelectedValues(selRegional);
+                const keepCommunity = getSelectedValues(selCommunity);
+                // If nothing selected, restore originals
+                if(selectedInvs.length === 0){
+                    rebuildSelectMulti(selRegional, new Set(), origRegionalOptions, keepRegional);
+                    rebuildSelectMulti(selCommunity, new Set(), origCommunityOptions, keepCommunity);
                 } else {
-                    rebuildRegionalForCommunity(c);
-                    rebuildInvestorForCommunity(c);
+                    rebuildSelectMulti(selRegional, regionalAllowed, origRegionalOptions, keepRegional);
+                    rebuildSelectMulti(selCommunity, communityAllowed, origCommunityOptions, keepCommunity);
                 }
             });
         }
 
-        // When regional changes (after community selected), further filter investors to those matching community+regional
+        // When regional selection changes -> update investors and communities
         if(selRegional){
             selRegional.addEventListener('change', function(){
-                const c = selCommunity ? selCommunity.value : '';
-                const r = this.value;
-                if(!c){ restoreSelect(selInv, origInvOptions); return; }
-                if(!r){ rebuildInvestorForCommunity(c); return; }
-                // Find investors that map to (regional r) and include community c
-                const invs = [];
-                Object.keys(invRegToCommunities).forEach(key => {
-                    const [inv, rm] = key.split('|||');
-                    const comms = invRegToCommunities[key] || [];
-                    if(rm === r && comms.indexOf(c) !== -1){ if(!invs.includes(inv)) invs.push(inv); }
+                const selectedRegs = getSelectedValues(selRegional);
+                const invAllowed = new Set();
+                const communityAllowed = new Set();
+                selectedRegs.forEach(rm => {
+                    const iset = regionalToInvestorsMap[rm]; if(iset) iset.forEach(v=>invAllowed.add(v));
+                    const cset = regionalToCommunitiesMap[rm]; if(cset) cset.forEach(v=>communityAllowed.add(v));
                 });
-                selInv.innerHTML = '';
-                const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Investors'; selInv.appendChild(allOpt);
-                invs.forEach(inv => { const o=document.createElement('option'); o.value=inv; o.textContent=inv; selInv.appendChild(o); });
+                const keepInv = getSelectedValues(selInv);
+                const keepCommunity = getSelectedValues(selCommunity);
+                if(selectedRegs.length === 0){
+                    rebuildSelectMulti(selInv, new Set(), origInvOptions, keepInv);
+                    rebuildSelectMulti(selCommunity, new Set(), origCommunityOptions, keepCommunity);
+                } else {
+                    rebuildSelectMulti(selInv, invAllowed, origInvOptions, keepInv);
+                    rebuildSelectMulti(selCommunity, communityAllowed, origCommunityOptions, keepCommunity);
+                }
             });
         }
 
-        // Initialize: keep all selects populated by default, but if there's an initial community selection, apply filtering
-        const initialCommunity = '{{ selected_community|default:""|escapejs }}';
-        const initialRegional = '{{ selected_regional_manager|default:""|escapejs }}';
-        const initialInv = '{{ selected_investor|default:""|escapejs }}';
-        if(initialCommunity && selCommunity){
-            // apply after a tick so DOM is ready
-            setTimeout(()=>{
-                selCommunity.value = initialCommunity;
-                selCommunity.dispatchEvent(new Event('change'));
-                if(initialRegional && selRegional){ selRegional.value = initialRegional; selRegional.dispatchEvent(new Event('change')); }
-                if(initialInv && selInv){ selInv.value = initialInv; }
-            },0);
+        // When community selection changes -> update investors and regionals
+        if(selCommunity){
+            selCommunity.addEventListener('change', function(){
+                const selectedComms = getSelectedValues(selCommunity);
+                const invAllowed = new Set();
+                const regAllowed = new Set();
+                selectedComms.forEach(c => {
+                    const cm = communityMap[c];
+                    if(cm){ cm.investors.forEach(v=>invAllowed.add(v)); cm.regionals.forEach(v=>regAllowed.add(v)); }
+                });
+                const keepInv = getSelectedValues(selInv);
+                const keepReg = getSelectedValues(selRegional);
+                if(selectedComms.length === 0){
+                    rebuildSelectMulti(selInv, new Set(), origInvOptions, keepInv);
+                    rebuildSelectMulti(selRegional, new Set(), origRegionalOptions, keepReg);
+                } else {
+                    rebuildSelectMulti(selInv, invAllowed, origInvOptions, keepInv);
+                    rebuildSelectMulti(selRegional, regAllowed, origRegionalOptions, keepReg);
+                }
+            });
         }
+
+        // Initialize cascade by re-applying any existing selections so the dependent lists reflect them
+        setTimeout(function(){
+            if(getSelectedValues(selInv).length) selInv.dispatchEvent(new Event('change'));
+            if(getSelectedValues(selRegional).length) selRegional.dispatchEvent(new Event('change'));
+            if(getSelectedValues(selCommunity).length) selCommunity.dispatchEvent(new Event('change'));
+        }, 0);
     }catch(e){ console.warn('Dependent dropdown init failed', e); }
 
     // Apply: submit via GET preserving other params where possible
@@ -807,28 +948,52 @@ div[style*="width:100%"].drawer-open {
             if(loadingOverlay) loadingOverlay.style.display = 'flex';
             const params = new URLSearchParams(window.location.search);
             // Preserve existing params
-            const periodYear = document.getElementById('filterPeriodYear').value;
-            const periodQuarter = document.getElementById('filterPeriodQuarter').value;
-            const periodMonth = document.getElementById('filterPeriodMonth').value;
-            const investor = document.getElementById('filterInvestor').value;
-            const regional = document.getElementById('filterRegional').value;
-            const community = document.getElementById('filterCommunity').value;
+            const periodYearSel = document.getElementById('filterPeriodYear');
+            const periodYears = Array.from(periodYearSel.selectedOptions).map(opt => opt.value);
+            
+            const periodQuarterSel = document.getElementById('filterPeriodQuarter');
+            const periodQuarters = Array.from(periodQuarterSel.selectedOptions).map(opt => opt.value);
+            
+            // Multi-month: get all selected months
+            const periodMonthSel = document.getElementById('filterPeriodMonth');
+            const periodMonths = Array.from(periodMonthSel.selectedOptions).map(opt => opt.value);
+            
+            // Multi-select: get all selected values
+            const investorSel = document.getElementById('filterInvestor');
+            const investors = Array.from(investorSel.selectedOptions).map(opt => opt.value);
+            const regionalSel = document.getElementById('filterRegional');
+            const regionals = Array.from(regionalSel.selectedOptions).map(opt => opt.value);
+            const communitySel = document.getElementById('filterCommunity');
+            const communities = Array.from(communitySel.selectedOptions).map(opt => opt.value);
+            
             // Determine which period is active and set explicit mode/year/month params
-            let period = periodYear; // default
-            let mode = 'year';
-            if(activeMode==='quarter' && periodQuarter){ period = periodQuarter; mode = 'quarter'; }
-            if(activeMode==='month' && periodMonth){ period = periodMonth; mode = 'month'; }
+            let mode = activeMode;
             // Clear old filters
             params.delete('period'); params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month'); params.delete('investor'); params.delete('regional_manager'); params.delete('community');
-            // Set new filters (include both explicit mode/year and legacy 'period' for compatibility)
+            // Set new filters
             if(mode) params.set('period_mode', mode);
-            if(mode === 'year') params.set('period_year', period);
-            if(mode === 'quarter') params.set('period_quarter', period);
-            if(mode === 'month') params.set('period_month', period);
-            if(period) params.set('period', period);
-            if(investor) params.set('investor', investor);
-            if(regional) params.set('regional_manager', regional);
-            if(community) params.set('community', community);
+            if(mode === 'year') {
+                // Multi-year: append each selected year
+                periodYears.forEach(py => { if(py) params.append('period_year', py); });
+                // legacy 'period' param: use first selected year for compatibility
+                if(periodYears.length > 0) params.set('period', periodYears[0]);
+            }
+            if(mode === 'quarter') {
+                // Multi-quarter: append each selected quarter
+                periodQuarters.forEach(pq => { if(pq) params.append('period_quarter', pq); });
+                // legacy 'period' param: use first selected quarter for compatibility
+                if(periodQuarters.length > 0) params.set('period', periodQuarters[0]);
+            }
+            if(mode === 'month') {
+                // Multi-month: append each selected month
+                periodMonths.forEach(pm => { if(pm) params.append('period_month', pm); });
+                // legacy 'period' param: use first selected month for compatibility
+                if(periodMonths.length > 0) params.set('period', periodMonths[0]);
+            }
+            // Multi-select: append each selected value
+            investors.forEach(inv => { if(inv) params.append('investor', inv); });
+            regionals.forEach(rm => { if(rm) params.append('regional_manager', rm); });
+            communities.forEach(comm => { if(comm) params.append('community', comm); });
             window.location.href = '/dashboard?' + params.toString();
         });
     }
@@ -860,10 +1025,14 @@ div[style*="width:100%"].drawer-open {
         });
     }
 
-    // Clicking outside filter pane should close it
+    // Clicking outside filter pane should close it. Ignore clicks on chip remove buttons.
     document.addEventListener('click', function(e){
         if(!filterPane) return;
         if(filterPane.classList.contains('open')){
+            // If the click was on a chip remove button or inside a chip, don't close
+            if(e.target && (e.target.classList && (e.target.classList.contains('filter-chip-remove') || e.target.closest('.filter-chip')))){
+                return;
+            }
             const isClickInsidePane = filterPane.contains(e.target);
             const isClickOnToggle = filterToggle && filterToggle.contains(e.target);
             if(!isClickInsidePane && !isClickOnToggle){
@@ -1075,7 +1244,7 @@ div[style*="width:100%"].drawer-open {
 <div id="property-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closePropertyModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
-        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">({{ period_display_label }})</span></h2>
             <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
                 <input id="property-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
             </div>
@@ -1175,11 +1344,28 @@ div[style*="width:100%"].drawer-open {
 
             var invSelect = document.getElementById('filterInvestor');
             var isAfter = periodAfterJun2025(mode, selectedPeriod);
-            var explicit = (invSelect && invSelect.value && invSelect.value !== '');
-            if(isAfter && !explicit){
-                removeBlackstoneOption(invSelect);
+            // Handle multi-select: gather all selected values
+            var selectedVals = [];
+            if(invSelect){
+                selectedVals = Array.from(invSelect.selectedOptions).map(function(o){ return (o.value||'').toUpperCase(); }).filter(Boolean);
+            }
+            if(selectedVals.length === 0){
+                // No explicit selection: treat as implicit 'all' — hide Blackstone if period is after Jun-2025
+                if(isAfter){
+                    removeBlackstoneOption(invSelect);
+                } else {
+                    ensureBlackstoneOption(invSelect);
+                }
             } else {
-                ensureBlackstoneOption(invSelect);
+                // User explicitly selected one or more investors.
+                // Only show BLACKSTONE/LIVCOR if it was explicitly selected.
+                var hasBlackstone = selectedVals.indexOf('BLACKSTONE/LIVCOR') !== -1;
+                if(hasBlackstone){
+                    ensureBlackstoneOption(invSelect);
+                } else {
+                    // User selected other investors but not Blackstone — hide it
+                    removeBlackstoneOption(invSelect);
+                }
             }
         }
 
@@ -1252,6 +1438,8 @@ function closePropertiesChartModal() {
 
 function openUnitsChartModal() {
     document.getElementById('units-chart-modal').style.display = 'flex';
+    // Initialize period selector with current values
+    initializeUnitsModalPeriodSelector();
     // Re-render the chart in the modal if needed
     setTimeout(() => {
         renderUnitsChartInModal();
@@ -1264,6 +1452,124 @@ function closeUnitsChartModal() {
     if (window.unitsModalChart) {
         window.unitsModalChart.destroy();
     }
+}
+
+// Initialize units modal period selector
+function initializeUnitsModalPeriodSelector() {
+    // Initialize year selection with current years from server context
+    // eslint-disable-next-line
+    const selectedYearsFromServer = {{ selected_years|safe }};
+    // eslint-disable-next-line
+    const initialYear = '{{ selected_year|default:"" }}';
+    
+    if (selectedYearsFromServer && selectedYearsFromServer.length > 0) {
+        // Use the list of selected years from server
+        setSelectedUnitsYears(selectedYearsFromServer.map(y => String(y)));
+    } else if (initialYear) {
+        // Fallback to single year
+        setSelectedUnitsYears([initialYear]);
+    } else {
+        // Default to first available year if none selected
+        const firstYearChip = document.querySelector('.units-year-chip');
+        if (firstYearChip) {
+            setSelectedUnitsYears([firstYearChip.dataset.year]);
+        }
+    }
+    
+    try {
+        const selectedMonthsScript = document.getElementById('initialSelectedMonthsData');
+        if (selectedMonthsScript) {
+            const selectedMonths = JSON.parse(selectedMonthsScript.textContent);
+            if (selectedMonths && selectedMonths.length > 0) {
+                // Extract just the month abbreviation (e.g., "Jan" from "Jan-2024")
+                const monthAbbrs = selectedMonths.map(m => {
+                    const parts = m.split('-');
+                    return parts[0]; // Get "Jan", "Feb", etc.
+                });
+                setSelectedUnitsMonths(monthAbbrs);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to initialize units month selector:', e);
+    }
+}
+
+// Apply units modal period change via AJAX
+function applyUnitsModalPeriodChange() {
+    const years = getSelectedUnitsYears();
+    const months = getSelectedUnitsMonths();
+    
+    // Validate selections
+    if (years.length === 0) {
+        alert('Please select at least one year');
+        return;
+    }
+    
+    const params = new URLSearchParams();
+    
+    // Determine mode based on selections
+    if (months.length === 0) {
+        // Year mode: no months selected, show aggregated data by year
+        params.set('period_mode', 'year');
+        years.forEach(y => params.append('period_year', y));
+        params.set('period', years.join(', '));
+    } else {
+        // Month mode: send all combinations of months and years
+        // This creates "Jan-2024", "Feb-2024", "Jan-2025", "Feb-2025", etc.
+        params.set('period_mode', 'month');
+        years.forEach(year => {
+            months.forEach(m => params.append('period_month', `${m}-${year}`));
+        });
+        params.set('period', years.join(', ') + ' ' + (months.length ? months.join(',') : ''));
+    }
+    
+    const mainUrl = new URL(window.location.href);
+    const mainParams = new URLSearchParams(mainUrl.search);
+    const investor = mainParams.getAll('investor');
+    const regional_manager = mainParams.getAll('regional_manager');
+    const community = mainParams.getAll('community');
+    
+    investor.forEach(inv => { if (inv) params.append('investor', inv); });
+    regional_manager.forEach(rm => { if (rm) params.append('regional_manager', rm); });
+    community.forEach(comm => { if (comm) params.append('community', comm); });
+    
+    params.set('format', 'json');
+    
+    const applyBtn = document.querySelector('#units-chart-modal button[onclick="applyUnitsModalPeriodChange()"]');
+    const originalBtnText = applyBtn ? applyBtn.textContent : 'Apply';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Loading...';
+    }
+    
+    fetch('/dashboard/?' + params.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.chart_properties_json) {
+            const chartPropertiesData = JSON.parse(data.chart_properties_json);
+            window.chartData = chartPropertiesData;
+        }
+        
+        renderUnitsChartInModal();
+        
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    })
+    .catch(error => {
+        console.error('Failed to fetch updated chart data:', error);
+        alert('Failed to update chart data. Please try again.');
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    });
 }
 
 function openOccupancyChartModal() {
@@ -1289,15 +1595,16 @@ function renderOccupancyChartInModal() {
         if (window.occupancyModalChart) {
             window.occupancyModalChart.destroy();
         }
-        // Try to use server-provided occupancy series from chart_occrev_json
-        let years = ['2021', '2022', '2023', '2024', '2025'];
-        let occupancyData = [92, 94, 96, 95, 97]; // fallback sample percentages
+        // Use cached data if available (from AJAX), otherwise parse from page
+        let years = [];
+        let occupancyData = [];
+        let totalUnitsData = [];
         try {
-            const chartOccRevData = JSON.parse('{{ chart_occrev_json|default:"{}"|escapejs }}');
+            // Check for cached AJAX data first
+            let chartOccRevData = window.modalChartOccRevData || JSON.parse('{{ chart_occrev_json|default:"{}"|escapejs }}');
             if (chartOccRevData && Array.isArray(chartOccRevData.labels) && chartOccRevData.labels.length) {
-                // labels -> years
                 years = chartOccRevData.labels.map(l => String(l));
-                // Find occupancy dataset: prefer label containing 'Occupancy' or yAxisID 'yL'
+                // Find occupancy dataset
                 let occDataset = null;
                 if (Array.isArray(chartOccRevData.datasets)) {
                     for (let ds of chartOccRevData.datasets) {
@@ -1311,18 +1618,31 @@ function renderOccupancyChartInModal() {
                 }
                 if (occDataset && Array.isArray(occDataset.data) && occDataset.data.length) {
                     occupancyData = occDataset.data.map(v => {
-                        // coerce numeric values and percentages like '92%'
                         let num = 0;
                         if (typeof v === 'string') num = parseFloat(v.replace('%','')) || 0;
                         else num = Number(v) || 0;
-                        // round to 1 decimal for presentable form
                         return Math.round(num * 10) / 10;
                     });
                 }
             }
+
+            // For units, prefer chart_properties_json.unitsData (real computed units per bucket)
+            if (window.chartData && Array.isArray(window.chartData.unitsData) && window.chartData.unitsData.length) {
+                totalUnitsData = window.chartData.unitsData.map(v => Number(v) || 0);
+            }
         } catch(e) {
-            // parse failure - keep fallback sample
-            console.warn('Failed to parse chart_occrev_json for occupancy modal', e);
+            console.warn('Failed to parse server chart JSON for occupancy modal', e);
+        }
+
+        // If no occupancy data present, show a clear message and skip drawing datasets
+        if (!Array.isArray(occupancyData) || occupancyData.length === 0) {
+            // Render a simple empty chart with informative title
+            window.occupancyModalChart = new Chart(modalCanvas, {
+                type: 'bar',
+                data: { labels: [], datasets: [] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'No occupancy data available for selected period', font: { size: 16 } } } }
+            });
+            return;
         }
 
         // Calculate base and growth portions
@@ -1338,42 +1658,113 @@ function renderOccupancyChartInModal() {
             return Math.round(Math.max(0, current - previous) * 10) / 10;
         });
         
+        // Build datasets conditionally
+        const datasets = [];
+        datasets.push({
+            label: 'Base Occupancy %',
+            data: occupancyBase,
+            backgroundColor: '#1F3639',
+            borderColor: '#1F3639',
+            borderWidth: 1,
+            stack: 'occupancy',
+            yAxisID: 'yOccupancy'
+        });
+        datasets.push({
+            label: 'Growth %',
+            data: occupancyGrowth,
+            backgroundColor: '#22C55E',
+            borderColor: '#22C55E',
+            borderWidth: 1,
+            stack: 'occupancy',
+            yAxisID: 'yOccupancy'
+        });
+
+        // Include Total Units as stacked base + growth bars when server provided units and lengths align
+        if (Array.isArray(totalUnitsData) && totalUnitsData.length === years.length) {
+            // Compute base and growth parts for total units similar to occupancy
+            const totalUnitsBase = totalUnitsData.map((current, index) => {
+                if (index === 0) return Math.round(current);
+                const previous = totalUnitsData[index - 1];
+                return Math.round(Math.min(current, previous));
+            });
+            const totalUnitsGrowth = totalUnitsData.map((current, index) => {
+                if (index === 0) return 0;
+                const previous = totalUnitsData[index - 1];
+                return Math.round(Math.max(0, current - previous));
+            });
+
+            datasets.push({
+                type: 'bar',
+                label: 'Total Units (Base)',
+                data: totalUnitsBase,
+                backgroundColor: 'rgba(16,185,129,0.12)',
+                borderColor: '#10B981',
+                borderWidth: 1,
+                yAxisID: 'yUnits',
+                stack: 'units'
+            });
+            datasets.push({
+                type: 'bar',
+                label: 'Total Units (Growth)',
+                data: totalUnitsGrowth,
+                backgroundColor: 'rgba(34,197,94,0.9)',
+                borderColor: '#22C55E',
+                borderWidth: 1,
+                yAxisID: 'yUnits',
+                stack: 'units'
+            });
+        }
+
         // Create new chart and store reference
         window.occupancyModalChart = new Chart(modalCanvas, {
             type: 'bar',
             data: {
                 labels: years,
-                datasets: [
-                    {
-                        label: 'Base Occupancy %',
-                        data: occupancyBase,
-                        backgroundColor: '#1F3639',
-                        borderColor: '#1F3639',
-                        borderWidth: 1,
-                        stack: 'occupancy'
-                    },
-                    {
-                        label: 'Growth %',
-                        data: occupancyGrowth,
-                        backgroundColor: '#22C55E',
-                        borderColor: '#22C55E',
-                        borderWidth: 1,
-                        stack: 'occupancy'
-                    }
-                ]
+                datasets: datasets
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
                 scales: {
                     x: { stacked: true },
-                    y: { 
+                    yOccupancy: { 
+                        type: 'linear',
+                        position: 'left',
                         beginAtZero: true, 
-                        stacked: true, 
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: 'Occupancy Rate (%)',
+                            color: '#0B3A3F',
+                            font: { size: 12, weight: 'bold' }
+                        },
                         ticks: { 
                             stepSize: 5,
                             callback: function(value) {
                                 return value + '%';
+                            }
+                        }
+                    },
+                    yUnits: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Total Units',
+                            color: '#10B981',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return value.toLocaleString();
                             }
                         }
                     }
@@ -1386,7 +1777,7 @@ function renderOccupancyChartInModal() {
                     },
                     title: {
                         display: true,
-                        text: 'Occupancy Rate Over Time',
+                        text: 'Occupancy Rate & Total Units Over Time',
                         font: { size: 16 }
                     },
                     tooltip: {
@@ -1394,24 +1785,40 @@ function renderOccupancyChartInModal() {
                         intersect: false,
                         callbacks: {
                             title: function(context) {
-                                return `Year: ${context[0].label}`;
+                                return `Period: ${context[0].label}`;
                             },
                             label: function(context) {
                                 const datasetLabel = context.dataset.label;
                                 const value = context.raw;
-                                const fmt = (n) => (Math.round(n * 10) / 10).toFixed(1);
-                                if (datasetLabel === 'Base Occupancy %') {
-                                    return `Base: ${fmt(value)}%`;
-                                } else if (datasetLabel === 'Growth %') {
-                                    return value > 0 ? `Growth: +${fmt(value)}%` : '';
+                                const fmtPct = (n) => (Math.round(n * 10) / 10).toFixed(1);
+                                // Treat any occupancy series as percentages
+                                if (datasetLabel && datasetLabel.toLowerCase().includes('occupancy')) {
+                                    if (datasetLabel.toLowerCase().includes('growth')) {
+                                        return value > 0 ? `Growth: +${fmtPct(value)}%` : '';
+                                    }
+                                    return `Base: ${fmtPct(value)}%`;
                                 }
-                                return `${datasetLabel}: ${fmt(value)}%`;
+                                // Treat total units series as counts (no %), support both "Total Units" and "Total Units (Base/Growth)"
+                                if (datasetLabel && datasetLabel.toLowerCase().includes('total units')) {
+                                    // value may be numeric
+                                    try {
+                                        return `${datasetLabel}: ${Number(value).toLocaleString()}`;
+                                    } catch (e) {
+                                        return `${datasetLabel}: ${value}`;
+                                    }
+                                }
+                                // Fallback: show raw value
+                                return `${datasetLabel}: ${value}`;
                             },
                             footer: function(context) {
                                 const index = context[0].dataIndex;
-                                const total = occupancyData[index];
-                                const fmt = (n) => (Math.round(n * 10) / 10).toFixed(1);
-                                return `Total: ${fmt(total)}%`;
+                                const total = (Array.isArray(occupancyData) && occupancyData.length > index) ? occupancyData[index] : null;
+                                const units = (Array.isArray(totalUnitsData) && totalUnitsData.length > index) ? totalUnitsData[index] : null;
+                                const fmtPct = (n) => (Math.round(n * 10) / 10).toFixed(1);
+                                const parts = [];
+                                if (total !== null) parts.push(`Total Occupancy: ${fmtPct(total)}%`);
+                                if (units !== null) parts.push(`Portfolio Size: ${Number(units).toLocaleString()} units`);
+                                return parts.join('\n');
                             }
                         }
                     }
@@ -1425,15 +1832,29 @@ function renderOccupancyChartInModal() {
 
 function renderUnitsChartInModal() {
     const modalCanvas = document.getElementById('modalChartTotalUnits');
-    if (modalCanvas && window.Chart && window.chartData) {
-        // Destroy existing chart if it exists
-        if (window.unitsModalChart) {
-            window.unitsModalChart.destroy();
+    if (!modalCanvas || !window.Chart) return;
+    
+    // Use cached AJAX data if available, otherwise parse from page-embedded JSON
+    let chartData;
+    if (window.chartData) {
+        chartData = window.chartData;
+    } else {
+        try {
+            chartData = JSON.parse('{{ chart_properties_json|escapejs }}');
+        } catch (e) {
+            console.error('Failed to parse chart_properties_json:', e);
+            return;
         }
+    }
+    
+    // Destroy existing chart if it exists
+    if (window.unitsModalChart) {
+        window.unitsModalChart.destroy();
+    }
         
-    // Use the global chart data (defensive - ensure keys exist)
-    const years = (window.chartData && window.chartData.years) ? window.chartData.years : [];
-    const unitsData = (window.chartData && window.chartData.unitsData) ? window.chartData.unitsData : [];
+    // Use the chart data (defensive - ensure keys exist)
+    const years = (chartData && chartData.years) ? chartData.years : [];
+    const unitsData = (chartData && chartData.unitsData) ? chartData.unitsData : [];
         
         // Calculate base and growth portions
         const unitsBase = unitsData.map((current, index) => {
@@ -1518,9 +1939,6 @@ function renderUnitsChartInModal() {
                 }
             }
         });
-
-        // KPI horizontal line removed from units modal chart
-    }
 }
 
 function renderPropertiesChartInModal() {
@@ -1638,7 +2056,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
-    </script>
+</script>
+
+<!-- Correlation chart data JSON -->
+<script id="chartCorrelationData" type="application/json">
+{{ chart_correlation_json|default:"{}"|safe }}
+</script>
 
 <!-- Modal for Properties Chart -->
 <div id="properties-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
@@ -1653,24 +2076,860 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <!-- Modal for Units Chart -->
 <div id="units-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
-    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1000px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
         <button onclick="closeUnitsChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
         <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Total Units Growth</h2>
-    <!-- KPI meta removed -->
+        
+        <!-- Period Selector for Units Modal -->
+        <div style="background:#F3F6F8;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Years:</div>
+                <div id="unitsModalPeriodYearContainer" style="display:flex;flex-wrap:wrap;gap:6px;">
+                    {% for year in period_options.keys %}
+                    <button type="button" class="units-year-chip" data-year="{{ year }}" onclick="toggleUnitsYearChip(this)" style="padding:6px 14px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;">{{ year }}</button>
+                    {% endfor %}
+                </div>
+                <span id="unitsModalYearMultiHint" style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Click to select multiple)</span>
+            </div>
+            
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Months:</div>
+                <div id="unitsModalPeriodMonthContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-width:700px;">
+                    <button type="button" class="units-month-chip" data-month="Jan" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jan</button>
+                    <button type="button" class="units-month-chip" data-month="Feb" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Feb</button>
+                    <button type="button" class="units-month-chip" data-month="Mar" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Mar</button>
+                    <button type="button" class="units-month-chip" data-month="Apr" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Apr</button>
+                    <button type="button" class="units-month-chip" data-month="May" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">May</button>
+                    <button type="button" class="units-month-chip" data-month="Jun" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jun</button>
+                    <button type="button" class="units-month-chip" data-month="Jul" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jul</button>
+                    <button type="button" class="units-month-chip" data-month="Aug" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Aug</button>
+                    <button type="button" class="units-month-chip" data-month="Sep" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Sep</button>
+                    <button type="button" class="units-month-chip" data-month="Oct" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Oct</button>
+                    <button type="button" class="units-month-chip" data-month="Nov" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Nov</button>
+                    <button type="button" class="units-month-chip" data-month="Dec" onclick="toggleUnitsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Dec</button>
+                </div>
+                <span id="unitsModalMonthMultiHint" style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Optional - leave blank for all months)</span>
+            </div>
+            
+            <!-- Apply Button -->
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button onclick="applyUnitsModalPeriodChange()" style="padding:8px 24px;background:#0E555A;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0B3A3F'" onmouseout="this.style.background='#0E555A'">
+                    Apply
+                </button>
+            </div>
+        </div>
+        
         <div style="height:400px;">
             <canvas id="modalChartTotalUnits"></canvas>
         </div>
     </div>
 </div>
 
-<!-- Modal for Occupancy Chart -->
-<div id="occupancy-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
-    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:800px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
-        <button onclick="closeOccupancyChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
-        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Occupancy & Revenue</h2>
-        <div style="height:400px;">
-            <canvas id="modalChartOccupancy"></canvas>
+<!-- Modal for Occupancy Chart with Tabs -->
+<div id="occupancy-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;overflow-y:auto;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1100px;width:95vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;margin:20px auto;max-height:90vh;overflow-y:auto;">
+        <button onclick="closeOccupancyChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;z-index:10;">&times;</button>
+        
+        <!-- Tab Navigation -->
+        <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid #E5E7EB;">
+            <button id="tab-occupancy" class="modal-tab active" onclick="switchOccupancyModalTab('occupancy')" style="padding:12px 24px;background:none;border:none;border-bottom:3px solid #0E555A;color:#0E555A;font-weight:700;font-size:15px;cursor:pointer;transition:all 0.2s;">
+                Occupancy & Revenue
+            </button>
+            <button id="tab-correlation" class="modal-tab" onclick="switchOccupancyModalTab('correlation')" style="padding:12px 24px;background:none;border:none;border-bottom:3px solid transparent;color:#64748B;font-weight:600;font-size:15px;cursor:pointer;transition:all 0.2s;">
+                Correlation Analysis
+            </button>
+        </div>
+        
+        <!-- Period Selector -->
+        <div style="background:#F3F6F8;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Years:</div>
+                <div id="modalPeriodYearContainer" style="display:flex;flex-wrap:wrap;gap:6px;">
+                    {% for year in period_options.keys %}
+                    <button type="button" class="year-chip" data-year="{{ year }}" onclick="toggleYearChip(this)" style="padding:6px 14px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;">{{ year }}</button>
+                    {% endfor %}
+                </div>
+                <span id="modalYearMultiHint" style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Click to select multiple)</span>
+            </div>
+            
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Months:</div>
+                <div id="modalPeriodMonthContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-width:700px;">
+                    <button type="button" class="month-chip" data-month="Jan" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jan</button>
+                    <button type="button" class="month-chip" data-month="Feb" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Feb</button>
+                    <button type="button" class="month-chip" data-month="Mar" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Mar</button>
+                    <button type="button" class="month-chip" data-month="Apr" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Apr</button>
+                    <button type="button" class="month-chip" data-month="May" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">May</button>
+                    <button type="button" class="month-chip" data-month="Jun" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jun</button>
+                    <button type="button" class="month-chip" data-month="Jul" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jul</button>
+                    <button type="button" class="month-chip" data-month="Aug" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Aug</button>
+                    <button type="button" class="month-chip" data-month="Sep" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Sep</button>
+                    <button type="button" class="month-chip" data-month="Oct" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Oct</button>
+                    <button type="button" class="month-chip" data-month="Nov" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Nov</button>
+                    <button type="button" class="month-chip" data-month="Dec" onclick="toggleMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Dec</button>
+                </div>
+                <span id="modalMonthMultiHint" style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Optional - leave blank for all months)</span>
+            </div>
+            
+            <!-- Apply Button -->
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button onclick="applyModalPeriodChange()" style="padding:8px 24px;background:#0E555A;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0B3A3F'" onmouseout="this.style.background='#0E555A'">
+                    Apply
+                </button>
+            </div>
+        </div>
+        
+        <!-- Tab Content: Occupancy & Revenue -->
+        <div id="tab-content-occupancy" class="tab-content" style="display:block;">
+            <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Occupancy & Revenue</h2>
+            <div style="height:450px;">
+                <canvas id="modalChartOccupancy"></canvas>
+            </div>
+        </div>
+        
+        <!-- Tab Content: Correlation Analysis -->
+        <div id="tab-content-correlation" class="tab-content" style="display:none;">
+            <h2 style="margin-bottom:12px;color:#0B3A3F;font-size:24px;font-weight:700;">Correlation Analysis</h2>
+            <p style="margin-bottom:18px;color:#64748B;font-size:14px;">Visualize correlations: does occupancy drop when rent increases or inventory changes?</p>
+            <div style="height:450px;margin-bottom:24px;">
+                <canvas id="modalChartCorrelation"></canvas>
+            </div>
+            
+            <!-- Summary Section -->
+            <div id="correlationSummary" style="display:none;">
+                <div style="border-top:2px solid #E5E7EB;padding-top:20px;">
+                    <h3 style="margin:0 0 16px;color:#0B3A3F;font-size:18px;font-weight:700;">Correlation Summary</h3>
+                    
+                    <!-- Key Metrics Grid -->
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px;">
+                        <!-- Occupancy Change Card -->
+                        <div style="background:#F3F6F8;border-radius:8px;padding:16px;border-left:4px solid #0E555A;">
+                            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#64748B;margin-bottom:8px;">Occupancy Change</div>
+                            <div id="occChange" style="font-size:24px;font-weight:700;color:#0B3A3F;margin-bottom:4px;">--</div>
+                            <div id="occTrend" style="font-size:13px;color:#64748B;"></div>
+                        </div>
+                        
+                        <!-- Rent Change Card -->
+                        <div style="background:#F3F6F8;border-radius:8px;padding:16px;border-left:4px solid #C69A58;">
+                            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#64748B;margin-bottom:8px;">Avg Rent Change</div>
+                            <div id="rentChange" style="font-size:24px;font-weight:700;color:#0B3A3F;margin-bottom:4px;">--</div>
+                            <div id="rentTrend" style="font-size:13px;color:#64748B;"></div>
+                        </div>
+                        
+                        <!-- Units Change Card -->
+                        <div style="background:#F3F6F8;border-radius:8px;padding:16px;border-left:4px solid #10B981;">
+                            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#64748B;margin-bottom:8px;">Inventory Change</div>
+                            <div id="unitsChange" style="font-size:24px;font-weight:700;color:#0B3A3F;margin-bottom:4px;">--</div>
+                            <div id="unitsTrend" style="font-size:13px;color:#64748B;"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Insights Section -->
+                    <div style="background:#EEF6FB;border-radius:8px;padding:18px;border-left:4px solid #4f6bed;">
+                        <h4 style="margin:0 0 12px;color:#0B3A3F;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Key Insights</h4>
+                        <ul id="correlationInsights" style="margin:0;padding-left:20px;color:#1F3639;font-size:14px;line-height:1.8;">
+                            <li>Loading analysis...</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+// Helper function to toggle month chip selection
+function toggleMonthChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '400';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+// Helper function to get selected months from chips
+function getSelectedMonths() {
+    const chips = document.querySelectorAll('.month-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.month);
+}
+
+// Helper function to set selected months on chips
+function setSelectedMonths(monthsArray) {
+    // Clear all selections first
+    document.querySelectorAll('.month-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '400';
+    });
+    
+    // Select specified months
+    if (monthsArray && monthsArray.length > 0) {
+        monthsArray.forEach(month => {
+            const chip = document.querySelector(`.month-chip[data-month="${month}"]`);
+            if (chip) {
+                chip.classList.add('selected');
+                chip.style.background = '#0E555A';
+                chip.style.color = '#fff';
+                chip.style.borderColor = '#0E555A';
+                chip.style.fontWeight = '600';
+            }
+        });
+    }
+}
+
+// Helper functions for Year chip selection (Occupancy Modal)
+function toggleYearChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '500';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '700';
+    }
+}
+
+function getSelectedYears() {
+    const chips = document.querySelectorAll('.year-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.year);
+}
+
+function setSelectedYears(yearsArray) {
+    // Clear all selections first
+    document.querySelectorAll('.year-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '500';
+    });
+    
+    // Select specified years
+    if (yearsArray && yearsArray.length > 0) {
+        yearsArray.forEach(year => {
+            const chip = document.querySelector(`.year-chip[data-year="${year}"]`);
+            if (chip) {
+                chip.classList.add('selected');
+                chip.style.background = '#0E555A';
+                chip.style.color = '#fff';
+                chip.style.borderColor = '#0E555A';
+                chip.style.fontWeight = '700';
+            }
+        });
+    }
+}
+
+// Helper functions for Units Modal
+function toggleUnitsMonthChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '400';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function getSelectedUnitsMonths() {
+    const chips = document.querySelectorAll('.units-month-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.month);
+}
+
+function setSelectedUnitsMonths(monthsArray) {
+    // Clear all selections first
+    document.querySelectorAll('.units-month-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '400';
+    });
+    
+    // Select specified months
+    if (monthsArray && monthsArray.length > 0) {
+        monthsArray.forEach(month => {
+            const chip = document.querySelector(`.units-month-chip[data-month="${month}"]`);
+            if (chip) {
+                chip.classList.add('selected');
+                chip.style.background = '#0E555A';
+                chip.style.color = '#fff';
+                chip.style.borderColor = '#0E555A';
+                chip.style.fontWeight = '600';
+            }
+        });
+    }
+}
+
+// Helper functions for Units Modal Year chips
+function toggleUnitsYearChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '500';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '700';
+    }
+}
+
+function getSelectedUnitsYears() {
+    const chips = document.querySelectorAll('.units-year-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.year);
+}
+
+function setSelectedUnitsYears(yearsArray) {
+    // Clear all selections first
+    document.querySelectorAll('.units-year-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '500';
+    });
+    
+    // Select specified years
+    if (yearsArray && yearsArray.length > 0) {
+        yearsArray.forEach(year => {
+            const chip = document.querySelector(`.units-year-chip[data-year="${year}"]`);
+            if (chip) {
+                chip.classList.add('selected');
+                chip.style.background = '#0E555A';
+                chip.style.color = '#fff';
+                chip.style.borderColor = '#0E555A';
+                chip.style.fontWeight = '700';
+            }
+        });
+    }
+}
+
+// Tab switching for occupancy modal
+function switchOccupancyModalTab(tabName) {
+    // Hide all tab contents
+    document.getElementById('tab-content-occupancy').style.display = 'none';
+    document.getElementById('tab-content-correlation').style.display = 'none';
+    
+    // Reset all tab buttons
+    const tabs = document.querySelectorAll('.modal-tab');
+    tabs.forEach(tab => {
+        tab.style.borderBottomColor = 'transparent';
+        tab.style.color = '#64748B';
+        tab.style.fontWeight = '600';
+        tab.classList.remove('active');
+    });
+    
+    // Show selected tab content and activate tab button
+    if (tabName === 'occupancy') {
+        document.getElementById('tab-content-occupancy').style.display = 'block';
+        const tab = document.getElementById('tab-occupancy');
+        tab.style.borderBottomColor = '#0E555A';
+        tab.style.color = '#0E555A';
+        tab.style.fontWeight = '700';
+        tab.classList.add('active');
+    } else if (tabName === 'correlation') {
+        document.getElementById('tab-content-correlation').style.display = 'block';
+        const tab = document.getElementById('tab-correlation');
+        tab.style.borderBottomColor = '#0E555A';
+        tab.style.color = '#0E555A';
+        tab.style.fontWeight = '700';
+        tab.classList.add('active');
+        // Render correlation chart when tab is activated
+        renderCorrelationChartInModal();
+    }
+}
+
+// Open occupancy modal (can optionally open to specific tab)
+function openOccupancyChartModal(initialTab = 'occupancy') {
+    const modal = document.getElementById('occupancy-chart-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Initialize period selector with current values
+        initializeModalPeriodSelector();
+        // Switch to initial tab
+        switchOccupancyModalTab(initialTab);
+        // Render occupancy chart
+        renderOccupancyChartInModal();
+    }
+}
+
+// Initialize modal period selector with current page values
+function initializeModalPeriodSelector() {
+    // Initialize year selection with current years from server context
+    // eslint-disable-next-line
+    const selectedYearsFromServer = {{ selected_years|safe }};
+    // eslint-disable-next-line
+    const initialYear = '{{ selected_year|default:"" }}';
+    
+    if (selectedYearsFromServer && selectedYearsFromServer.length > 0) {
+        // Use the list of selected years from server
+        setSelectedYears(selectedYearsFromServer.map(y => String(y)));
+    } else if (initialYear) {
+        // Fallback to single year
+        setSelectedYears([initialYear]);
+    } else {
+        // Default to first available year if none selected
+        const firstYearChip = document.querySelector('.year-chip');
+        if (firstYearChip) {
+            setSelectedYears([firstYearChip.dataset.year]);
+        }
+    }
+    
+    // Get selected months from server context if in month mode
+    try {
+        const selectedMonthsScript = document.getElementById('initialSelectedMonthsData');
+        if (selectedMonthsScript) {
+            const selectedMonths = JSON.parse(selectedMonthsScript.textContent);
+            if (selectedMonths && selectedMonths.length > 0) {
+                // Extract just the month abbreviation (e.g., "Jan" from "Jan-2024")
+                const monthAbbrs = selectedMonths.map(m => {
+                    const parts = m.split('-');
+                    return parts[0]; // Get "Jan", "Feb", etc.
+                });
+                // Set selected months on chips
+                setSelectedMonths(monthAbbrs);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to initialize month selector:', e);
+    }
+}
+
+// Close occupancy modal
+function closeOccupancyChartModal() {
+    const modal = document.getElementById('occupancy-chart-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Open correlation modal (now redirects to occupancy modal correlation tab)
+function openCorrelationChartModal() {
+    openOccupancyChartModal('correlation');
+}
+
+// Close correlation modal (legacy function, now closes occupancy modal)
+function closeCorrelationChartModal() {
+    closeOccupancyChartModal();
+}
+
+// Apply period change and fetch updated chart data via AJAX (modal only)
+function applyModalPeriodChange() {
+    const years = getSelectedYears();
+    const months = getSelectedMonths();
+    
+    // Validate selections
+    if (years.length === 0) {
+        alert('Please select at least one year');
+        return;
+    }
+    
+    // Build parameters for AJAX request
+    const params = new URLSearchParams();
+    
+    // Determine mode based on selections
+    if (months.length === 0) {
+        // Year mode: no months selected, show aggregated data by year
+        params.set('period_mode', 'year');
+        years.forEach(y => params.append('period_year', y));
+        params.set('period', years.join(', '));
+    } else {
+        // Month mode: send all combinations of months and years
+        // This creates "Jan-2024", "Feb-2024", "Jan-2025", "Feb-2025", etc.
+        params.set('period_mode', 'month');
+        years.forEach(year => {
+            months.forEach(m => params.append('period_month', `${m}-${year}`));
+        });
+        params.set('period', years.join(', ') + ' ' + (months.length ? months.join(',') : ''));
+    }
+    
+    // Preserve main dashboard filters (don't apply them to modal)
+    const mainUrl = new URL(window.location.href);
+    const mainParams = new URLSearchParams(mainUrl.search);
+    const investor = mainParams.getAll('investor');
+    const regional_manager = mainParams.getAll('regional_manager');
+    const community = mainParams.getAll('community');
+    
+    investor.forEach(inv => { if (inv) params.append('investor', inv); });
+    regional_manager.forEach(rm => { if (rm) params.append('regional_manager', rm); });
+    community.forEach(comm => { if (comm) params.append('community', comm); });
+    
+    // Add format parameter to request JSON response
+    params.set('format', 'json');
+    
+    // Show loading indicator
+    const applyBtn = document.querySelector('#occupancy-chart-modal button[onclick="applyModalPeriodChange()"]');
+    const originalBtnText = applyBtn ? applyBtn.textContent : 'Apply';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Loading...';
+    }
+    
+    // Fetch updated data via AJAX
+    fetch('/dashboard/?' + params.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Update chart data in memory
+        if (data.chart_occrev_json) {
+            const chartOccRevData = JSON.parse(data.chart_occrev_json);
+            window.modalChartOccRevData = chartOccRevData;
+        }
+        if (data.chart_properties_json) {
+            const chartPropertiesData = JSON.parse(data.chart_properties_json);
+            window.chartData = chartPropertiesData;
+        }
+        if (data.chart_correlation_json) {
+            const chartCorrelationData = JSON.parse(data.chart_correlation_json);
+            window.modalChartCorrelationData = chartCorrelationData;
+        }
+        
+        // Re-render the active chart
+        const activeTab = document.querySelector('.modal-tab.active');
+        if (activeTab && activeTab.id === 'tab-occupancy') {
+            renderOccupancyChartInModal();
+        } else if (activeTab && activeTab.id === 'tab-correlation') {
+            renderCorrelationChartInModal();
+        }
+        
+        // Reset button
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    })
+    .catch(error => {
+        console.error('Failed to fetch updated chart data:', error);
+        alert('Failed to update chart data. Please try again.');
+        // Reset button
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    });
+}
+
+// Render correlation chart in modal
+function renderCorrelationChartInModal() {
+    const modalCanvas = document.getElementById('modalChartCorrelation');
+    if (!modalCanvas || !window.Chart) return;
+    
+    // Destroy existing chart if it exists
+    if (window.correlationModalChart) {
+        window.correlationModalChart.destroy();
+    }
+    
+    // Use cached data if available (from AJAX), otherwise parse from page
+    let chartCorrelation = {};
+    try {
+        if (window.modalChartCorrelationData) {
+            // Use cached AJAX data
+            chartCorrelation = window.modalChartCorrelationData;
+        } else {
+            // Parse from page on initial load
+            const chartCorrelationScript = document.getElementById('chartCorrelationData');
+            if (chartCorrelationScript) {
+                chartCorrelation = JSON.parse(chartCorrelationScript.textContent);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to parse chart_correlation_json:', e);
+        return;
+    }
+    
+    const labels = chartCorrelation.labels || [];
+    const datasets = chartCorrelation.datasets || [];
+    
+    // If no data, show empty state
+    if (labels.length === 0 || datasets.length === 0) {
+        window.correlationModalChart = new Chart(modalCanvas, {
+            type: 'line',
+            data: { labels: [], datasets: [] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: { display: true, text: 'No data available for selected period', font: { size: 16 } }
+                }
+            }
+        });
+        return;
+    }
+    
+    // Create the chart
+    window.correlationModalChart = new Chart(modalCanvas, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: 'Period', font: { size: 12, weight: 'bold' } },
+                    grid: { display: true, color: 'rgba(0,0,0,0.05)' }
+                },
+                yOccupancy: {
+                    type: 'linear',
+                    position: 'left',
+                    title: { display: true, text: 'Occupancy %', color: '#0E555A', font: { size: 12, weight: 'bold' } },
+                    beginAtZero: false,
+                    min: 80,
+                    max: 100,
+                    grid: { drawOnChartArea: true, color: 'rgba(14,85,90,0.1)' },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(1) + '%';
+                        }
+                    }
+                },
+                yRent: {
+                    type: 'linear',
+                    position: 'right',
+                    title: { display: true, text: 'Avg Effective Rent ($)', color: '#C69A58', font: { size: 12, weight: 'bold' } },
+                    beginAtZero: false,
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                },
+                yUnits: {
+                    type: 'linear',
+                    position: 'right',
+                    title: { display: true, text: 'Total Units', color: '#10B981', font: { size: 12, weight: 'bold' } },
+                    beginAtZero: false,
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: { boxWidth: 15, padding: 12, font: { size: 12 } }
+                },
+                title: {
+                    display: true,
+                    text: 'Occupancy, Rent & Inventory Correlation',
+                    font: { size: 16, weight: 'bold' },
+                    padding: { bottom: 12 }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        title: function(context) {
+                            return `Period: ${context[0].label}`;
+                        },
+                        label: function(context) {
+                            const datasetLabel = context.dataset.label || '';
+                            const value = context.raw;
+                            
+                            if (datasetLabel.toLowerCase().includes('occupancy')) {
+                                return `${datasetLabel}: ${(Math.round(value * 10) / 10).toFixed(1)}%`;
+                            } else if (datasetLabel.toLowerCase().includes('rent')) {
+                                return `${datasetLabel}: $${Number(value).toLocaleString()}`;
+                            } else if (datasetLabel.toLowerCase().includes('units')) {
+                                return `${datasetLabel}: ${Number(value).toLocaleString()} units`;
+                            }
+                            return `${datasetLabel}: ${value}`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    // Calculate and display correlation summary
+    calculateCorrelationSummary(datasets, labels);
+}
+
+// Calculate correlation summary and populate UI
+function calculateCorrelationSummary(datasets, labels) {
+    const summarySection = document.getElementById('correlationSummary');
+    if (!summarySection || !datasets || datasets.length < 3) {
+        if (summarySection) summarySection.style.display = 'none';
+        return;
+    }
+    
+    // Extract data arrays from datasets
+    let occupancyData = [];
+    let rentData = [];
+    let unitsData = [];
+    
+    datasets.forEach(ds => {
+        const label = (ds.label || '').toLowerCase();
+        if (label.includes('occupancy')) {
+            occupancyData = ds.data || [];
+        } else if (label.includes('rent')) {
+            rentData = ds.data || [];
+        } else if (label.includes('units')) {
+            unitsData = ds.data || [];
+        }
+    });
+    
+    // Ensure we have data
+    if (occupancyData.length === 0 || rentData.length === 0 || unitsData.length === 0) {
+        summarySection.style.display = 'none';
+        return;
+    }
+    
+    // Show summary section
+    summarySection.style.display = 'block';
+    
+    // Calculate changes (first to last period)
+    const occFirst = occupancyData[0];
+    const occLast = occupancyData[occupancyData.length - 1];
+    const occChange = occLast - occFirst;
+    const occChangePct = occFirst !== 0 ? ((occChange / occFirst) * 100) : 0;
+    
+    const rentFirst = rentData[0];
+    const rentLast = rentData[rentData.length - 1];
+    const rentChange = rentLast - rentFirst;
+    const rentChangePct = rentFirst !== 0 ? ((rentChange / rentFirst) * 100) : 0;
+    
+    const unitsFirst = unitsData[0];
+    const unitsLast = unitsData[unitsData.length - 1];
+    const unitsChange = unitsLast - unitsFirst;
+    const unitsChangePct = unitsFirst !== 0 ? ((unitsChange / unitsFirst) * 100) : 0;
+    
+    // Update change cards
+    document.getElementById('occChange').innerHTML = 
+        (occChange >= 0 ? '<span style="color:#10B981;">▲ ' : '<span style="color:#EF4444;">▼ ') + 
+        Math.abs(occChange).toFixed(2) + '%</span>';
+    document.getElementById('occTrend').textContent = 
+        `${occFirst.toFixed(1)}% → ${occLast.toFixed(1)}% (${occChangePct >= 0 ? '+' : ''}${occChangePct.toFixed(1)}%)`;
+    
+    document.getElementById('rentChange').innerHTML = 
+        (rentChange >= 0 ? '<span style="color:#10B981;">▲ $' : '<span style="color:#EF4444;">▼ $') + 
+        Math.abs(rentChange).toLocaleString() + '</span>';
+    document.getElementById('rentTrend').textContent = 
+        `$${rentFirst.toLocaleString()} → $${rentLast.toLocaleString()} (${rentChangePct >= 0 ? '+' : ''}${rentChangePct.toFixed(1)}%)`;
+    
+    document.getElementById('unitsChange').innerHTML = 
+        (unitsChange >= 0 ? '<span style="color:#10B981;">▲ ' : '<span style="color:#EF4444;">▼ ') + 
+        Math.abs(unitsChange).toLocaleString() + '</span>';
+    document.getElementById('unitsTrend').textContent = 
+        `${unitsFirst.toLocaleString()} → ${unitsLast.toLocaleString()} units (${unitsChangePct >= 0 ? '+' : ''}${unitsChangePct.toFixed(1)}%)`;
+    
+    // Calculate simple correlation indicators
+    const insights = [];
+    
+    // Insight 1: Overall trends
+    if (occChange > 0 && rentChange > 0) {
+        insights.push('<strong>Positive momentum:</strong> Both occupancy and rent increased over the period, indicating strong market conditions.');
+    } else if (occChange < 0 && rentChange < 0) {
+        insights.push('<strong>Market softening:</strong> Both occupancy and rent declined, suggesting weaker demand or increased competition.');
+    } else if (occChange > 0 && rentChange < 0) {
+        insights.push('<strong>Occupancy recovery:</strong> Occupancy improved while rent decreased, possibly due to pricing adjustments attracting tenants.');
+    } else if (occChange < 0 && rentChange > 0) {
+        insights.push('<strong>Inverse relationship:</strong> Rent increased while occupancy fell, which may indicate pricing resistance or tenant turnover.');
+    }
+    
+    // Insight 2: Inventory correlation
+    if (Math.abs(unitsChangePct) > 2) {
+        if (unitsChange > 0 && occChange < 0) {
+            insights.push(`<strong>Inventory expansion impact:</strong> Inventory increased by ${unitsChangePct.toFixed(1)}% while occupancy fell ${Math.abs(occChangePct).toFixed(1)}%, suggesting new units are taking time to lease up.`);
+        } else if (unitsChange > 0 && occChange > 0) {
+            insights.push(`<strong>Strong absorption:</strong> Despite ${unitsChangePct.toFixed(1)}% inventory growth, occupancy increased ${occChangePct.toFixed(1)}%, showing robust demand.`);
+        } else if (unitsChange < 0) {
+            insights.push(`<strong>Portfolio contraction:</strong> Inventory decreased by ${Math.abs(unitsChangePct).toFixed(1)}%, which ${occChange > 0 ? 'helped boost' : 'did not prevent declining'} occupancy rates.`);
+        }
+    } else {
+        insights.push('<strong>Stable inventory:</strong> Unit count remained relatively stable (< 2% change) during this period.');
+    }
+    
+    // Insight 3: Rent-occupancy dynamics
+    const periodsAbove95 = occupancyData.filter(v => v >= 95).length;
+    const highOccRatio = periodsAbove95 / occupancyData.length;
+    
+    if (highOccRatio > 0.7 && rentChangePct < 1) {
+        insights.push('<strong>Pricing opportunity:</strong> Occupancy consistently above 95% but rent growth is minimal—consider testing higher pricing.');
+    } else if (highOccRatio < 0.3 && rentChangePct > 3) {
+        insights.push('<strong>Pricing pressure:</strong> Low occupancy combined with rent increases may indicate market resistance—consider promotional strategies.');
+    }
+    
+    // Insight 4: Volatility analysis
+    const occVolatility = calculateVolatility(occupancyData);
+    const rentVolatility = calculateVolatility(rentData);
+    
+    if (occVolatility > 2) {
+        insights.push(`<strong>Occupancy volatility:</strong> High fluctuations (±${occVolatility.toFixed(1)}% avg) suggest seasonal patterns or operational challenges.`);
+    }
+    if (rentVolatility > 3) {
+        insights.push(`<strong>Rent volatility:</strong> Significant rent swings (±$${rentVolatility.toFixed(0)} avg) may indicate pricing experimentation or market instability.`);
+    }
+    
+    // Default insight if none generated
+    if (insights.length === 0) {
+        insights.push('<strong>Stable conditions:</strong> All metrics show minimal change over the selected period.');
+    }
+    
+    // Populate insights list
+    const insightsList = document.getElementById('correlationInsights');
+    if (insightsList) {
+        insightsList.innerHTML = insights.map(insight => `<li>${insight}</li>`).join('');
+    }
+}
+
+// Helper: Calculate average absolute deviation (simple volatility measure)
+function calculateVolatility(dataArray) {
+    if (!dataArray || dataArray.length < 2) return 0;
+    
+    let totalChange = 0;
+    for (let i = 1; i < dataArray.length; i++) {
+        totalChange += Math.abs(dataArray[i] - dataArray[i - 1]);
+    }
+    return totalChange / (dataArray.length - 1);
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('occupancy-chart-modal');
+    if (e.target === modal) {
+        closeOccupancyChartModal();
+    }
+});
+</script>
+
 {% endblock %}

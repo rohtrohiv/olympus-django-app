@@ -1,6 +1,6 @@
 <div style="width:100%;margin-top:32px;" id="property-table-fragment">
     <div class="property-table-container" style="padding:24px;background:#f7f9fc;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03);">
-        <h2 style="margin-bottom:16px;">Unique Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
+        <h2 style="margin-bottom:16px;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">{% if period_display_label %}({{ period_display_label }}){% else %}(No period selected){% endif %}</span></h2>
         <style>
             /* Scrolling wrapper for property table and sticky header */
             .property-table-scroll{

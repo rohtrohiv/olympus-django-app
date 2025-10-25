@@ -27,23 +27,49 @@ class DashboardPageService:
     def _build_where(self):
         where = []
         params = []
-        sel_inv = self.params.get('investor')
-        sel_mgr = self.params.get('regional_manager')
-        sel_comm = self.params.get('community')
+        # Support multi-select: getlist for QueryDict or list for dict
+        sel_inv = self.params.getlist('investor') if hasattr(self.params, 'getlist') else (
+            self.params.get('investor', []) if isinstance(self.params.get('investor', ''), list) else 
+            [self.params.get('investor', '')] if self.params.get('investor', '') else []
+        )
+        sel_mgr = self.params.getlist('regional_manager') if hasattr(self.params, 'getlist') else (
+            self.params.get('regional_manager', []) if isinstance(self.params.get('regional_manager', ''), list) else 
+            [self.params.get('regional_manager', '')] if self.params.get('regional_manager', '') else []
+        )
+        sel_comm = self.params.getlist('community') if hasattr(self.params, 'getlist') else (
+            self.params.get('community', []) if isinstance(self.params.get('community', ''), list) else 
+            [self.params.get('community', '')] if self.params.get('community', '') else []
+        )
+        # Filter out empty strings
+        sel_inv = [i for i in sel_inv if i]
+        sel_mgr = [m for m in sel_mgr if m]
+        sel_comm = [c for c in sel_comm if c]
+        
+        # Build WHERE clauses for arrays (use IN)
         if sel_inv:
-            where.append('investor = %s')
-            params.append(sel_inv)
+            placeholders = ','.join(['%s'] * len(sel_inv))
+            where.append(f'investor IN ({placeholders})')
+            params.extend(sel_inv)
         if sel_mgr:
-            where.append('regional_area_manager = %s')
-            params.append(sel_mgr)
+            placeholders = ','.join(['%s'] * len(sel_mgr))
+            where.append(f'regional_area_manager IN ({placeholders})')
+            params.extend(sel_mgr)
         if sel_comm:
-            where.append('property_name = %s')
-            params.append(sel_comm)
-        where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
+            placeholders = ','.join(['%s'] * len(sel_comm))
+            where.append(f'property_name IN ({placeholders})')
+            params.extend(sel_comm)
         # Business rule: exclude BLACKSTONE/LIVCOR for periods after June 2025
         # when no explicit investor filter is provided.
         try:
-            period_month = self.params.get('period_month') or self.params.get('period')
+            # Support multi-month: getlist for period_month, fall back to single value
+            period_months = []
+            if hasattr(self.params, 'getlist'):
+                period_months = self.params.getlist('period_month')
+            if not period_months:
+                pm_single = self.params.get('period_month') or self.params.get('period')
+                if pm_single:
+                    period_months = [pm_single]
+            period_month = period_months[0] if period_months else None
             period_quarter = self.params.get('period_quarter')
             period_year = self.params.get('period_year')
             def _period_after_jun_2025_p(period_mode, y, m, q):
@@ -70,7 +96,9 @@ class DashboardPageService:
                 return False
 
             period_mode = self.params.get('period_mode') or ''
-            if not sel_inv and _period_after_jun_2025_p(period_mode, period_year, period_month, period_quarter):
+            # Exclude BLACKSTONE/LIVCOR for periods after Jun-2025 unless it was explicitly selected
+            sel_up = [s.upper() for s in sel_inv] if sel_inv else []
+            if _period_after_jun_2025_p(period_mode, period_year, period_month, period_quarter) and 'BLACKSTONE/LIVCOR' not in sel_up:
                 # add exclusion clause
                 where = where + ["investor <> %s"]
                 params = params + ['BLACKSTONE/LIVCOR']

@@ -1006,16 +1006,18 @@ def dashboard(request):
 	try:
 		from django.db.models import Sum, Avg, Count
 		monthly_qs = OlympusLeaseKpisTrendMonthly.objects.all()
-		# Apply basic filters matching the UI
-		inv = params.get('investor') if hasattr(params, 'get') else params.get('investor', '')
-		regional = params.get('regional_manager') if hasattr(params, 'get') else params.get('regional_manager', '')
-		community = params.get('community') if hasattr(params, 'get') else params.get('community', '')
-		if inv:
-			monthly_qs = monthly_qs.filter(investor=inv)
-		if regional:
-			monthly_qs = monthly_qs.filter(regional_area_manager=regional)
-		if community:
-			monthly_qs = monthly_qs.filter(property_name=community)
+		# Apply basic filters matching the UI (now supporting multi-select arrays)
+		inv_list = request.GET.getlist('investor') if request.GET.getlist('investor') else ([params.get('investor')] if params.get('investor') else [])
+		regional_list = request.GET.getlist('regional_manager') if request.GET.getlist('regional_manager') else ([params.get('regional_manager')] if params.get('regional_manager') else [])
+		community_list = request.GET.getlist('community') if request.GET.getlist('community') else ([params.get('community')] if params.get('community') else [])
+		
+		# Filter with arrays (__in lookup)
+		if inv_list and inv_list[0]:  # ensure not empty string
+			monthly_qs = monthly_qs.filter(investor__in=inv_list)
+		if regional_list and regional_list[0]:
+			monthly_qs = monthly_qs.filter(regional_area_manager__in=regional_list)
+		if community_list and community_list[0]:
+			monthly_qs = monthly_qs.filter(property_name__in=community_list)
 
 		# Business rule: exclude BLACKSTONE/LIVCOR for periods after June 2025
 		# unless the user explicitly filtered by investor.
@@ -1062,13 +1064,84 @@ def dashboard(request):
 			# try explicit month/quarter/year values from the service context
 			sel_period = svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
 		sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
+		
+		# Support multi-month: get array of selected months when in month mode
+		selected_months = []
+		if sel_mode == 'month':
+			if hasattr(params, 'getlist'):
+				selected_months = params.getlist('period_month')
+			if not selected_months and sel_period:
+				selected_months = [sel_period]
+		
+		# Support multi-quarter: get array of selected quarters when in quarter mode
+		selected_quarters = []
+		if sel_mode == 'quarter':
+			# Use request.GET directly to ensure we get all query parameters
+			if hasattr(request.GET, 'getlist'):
+				selected_quarters = request.GET.getlist('period_quarter')
+			elif hasattr(params, 'getlist'):
+				selected_quarters = params.getlist('period_quarter')
+			if not selected_quarters and sel_period:
+				selected_quarters = [sel_period]
+		
+		# Support multi-year: get array of selected years when in year mode
+		selected_years = []
+		if sel_mode == 'year':
+			# Use request.GET directly to ensure we get all query parameters
+			if hasattr(request.GET, 'getlist'):
+				selected_years = request.GET.getlist('period_year')
+			elif hasattr(params, 'getlist'):
+				selected_years = params.getlist('period_year')
+			if not selected_years and sel_period:
+				selected_years = [sel_period]
+		
 		year, months = parse_period(sel_period) if sel_period else (None, None)
 		import calendar as _calendar
-		show_by_year = (sel_mode == 'year') or (svc_ctx.get('period_year') in (None, 'all'))
+		# Show yearly grouping only when period_year is 'all' or multiple years are selected
+		# For a single specific year, show monthly breakdown
+		show_by_year = (sel_mode == 'year' and (not selected_years or len(selected_years) > 1 or (selected_years and selected_years[0] == 'all')))
 
 		# Narrow the queryset when a specific year/months are requested
 		if not show_by_year:
-			if year and months:
+			if sel_mode == 'month' and selected_months:
+				# Multi-month support: filter by all selected months using OR
+				from django.db.models import Q
+				q_filter = Q()
+				for pm in selected_months:
+					mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', pm)
+					if mm:
+						month_name, yr = mm.groups()
+						try:
+							month_num = list(_calendar.month_abbr).index(month_name)
+							q_filter |= Q(enddateofmonth__month=month_num, enddateofmonth__year=int(yr))
+						except Exception:
+							pass
+				if q_filter:
+					monthly_qs = monthly_qs.filter(q_filter)
+			elif sel_mode == 'quarter' and selected_quarters:
+				# Multi-quarter support: filter by all selected quarters using OR
+				from django.db.models import Q
+				q_filter = Q()
+				for pq in selected_quarters:
+					parts = re.split('[-_]', pq)
+					qpart = parts[0].upper()
+					yr = parts[-1]
+					qnum = int(re.sub('[^0-9]', '', qpart))
+					start_month = (qnum - 1) * 3 + 1
+					months_in_quarter = [start_month, start_month + 1, start_month + 2]
+					for month_num in months_in_quarter:
+						q_filter |= Q(enddateofmonth__month=month_num, enddateofmonth__year=int(yr))
+				if q_filter:
+					monthly_qs = monthly_qs.filter(q_filter)
+			elif sel_mode == 'year' and selected_years and len(selected_years) == 1:
+				# Single year selected: filter to that year and show monthly breakdown
+				yr = selected_years[0]
+				if yr and yr != 'all':
+					try:
+						monthly_qs = monthly_qs.filter(enddateofmonth__year=int(yr))
+					except Exception:
+						pass
+			elif year and months:
 				month_nums = []
 				for m in months:
 					try:
@@ -1084,6 +1157,20 @@ def dashboard(request):
 					monthly_qs = monthly_qs.filter(enddateofmonth__year=int(year))
 				except Exception:
 					pass
+		else:
+			# show_by_year is True: filter by multiple years or 'all'
+			if sel_mode == 'year' and selected_years:
+				# Multi-year support: filter by all selected years using OR
+				from django.db.models import Q
+				q_filter = Q()
+				for yr in selected_years:
+					if yr and yr != 'all':
+						try:
+							q_filter |= Q(enddateofmonth__year=int(yr))
+						except Exception:
+							pass
+				if q_filter:
+					monthly_qs = monthly_qs.filter(q_filter)
 
 		# Build grouped aggregation that returns all needed fields per bucket
 		if show_by_year:
@@ -1101,7 +1188,11 @@ def dashboard(request):
 					           renewal_conv_avg=Avg('renewel_conversion'),
 					           avg_turn=Avg('average_turn_time'))
 					 .order_by('year'))
-			rows = list(grouped)[-6:]
+			# When multiple years selected, show all; otherwise show last 6
+			if selected_years and len(selected_years) > 1:
+				rows = list(grouped)
+			else:
+				rows = list(grouped)[-6:]
 		else:
 			grouped = (monthly_qs
 				 .annotate(year=ExtractYear('enddateofmonth'), month=ExtractMonth('enddateofmonth'))
@@ -1117,7 +1208,11 @@ def dashboard(request):
 				           renewal_conv_avg=Avg('renewel_conversion'),
 				           avg_turn=Avg('average_turn_time'))
 				 .order_by('year', 'month'))
-			rows = list(grouped)[-6:]
+			# When multiple quarters/months selected, show all; otherwise show last 6
+			if (selected_quarters and len(selected_quarters) > 1) or (selected_months and len(selected_months) > 1):
+				rows = list(grouped)
+			else:
+				rows = list(grouped)[-6:]
 
 		# Build charts and KPI aggregates from rows
 		labels = []
@@ -1235,13 +1330,84 @@ def dashboard(request):
 		if not sel_period:
 			sel_period = svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
 		sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
+		
+		# Support multi-month for move-out reasons chart
+		selected_months_mo = []
+		if sel_mode == 'month':
+			if hasattr(params, 'getlist'):
+				selected_months_mo = params.getlist('period_month')
+			if not selected_months_mo and sel_period:
+				selected_months_mo = [sel_period]
+		
+		# Support multi-quarter for move-out reasons chart
+		selected_quarters_mo = []
+		if sel_mode == 'quarter':
+			# Use request.GET directly to ensure we get all query parameters
+			if hasattr(request.GET, 'getlist'):
+				selected_quarters_mo = request.GET.getlist('period_quarter')
+			elif hasattr(params, 'getlist'):
+				selected_quarters_mo = params.getlist('period_quarter')
+			if not selected_quarters_mo and sel_period:
+				selected_quarters_mo = [sel_period]
+		
+		# Support multi-year for move-out reasons chart
+		selected_years_mo = []
+		if sel_mode == 'year':
+			# Use request.GET directly to ensure we get all query parameters
+			if hasattr(request.GET, 'getlist'):
+				selected_years_mo = request.GET.getlist('period_year')
+			elif hasattr(params, 'getlist'):
+				selected_years_mo = params.getlist('period_year')
+			if not selected_years_mo and sel_period:
+				selected_years_mo = [sel_period]
+		
 		year, months = parse_period(sel_period) if sel_period else (None, None)
 		import calendar as _calendar
-		show_by_year = (sel_mode == 'year') or (svc_ctx.get('period_year') in (None, 'all'))
+		# Show yearly grouping only when period_year is 'all' or multiple years are selected
+		# For a single specific year, show monthly breakdown
+		show_by_year = (sel_mode == 'year' and (not selected_years_mo or len(selected_years_mo) > 1 or (selected_years_mo and selected_years_mo[0] == 'all')))
 
 		# narrow when specific year/month selected
 		if not show_by_year:
-			if year and months:
+			if sel_mode == 'month' and selected_months_mo:
+				# Multi-month support for move-out chart
+				from django.db.models import Q
+				q_filter = Q()
+				for pm in selected_months_mo:
+					mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', pm)
+					if mm:
+						month_name, yr = mm.groups()
+						try:
+							month_num = list(_calendar.month_abbr).index(month_name)
+							q_filter |= Q(enddateofmonth__month=month_num, enddateofmonth__year=int(yr))
+						except Exception:
+							pass
+				if q_filter:
+					mo_qs = mo_qs.filter(q_filter)
+			elif sel_mode == 'quarter' and selected_quarters_mo:
+				# Multi-quarter support for move-out chart
+				from django.db.models import Q
+				q_filter = Q()
+				for pq in selected_quarters_mo:
+					parts = re.split('[-_]', pq)
+					qpart = parts[0].upper()
+					yr = parts[-1]
+					qnum = int(re.sub('[^0-9]', '', qpart))
+					start_month = (qnum - 1) * 3 + 1
+					months_in_quarter = [start_month, start_month + 1, start_month + 2]
+					for month_num in months_in_quarter:
+						q_filter |= Q(enddateofmonth__month=month_num, enddateofmonth__year=int(yr))
+				if q_filter:
+					mo_qs = mo_qs.filter(q_filter)
+			elif sel_mode == 'year' and selected_years_mo and len(selected_years_mo) == 1:
+				# Single year selected: filter to that year and show monthly breakdown
+				yr = selected_years_mo[0]
+				if yr and yr != 'all':
+					try:
+						mo_qs = mo_qs.filter(enddateofmonth__year=int(yr))
+					except Exception:
+						pass
+			elif year and months:
 				month_nums = []
 				for m in months:
 					try:
@@ -1257,6 +1423,20 @@ def dashboard(request):
 					mo_qs = mo_qs.filter(enddateofmonth__year=int(year))
 				except Exception:
 					pass
+		else:
+			# show_by_year is True: filter by multiple years or 'all'
+			if sel_mode == 'year' and selected_years_mo:
+				# Multi-year support for move-out chart
+				from django.db.models import Q
+				q_filter = Q()
+				for yr in selected_years_mo:
+					if yr and yr != 'all':
+						try:
+							q_filter |= Q(enddateofmonth__year=int(yr))
+						except Exception:
+							pass
+				if q_filter:
+					mo_qs = mo_qs.filter(q_filter)
 
 		# Pick top N categories overall to keep chart readable
 		top_n = 6
@@ -1279,11 +1459,15 @@ def dashboard(request):
 
 		rows = list(grouped)
 
-		# build labels (last 6 buckets) and initialize series map
+		# build labels (last 6 buckets by default, or all if multiple periods selected) and initialize series map
 		labels = []
 		if show_by_year:
 			years = sorted({int(r.get('year')) for r in rows if r.get('year') is not None})
-			labels = [str(y) for y in years][-6:]
+			# When multiple years selected, show all; otherwise show last 6
+			if selected_years_mo and len(selected_years_mo) > 1:
+				labels = [str(y) for y in years]
+			else:
+				labels = [str(y) for y in years][-6:]
 		else:
 			from datetime import datetime as _dt
 			month_keys = []
@@ -1293,7 +1477,11 @@ def dashboard(request):
 				if y and m:
 					month_keys.append((y, m))
 			month_keys = sorted(set(month_keys))
-			labels = [ _dt(y, m, 1).strftime('%b-%y') for (y,m) in month_keys][-6:]
+			# When multiple quarters/months selected, show all; otherwise show last 6
+			if (selected_quarters_mo and len(selected_quarters_mo) > 1) or (selected_months_mo and len(selected_months_mo) > 1):
+				labels = [ _dt(y, m, 1).strftime('%b-%y') for (y,m) in month_keys]
+			else:
+				labels = [ _dt(y, m, 1).strftime('%b-%y') for (y,m) in month_keys][-6:]
 
 		# initialize series for top categories (if none found, use any categories present)
 		if not top_cats:
@@ -1334,6 +1522,15 @@ def dashboard(request):
 		pass
 
 
+	# Convert selected_month to JSON-safe format for template JS consumption
+	selected_months_raw = svc_ctx.get('period_month')
+	if isinstance(selected_months_raw, list):
+		selected_months_json = json.dumps(selected_months_raw)
+	elif selected_months_raw:
+		selected_months_json = json.dumps([selected_months_raw])
+	else:
+		selected_months_json = json.dumps([])
+
 	context = {
 		'user': user,
 		'properties': svc_ctx.get('properties_page'),
@@ -1344,9 +1541,13 @@ def dashboard(request):
 	# fall back to the explicit period_month/period_quarter/period_year values
 	# that the PageService may set when defaulting to the latest month.
 	'selected_period': (svc_ctx.get('selected_period') or svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')),
+		'period_display_label': svc_ctx.get('period_display_label'),  # Comprehensive label for multi-period display
 		'selected_year': svc_ctx.get('period_year'),
+		'selected_years': svc_ctx.get('period_years', []),  # List of selected years
 		'selected_quarter': svc_ctx.get('period_quarter'),
+		'selected_quarters': svc_ctx.get('period_quarters', []),  # List of selected quarters
 		'selected_month': svc_ctx.get('period_month'),
+		'selected_month_json': selected_months_json,
 		'selected_period_mode': svc_ctx.get('period_mode'),
 		# Use filtered properties so the table reflects applied filters (period/investor/etc.)
 		'all_properties': svc_ctx.get('properties_list'),
@@ -1362,6 +1563,7 @@ def dashboard(request):
 		'inv_reg_to_communities_json': json.dumps(inv_reg_to_communities),
 		'chart_rent_json': json.dumps(svc_ctx.get('chart_rent', {})),
 		'chart_occrev_json': json.dumps(svc_ctx.get('chart_occrev', {})),
+		'chart_correlation_json': json.dumps(svc_ctx.get('chart_correlation', {})),
 		'chart_renewals_json': json.dumps(chart_renewals),
 		'chart_expense_json': json.dumps(chart_expense),
 		'chart_moveout_json': json.dumps(chart_moveout),
@@ -1380,9 +1582,16 @@ def dashboard(request):
 	chart_props = dict(svc_ctx.get('chart_properties', {}) or {})
 
 	context['chart_properties_json'] = json.dumps(chart_props)
-	context['selected_investor'] = request.GET.get('investor','')
-	context['selected_regional_manager'] = request.GET.get('regional_manager','')
-	context['selected_community'] = request.GET.get('community','')
+	# Support multi-select: pass arrays instead of single values
+	context['selected_investor'] = request.GET.getlist('investor') or [request.GET.get('investor', '')]
+	context['selected_regional_manager'] = request.GET.getlist('regional_manager') or [request.GET.get('regional_manager', '')]
+	context['selected_community'] = request.GET.getlist('community') or [request.GET.get('community', '')]
+	context['selected_month'] = request.GET.getlist('period_month') or [request.GET.get('period_month', '')]
+	# Filter out empty strings
+	context['selected_investor'] = [i for i in context['selected_investor'] if i]
+	context['selected_regional_manager'] = [rm for rm in context['selected_regional_manager'] if rm]
+	context['selected_community'] = [c for c in context['selected_community'] if c]
+	context['selected_month'] = [m for m in context['selected_month'] if m]
 
 	# Build conditional investors list: start from unfiltered set provided by PageService
 	try:
@@ -1416,15 +1625,29 @@ def dashboard(request):
 		sel_period = svc_ctx.get('selected_period') or svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
 		year, months = parse_period(sel_period) if sel_period else (None, None)
 		exclude_blackstone = _period_after_jun_2025_local(sel_mode, year, sel_period, svc_ctx.get('period_quarter'))
-		selected_inv = context.get('selected_investor', '')
-		if exclude_blackstone and not selected_inv:
-			# Exclude the specific investor from the dropdown
-			context['investors'] = [i for i in _unfiltered_investors if i.upper() != 'BLACKSTONE/LIVCOR']
+		selected_inv_list = context.get('selected_investor', [])  # now an array
+		# Business rule: when period is after Jun-2025, hide BLACKSTONE/LIVCOR unless
+		# the user explicitly selected BLACKSTONE/LIVCOR. If the user selected other
+		# investors but not BLACKSTONE, do not surface BLACKSTONE in the dropdown.
+		if exclude_blackstone:
+			# normalize selected list for comparison
+			sel_up = [s.upper() for s in selected_inv_list]
+			if 'BLACKSTONE/LIVCOR' in sel_up:
+				# user explicitly selected BLACKSTONE/LIVCOR — preserve it and any missing selections
+				missing_invs = [inv for inv in selected_inv_list if inv and inv not in _unfiltered_investors]
+				if missing_invs:
+					context['investors'] = _unfiltered_investors + missing_invs
+				else:
+					context['investors'] = _unfiltered_investors
+			else:
+				# period is after Jun-2025 and user did NOT explicitly choose BLACKSTONE — hide it
+				context['investors'] = [i for i in _unfiltered_investors if i.upper() != 'BLACKSTONE/LIVCOR']
 		else:
-			# Preserve the full list; ensure selected investor is present if explicitly chosen
-			if selected_inv and selected_inv not in _unfiltered_investors:
-				# keep selected investor visible even if not in unfiltered (edge-case)
-				context['investors'] = [_unfiltered_investors + [selected_inv]]
+			# Not excluded by period — preserve the full list; ensure selected investors are present if explicitly chosen
+			missing_invs = [inv for inv in selected_inv_list if inv and inv not in _unfiltered_investors]
+			if missing_invs:
+				# keep selected investors visible even if not in unfiltered (edge-case)
+				context['investors'] = _unfiltered_investors + missing_invs
 			else:
 				context['investors'] = _unfiltered_investors
 	except Exception:
@@ -1433,6 +1656,16 @@ def dashboard(request):
 
 	is_xhr = request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest' or request.headers.get('x-requested-with') == 'XMLHttpRequest'
 	if is_xhr:
+		# Check if requesting JSON format (for modal chart updates)
+		if request.GET.get('format') == 'json':
+			return JsonResponse({
+				'chart_occrev_json': context.get('chart_occrev_json'),
+				'chart_properties_json': context.get('chart_properties_json'),
+				'chart_correlation_json': context.get('chart_correlation_json'),
+				'chart_rent_json': context.get('chart_rent_json'),
+				'selected_period': svc_ctx.get('selected_period')
+			})
+		# Default AJAX response for KPI/table updates
 		kpi_html = render_to_string('dashboard/partials/_kpi_cards.html', context=context, request=request)
 		table_html = render_to_string('dashboard/partials/_property_table.html', context=context, request=request)
 		return JsonResponse({'kpi_html': kpi_html, 'table_html': table_html, 'selected_period': svc_ctx.get('selected_period')})

@@ -6,7 +6,7 @@ import calendar
 
 from django.core.cache import cache
 from django.core.paginator import Paginator
-from django.db.models import IntegerField, Max, Avg, Q, Sum
+from django.db.models import IntegerField, Max, Avg, Q, Sum, F, OuterRef, Subquery
 from django.db.models.functions import ExtractYear, ExtractMonth
 from django.db import connection
 
@@ -103,6 +103,35 @@ class DashboardService:
             return filtered_qs.none()
         max_date = filtered_qs.aggregate(max_date=Max('snapshotdate'))['max_date']
         return filtered_qs.filter(snapshotdate=max_date) if max_date else filtered_qs.none()
+    
+    def _pick_latest_per_property_from_qs(self, filtered_qs):
+        """
+        Return a queryset with the latest snapshot per property from filtered_qs.
+        This is useful when multiple periods are selected - we want to show each property's
+        most recent data across all selected periods.
+        """
+        if not filtered_qs.exists():
+            return filtered_qs.none()
+        
+        # Get property numbers and their latest dates
+        from django.db.models import Max
+        latest_by_property = filtered_qs.values('property_number').annotate(
+            latest_date=Max('snapshotdate')
+        )
+        
+        # Build a list of (property_number, latest_date) tuples
+        property_date_pairs = [
+            (item['property_number'], item['latest_date']) 
+            for item in latest_by_property
+        ]
+        
+        # Build Q filter to match these exact combinations
+        q_filter = Q()
+        for prop_num, latest_date in property_date_pairs:
+            q_filter |= Q(property_number=prop_num, snapshotdate=latest_date)
+        
+        # Return filtered queryset with latest snapshot per property
+        return filtered_qs.filter(q_filter)
 
     def warm_full_dataset_cache(self, filter_kwargs=None, cache_key='lease_trend_full_data', timeout=60*60):
         """Load the full dataset (or filtered) into cache (background safe)."""
@@ -142,14 +171,29 @@ class DashboardService:
 
         # read params
         period_mode = self.params.get('period_mode') or ''
-        period_year = self.params.get('period_year') or ''
-        period_quarter = self.params.get('period_quarter') or ''
+        # Support multiple years via getlist (handle both QueryDict and dict)
+        if hasattr(self.params, 'getlist'):
+            period_years = self.params.getlist('period_year')
+        else:
+            py = self.params.get('period_year')
+            period_years = [py] if py else []
+        period_year = period_years[0] if period_years else ''
+        
+        # Support multiple quarters via getlist
+        if hasattr(self.params, 'getlist'):
+            period_quarters = self.params.getlist('period_quarter')
+        else:
+            pq = self.params.get('period_quarter')
+            period_quarters = [pq] if pq else []
+        period_quarter = period_quarters[0] if period_quarters else ''
+        
         period_month = self.params.get('period_month') or ''
         legacy_period = self.params.get('period')
         if not period_mode and legacy_period:
             mode, val = self.infer_period_from_legacy(legacy_period)
             if mode == 'year':
                 period_mode, period_year = 'year', val
+                period_years = [val]
             elif mode == 'month':
                 period_mode, period_month = 'month', val
             elif mode == 'quarter':
@@ -172,15 +216,32 @@ class DashboardService:
 
         # Build base queryset and apply simple filters from params
         qs = OlympusLeaseTrendAnalysis.objects.all()
-        selected_investor = self.params.get('investor', '')
-        selected_regional_manager = self.params.get('regional_manager', '')
-        selected_community = self.params.get('community', '')
+        # Support multi-select: params may contain arrays or single strings
+        selected_investor = self.params.getlist('investor') if hasattr(self.params, 'getlist') else (
+            self.params.get('investor', []) if isinstance(self.params.get('investor', ''), list) else 
+            [self.params.get('investor', '')] if self.params.get('investor', '') else []
+        )
+        selected_regional_manager = self.params.getlist('regional_manager') if hasattr(self.params, 'getlist') else (
+            self.params.get('regional_manager', []) if isinstance(self.params.get('regional_manager', ''), list) else 
+            [self.params.get('regional_manager', '')] if self.params.get('regional_manager', '') else []
+        )
+        selected_community = self.params.getlist('community') if hasattr(self.params, 'getlist') else (
+            self.params.get('community', []) if isinstance(self.params.get('community', ''), list) else 
+            [self.params.get('community', '')] if self.params.get('community', '') else []
+        )
+        
+        # Filter out empty strings
+        selected_investor = [i for i in selected_investor if i]
+        selected_regional_manager = [rm for rm in selected_regional_manager if rm]
+        selected_community = [c for c in selected_community if c]
+        
+        # Apply filters using __in lookup for arrays
         if selected_investor:
-            qs = qs.filter(investor=selected_investor)
+            qs = qs.filter(investor__in=selected_investor)
         if selected_regional_manager:
-            qs = qs.filter(regional_area_manager=selected_regional_manager)
+            qs = qs.filter(regional_area_manager__in=selected_regional_manager)
         if selected_community:
-            qs = qs.filter(property_name=selected_community)
+            qs = qs.filter(property_name__in=selected_community)
 
         # Business rule: exclude BLACKSTONE/LIVCOR data for periods after June 2025.
         # This investor's data should only be used for periods up to and including June 2025.
@@ -213,8 +274,14 @@ class DashboardService:
             return False
 
         exclude_blackstone = _period_after_jun_2025(period_mode, period_year, period_month, period_quarter)
-        # Only apply exclusion when the caller hasn't explicitly requested a particular investor
-        if exclude_blackstone and not selected_investor:
+        # Apply exclusion when period is after Jun-2025 and the user did not
+        # explicitly select BLACKSTONE/LIVCOR. If the user selected other
+        # investors but not BLACKSTONE, still exclude BLACKSTONE rows.
+        try:
+            sel_up = [s.upper() for s in selected_investor] if selected_investor else []
+        except Exception:
+            sel_up = []
+        if exclude_blackstone and 'BLACKSTONE/LIVCOR' not in sel_up:
             qs = qs.exclude(investor__iexact='BLACKSTONE/LIVCOR')
 
         # Determine the initial latest-month selection: prefer explicit period params, otherwise latest available
@@ -226,36 +293,75 @@ class DashboardService:
             period_mode = 'month'
             period_month = selected_period
 
-        # Build a filtered queryset for the selected period (only latest month on initial load)
+        # Build a filtered queryset for the selected period (support multi-month selection)
         period_qs = qs
-        if period_mode == 'month' and period_month:
-            mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', period_month)
-            if mm:
-                month_name, year = mm.groups()
-                month_num = datetime.strptime(month_name, "%b").strftime("%m")
-                period_qs = qs.filter(Q(snapshotdate__startswith=f"{year}-{month_num}") | Q(snapshotdate__icontains=f"{month_name}-{year}"))
-        elif period_mode == 'quarter' and period_quarter:
-            parts = re.split('[-_]', period_quarter)
-            qpart = parts[0].upper()
-            year = parts[-1]
-            qnum = int(re.sub('[^0-9]','', qpart))
-            start_month = (qnum-1)*3 + 1
-            months_nums = [ f"{m:02d}" for m in range(start_month, start_month+3) ]
-            q_filter = Q()
-            for mnum in months_nums:
-                q_filter |= Q(snapshotdate__startswith=f"{year}-{mnum}")
-            period_qs = qs.filter(q_filter)
+        if period_mode == 'month':
+            # Support multi-month: getlist, fall back to single value
+            period_months = []
+            if hasattr(self.params, 'getlist'):
+                period_months = self.params.getlist('period_month')
+            if not period_months and period_month:
+                period_months = [period_month]
+            
+            if period_months:
+                # Build OR query across multiple selected months
+                q_filter = Q()
+                for pm in period_months:
+                    mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', pm)
+                    if mm:
+                        month_name, year = mm.groups()
+                        month_num = datetime.strptime(month_name, "%b").strftime("%m")
+                        q_filter |= Q(snapshotdate__startswith=f"{year}-{month_num}") | Q(snapshotdate__icontains=f"{month_name}-{year}")
+                if q_filter:
+                    period_qs = qs.filter(q_filter)
+        elif period_mode == 'quarter':
+            # Support multi-quarter: getlist, fall back to single value
+            if len(period_quarters) == 0 and period_quarter:
+                period_quarters = [period_quarter]
+            
+            if period_quarters:
+                # Build OR query across multiple selected quarters
+                q_filter = Q()
+                for pq in period_quarters:
+                    parts = re.split('[-_]', pq)
+                    qpart = parts[0].upper()
+                    year = parts[-1]
+                    qnum = int(re.sub('[^0-9]','', qpart))
+                    start_month = (qnum-1)*3 + 1
+                    months_nums = [ f"{m:02d}" for m in range(start_month, start_month+3) ]
+                    for mnum in months_nums:
+                        q_filter |= Q(snapshotdate__startswith=f"{year}-{mnum}")
+                if q_filter:
+                    period_qs = qs.filter(q_filter)
         elif period_mode == 'year' and period_year:
             # Support 'all' sentinel to indicate all available years
             if str(period_year).lower() == 'all':
                 period_qs = qs
             else:
-                year = period_year
-                period_qs = qs.filter(Q(snapshotdate__startswith=f"{year}-") | Q(snapshotdate__endswith=f"-{year}"))
+                # Support multiple years
+                if len(period_years) > 1:
+                    q_filter = Q()
+                    for year in period_years:
+                        q_filter |= Q(snapshotdate__startswith=f"{year}-") | Q(snapshotdate__endswith=f"-{year}")
+                    period_qs = qs.filter(q_filter)
+                else:
+                    year = period_year
+                    period_qs = qs.filter(Q(snapshotdate__startswith=f"{year}-") | Q(snapshotdate__endswith=f"-{year}"))
 
         # Narrow to last-day snapshot within selected period for KPI cards (dedupe per property)
         # If using the summary MV, compute KPI directly from it to avoid scanning large raw table
         use_summary = (period_mode == 'year' and str(period_year).lower() == 'all')
+        
+        # Check if multiple periods are selected
+        has_multiple_periods = False
+        if period_mode == 'month' and hasattr(self.params, 'getlist'):
+            period_months_list = self.params.getlist('period_month')
+            has_multiple_periods = len(period_months_list) > 1
+        elif period_mode == 'quarter' and len(period_quarters) > 1:
+            has_multiple_periods = True
+        elif period_mode == 'year' and len(period_years) > 1:
+            has_multiple_periods = True
+        
         if use_summary:
             # Build a summary queryset filtered by any active filters
             summary_qs = LeaseTrendSummary.objects.all()
@@ -268,7 +374,31 @@ class DashboardService:
             # Use the summary queryset as the source for KPI/table/chart generation
             last_day_qs = summary_qs
         else:
-            last_day_qs = self._pick_last_day_from_qs(period_qs)
+            # When multiple periods are selected, we want to show ALL data from all periods
+            # not just the latest per property. This allows users to see data across time.
+            # For each period, we pick the last day snapshot, then combine all of them.
+            if has_multiple_periods:
+                # Get unique snapshot dates in the filtered data and group by month
+                distinct_dates = period_qs.values_list('snapshotdate', flat=True).distinct().order_by('snapshotdate')
+                
+                # Group dates by year-month to get the last day of each month
+                from collections import defaultdict
+                dates_by_month = defaultdict(list)
+                for d in distinct_dates:
+                    if d:
+                        key = (d.year, d.month)
+                        dates_by_month[key].append(d)
+                
+                # Build Q filter for the latest date in each month
+                q_filter = Q()
+                for month_key, dates in dates_by_month.items():
+                    latest_date = max(dates)
+                    q_filter |= Q(snapshotdate=latest_date)
+                
+                last_day_qs = period_qs.filter(q_filter) if q_filter else period_qs.none()
+            else:
+                last_day_qs = self._pick_last_day_from_qs(period_qs)
+            
             if not last_day_qs.exists():
                 # fallback: limit to latest 30 days
                 today = datetime.now().date()
@@ -489,7 +619,18 @@ class DashboardService:
         # Helper: build bucket key depending on mode
         buckets = {}  # bucket_key -> { prop_key -> (snap_date, row) }
 
+        # Determine if we should use weekly bucketing: only when exactly ONE month is selected
+        selected_months_count = 0
         if period_mode == 'month':
+            if hasattr(self.params, 'getlist'):
+                selected_months_list = self.params.getlist('period_month')
+                selected_months_count = len([m for m in selected_months_list if m])
+            if selected_months_count == 0 and period_month:
+                selected_months_count = 1
+
+        use_weekly_bucketing = (period_mode == 'month' and selected_months_count == 1)
+
+        if use_weekly_bucketing:
             # Bucket by week within the selected month: Week 1 = days 1-7, Week 2 = 8-14, etc.
             # Parse selected month/year
             mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', period_month or '')
@@ -560,10 +701,11 @@ class DashboardService:
         mkt_series = []
         occ_series = []
         rev_series = []
+        units_series = []  # Track total units per bucket for occupancy chart
 
         for key in sorted(buckets.keys()):
             bucket = buckets[key]
-            if period_mode == 'month':
+            if use_weekly_bucketing:
                 # Prefer month range labels like 'Aug 1–7'
                 try:
                     mname = month_name_sel
@@ -582,6 +724,7 @@ class DashboardService:
             mkt_vals = []
             occ_vals = []
             rev_sum = 0.0
+            units_sum = 0  # Sum total units for this bucket
             for prop_key, (sd, row) in bucket.items():
                 eff = row.get('effective_rent')
                 mkt = row.get('market_rent')
@@ -611,6 +754,11 @@ class DashboardService:
                         rev_sum += (float(eff) * occ_units)
                 except Exception:
                     pass
+                # accumulate total units for this property
+                try:
+                    units_sum += int(row.get('total_units') or 0)
+                except Exception:
+                    pass
 
             eff_series.append(round(sum(eff_vals) / len(eff_vals), 2) if eff_vals else 0)
             mkt_series.append(round(sum(mkt_vals) / len(mkt_vals), 2) if mkt_vals else 0)
@@ -626,6 +774,7 @@ class DashboardService:
                 occ_val = round(sum(occ_vals) / len(occ_vals), 2) if occ_vals else 0
             occ_series.append(occ_val)
             rev_series.append(round(rev_sum / 1000.0, 2))  # k$
+            units_series.append(units_sum)  # Total units for this time period
 
         chart_rent = {
             'labels': labels,
@@ -677,6 +826,51 @@ class DashboardService:
             'occupancyData': occ_data,
         }
 
+        # Correlation chart: combine occupancy, rent, and units for pattern analysis
+        chart_correlation = {
+            'labels': labels,
+            'datasets': [
+                {
+                    'type': 'line',
+                    'label': 'Occupancy %',
+                    'yAxisID': 'yOccupancy',
+                    'data': occ_series,
+                    'borderColor': '#0E555A',
+                    'backgroundColor': 'rgba(14,85,90,0.1)',
+                    'borderWidth': 2,
+                    'tension': 0.3,
+                    'fill': False,
+                    'pointRadius': 4,
+                    'pointHoverRadius': 6
+                },
+                {
+                    'type': 'line',
+                    'label': 'Avg Effective Rent',
+                    'yAxisID': 'yRent',
+                    'data': eff_series,
+                    'borderColor': '#C69A58',
+                    'backgroundColor': 'rgba(198,154,88,0.1)',
+                    'borderWidth': 2,
+                    'tension': 0.3,
+                    'fill': False,
+                    'pointRadius': 4,
+                    'pointHoverRadius': 6
+                },
+                {
+                    'type': 'line',
+                    'label': 'Total Units',
+                    'yAxisID': 'yUnits',
+                    'data': units_series,
+                    'borderColor': '#10B981',
+                    'backgroundColor': 'rgba(16,185,129,0.1)',
+                    'borderWidth': 2,
+                    'tension': 0.3,
+                    'fill': False,
+                    'pointRadius': 4,
+                    'pointHoverRadius': 6
+                }
+            ]
+        }
 
         # Filters: build lists/maps used by UI
         distinct_rows = list(OlympusLeaseTrendAnalysis.objects.values('investor','regional_area_manager','property_name').distinct())
@@ -702,14 +896,34 @@ class DashboardService:
         if cache.get('lease_trend_full_data') is None:
             self.warm_full_dataset_cache()
 
+        # Create a comprehensive period label for display
+        period_display_label = selected_period
+        if period_mode == 'quarter' and len(period_quarters) > 1:
+            # Show all selected quarters
+            period_display_label = ', '.join(sorted(period_quarters, reverse=True))
+        elif period_mode == 'year' and len(period_years) > 1:
+            # Show all selected years
+            period_display_label = ', '.join(sorted([str(y) for y in period_years], reverse=True))
+        elif period_mode == 'month' and period_months:
+            # For multiple months, show range or list
+            if len(period_months) > 3:
+                period_display_label = f"{len(period_months)} months selected"
+            else:
+                period_display_label = ', '.join(period_months)
+        
+        print(f"DEBUG: period_display_label = '{period_display_label}', period_mode = '{period_mode}', period_quarters = {period_quarters}")
+
         # Compose final context returned to view/template
         return {
             'periods': sorted_periods,
             'period_mode': period_mode,
             'period_year': period_year,
+            'period_years': period_years,  # List of selected years for multi-year support
             'period_quarter': period_quarter,
+            'period_quarters': period_quarters,  # List of selected quarters for multi-quarter support
             'period_month': period_month,
             'selected_period': selected_period,
+            'period_display_label': period_display_label,  # Comprehensive label showing all selected periods
             'kpi': kpi,
             'properties_page': properties_page,
             'properties_list': properties_full,
@@ -721,6 +935,7 @@ class DashboardService:
             'chart_rent': chart_rent,
             'chart_occrev': chart_occrev,
             'chart_properties': chart_properties,
+            'chart_correlation': chart_correlation,
             'kpi_snapshot_date': kpi_snapshot_date,
         }
 
