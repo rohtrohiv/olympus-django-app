@@ -663,7 +663,7 @@ select[multiple] option:checked {
     function renderChips(selectEl, chipsContainerId){
         const container = document.getElementById(chipsContainerId);
         if(!container || !selectEl) return;
-        container.innerHTML = '';
+        container.innerHTML = ''; // Clear existing chips to prevent duplicates
         const selected = Array.from(selectEl.selectedOptions);
         selected.forEach(opt => {
             const chip = document.createElement('div');
@@ -678,7 +678,8 @@ select[multiple] option:checked {
                 ev.stopPropagation();
                 ev.preventDefault();
                 opt.selected = false;
-                renderChips(selectEl, chipsContainerId);
+                // Trigger change event to update dependent dropdowns, cascades, and re-render chips
+                selectEl.dispatchEvent(new Event('change'));
             });
         });
     }
@@ -690,6 +691,16 @@ select[multiple] option:checked {
     // Enhanced multi-select: allow toggling without Ctrl/Cmd key
     function makeMultiSelectToggleable(selectEl, chipsContainerId){
         if(!selectEl) return;
+        
+        // Check if already initialized to avoid duplicate event listeners
+        if(selectEl.dataset.toggleableInit === 'true') {
+            // Just re-render chips without re-binding events
+            renderChips(selectEl, chipsContainerId);
+            return;
+        }
+        
+        // Mark as initialized
+        selectEl.dataset.toggleableInit = 'true';
         
         // Initial render
         renderChips(selectEl, chipsContainerId);
@@ -810,7 +821,6 @@ select[multiple] option:checked {
 
         const origInvOptions = selInv ? Array.from(selInv.options).map(o=>({value:o.value,text:o.textContent})) : [];
         const origRegionalOptions = selRegional ? Array.from(selRegional.options).map(o=>({value:o.value,text:o.textContent})) : [];
-        const origCommunityOptions = selCommunity ? Array.from(selCommunity.options).map(o=>({value:o.value,text:o.textContent})) : [];
 
         // Build forward/reverse maps to support multi-select union filtering
         const communityMap = {}; // community -> { investors:Set, regionals:Set }
@@ -837,6 +847,9 @@ select[multiple] option:checked {
             });
         });
 
+        // Build origCommunityOptions from communityMap (not DOM) to get ALL communities
+        const origCommunityOptions = Object.keys(communityMap).sort().map(c => ({value:c, text:c}));
+
         function getSelectedValues(sel){ if(!sel) return []; return Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean); }
 
         function rebuildSelectMulti(sel, allowedSet, origOptions, keepSelected){
@@ -861,9 +874,12 @@ select[multiple] option:checked {
                 if(keep.has(o.value)) opt.selected = true;
                 sel.appendChild(opt);
             });
-            // rebind helper behavior
-            renderChips(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
-            makeMultiSelectToggleable(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
+            // Don't rebind or re-render chips during rebuild - will be done after cascade completes
+            // Only update chips if we're not in the middle of initialization
+            if(typeof isInitializing === 'undefined' || !isInitializing){
+                renderChips(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
+                makeMultiSelectToggleable(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
+            }
         }
 
         // When investor selection changes -> update regionals and communities (union of mappings)
@@ -926,6 +942,21 @@ select[multiple] option:checked {
                 if(selectedComms.length === 0){
                     rebuildSelectMulti(selInv, new Set(), origInvOptions, keepInv);
                     rebuildSelectMulti(selRegional, new Set(), origRegionalOptions, keepReg);
+                    // When no communities selected, rebuild Community dropdown based on current Investor/Regional filters
+                    const currentInvs = getSelectedValues(selInv);
+                    const currentRegs = getSelectedValues(selRegional);
+                    let allowedCommunities = new Set();
+                    if(currentInvs.length > 0 || currentRegs.length > 0){
+                        // Filter communities based on selected investors/regionals
+                        currentInvs.forEach(inv => {
+                            const cset = invToCommunitiesMap[inv]; if(cset) cset.forEach(v=>allowedCommunities.add(v));
+                        });
+                        currentRegs.forEach(rm => {
+                            const cset = regionalToCommunitiesMap[rm]; if(cset) cset.forEach(v=>allowedCommunities.add(v));
+                        });
+                    }
+                    // Rebuild Community with allowed set (empty set means show all)
+                    rebuildSelectMulti(selCommunity, allowedCommunities, origCommunityOptions, []);
                 } else {
                     rebuildSelectMulti(selInv, invAllowed, origInvOptions, keepInv);
                     rebuildSelectMulti(selRegional, regAllowed, origRegionalOptions, keepReg);
@@ -934,10 +965,28 @@ select[multiple] option:checked {
         }
 
         // Initialize cascade by re-applying any existing selections so the dependent lists reflect them
+        // Use a flag to prevent re-rendering chips during initialization
+        let isInitializing = true;
         setTimeout(function(){
-            if(getSelectedValues(selInv).length) selInv.dispatchEvent(new Event('change'));
-            if(getSelectedValues(selRegional).length) selRegional.dispatchEvent(new Event('change'));
-            if(getSelectedValues(selCommunity).length) selCommunity.dispatchEvent(new Event('change'));
+            const hasInvestor = getSelectedValues(selInv).length > 0;
+            const hasRegional = getSelectedValues(selRegional).length > 0;
+            const hasCommunity = getSelectedValues(selCommunity).length > 0;
+            
+            // Trigger cascades only if selections exist, to update dependent dropdowns
+            if(hasInvestor) selInv.dispatchEvent(new Event('change'));
+            if(hasRegional) selRegional.dispatchEvent(new Event('change'));
+            if(hasCommunity) selCommunity.dispatchEvent(new Event('change'));
+            
+            // After cascades complete, render all chips one final time
+            setTimeout(function(){
+                renderChips(selInv, 'investorChips');
+                renderChips(selRegional, 'regionalChips');
+                renderChips(selCommunity, 'communityChips');
+                renderChips(selYear, 'yearChips');
+                renderChips(selQuarter, 'quarterChips');
+                renderChips(selMonth, 'monthChips');
+                isInitializing = false;
+            }, 50);
         }, 0);
     }catch(e){ console.warn('Dependent dropdown init failed', e); }
 

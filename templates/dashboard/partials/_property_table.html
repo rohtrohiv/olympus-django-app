@@ -1,6 +1,6 @@
 <div style="width:100%;margin-top:32px;" id="property-table-fragment">
     <div class="property-table-container" style="padding:24px;background:#f7f9fc;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03);">
-        <h2 style="margin-bottom:16px;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">{% if period_display_label %}({{ period_display_label }}){% else %}(No period selected){% endif %}</span></h2>
+        <h2 style="margin-bottom:16px;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">({{ period_display_label }})</span></h2>
         <style>
             /* Scrolling wrapper for property table and sticky header */
             .property-table-scroll{
@@ -67,7 +67,7 @@
                     <th data-sort-key="asst_manager" style="padding:8px 12px;cursor:pointer;user-select:none;">Asst Manager<span class="sort-indicator"></span></th>
                     <th data-sort-key="total_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Total Units<span class="sort-indicator"></span></th>
                     <th data-sort-key="occupied_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Occupied Units<span class="sort-indicator"></span></th>
-                    <th data-sort-key="latest_snapshot_date" style="padding:8px 12px;cursor:pointer;user-select:none;">Latest Snapshot<span class="sort-indicator"></span></th>
+                    <th data-sort-key="latest_snapshot_date" style="padding:8px 12px;cursor:pointer;user-select:none;">Period/Snapshot<span class="sort-indicator"></span></th>
                     <th data-sort-key="occupancy_pct" style="padding:8px 12px;cursor:pointer;user-select:none;">Occupancy %<span class="sort-indicator"></span></th>
                     <th data-sort-key="effective_rent" style="padding:8px 12px;cursor:pointer;user-select:none;">Effective Rent<span class="sort-indicator"></span></th>
                     <th data-sort-key="market_rent" style="padding:8px 12px;cursor:pointer;user-select:none;">Market Rent<span class="sort-indicator"></span></th>
@@ -163,8 +163,10 @@
                     return;
                 }
                 const rowsHtml = pageItems.map(r => {
-                    const latest = r.latest_snapshot_date || r.snapshotdate || r.latestSnapshotDate || '';
-                    const occ = (r.occupancy_pct !== undefined && r.occupancy_pct !== null) ? Number(r.occupancy_pct).toFixed(1) : (r.percentage_occupacy || '');
+                    // Use period_label if available (for aggregated monthly data), otherwise use snapshot date
+                    const latest = r.period_label || r.latest_snapshot_date || r.snapshotdate || r.latestSnapshotDate || '';
+                    const occ = (r.occupancy_pct !== undefined && r.occupancy_pct !== null) ? Number(r.occupancy_pct).toFixed(1) : (r.percentage_occupacy !== undefined ? Number(r.percentage_occupacy).toFixed(1) : '');
+                    const occUnits = r.occupied_units ? (Number.isInteger(r.occupied_units) ? r.occupied_units : Number(r.occupied_units).toFixed(1)) : '';
                     const eff = (r.effective_rent!==null && r.effective_rent!==undefined && r.effective_rent!=='') ? ('$'+Number(r.effective_rent).toLocaleString()) : '-';
                     const mkt = (r.market_rent!==null && r.market_rent!==undefined && r.market_rent!=='') ? ('$'+Number(r.market_rent).toLocaleString()) : '-';
                     const mo = (r.total_move_outs!==null && r.total_move_outs!==undefined) ? r.total_move_outs : '-';
@@ -177,7 +179,7 @@
                         <td style="padding:8px 12px;">${r.regional_director || ''}</td>
                         <td style="padding:8px 12px;">${r.asst_manager || ''}</td>
                         <td style="padding:8px 12px;">${r.total_units || ''}</td>
-                        <td style="padding:8px 12px;">${r.occupied_units || ''}</td>
+                        <td style="padding:8px 12px;">${occUnits}</td>
                         <td style="padding:8px 12px;">${latest || ''}</td>
                         <td style="padding:8px 12px;">${occ || ''}</td>
                         <td style="padding:8px 12px;">${eff}</td>
@@ -269,13 +271,15 @@
                 // columns in desired order
                 const headers = [
                     'Property Number','Property Name','Investor','Regional Manager','Regional Director','Asst Manager',
-                    'Total Units','Occupied Units','Latest Snapshot','Occupancy %','Effective Rent','Market Rent','Move Outs','Avg $/sqft'
+                    'Total Units','Occupied Units','Period/Snapshot','Occupancy %','Effective Rent','Market Rent','Move Outs','Avg $/sqft'
                 ];
                 const rows = [headers.map(escapeCsv).join(',')];
                 const data = filtered.slice();
                 data.forEach(r => {
-                    const latest = r.latest_snapshot_date || r.snapshotdate || r.latestSnapshotDate || '';
-                    const occ = (r.occupancy_pct !== undefined && r.occupancy_pct !== null) ? Number(r.occupancy_pct).toFixed(1) : (r.percentage_occupacy || '');
+                    // Use period_label if available (for aggregated monthly data), otherwise use snapshot date
+                    const latest = r.period_label || r.latest_snapshot_date || r.snapshotdate || r.latestSnapshotDate || '';
+                    const occ = (r.occupancy_pct !== undefined && r.occupancy_pct !== null) ? Number(r.occupancy_pct).toFixed(1) : (r.percentage_occupacy !== undefined ? Number(r.percentage_occupacy).toFixed(1) : '');
+                    const occUnits = r.occupied_units ? (Number.isInteger(r.occupied_units) ? r.occupied_units : Number(r.occupied_units).toFixed(1)) : '';
                     const eff = (r.effective_rent!==null && r.effective_rent!==undefined && r.effective_rent!=='') ? formatCurrency(r.effective_rent) : '';
                     const mkt = (r.market_rent!==null && r.market_rent!==undefined && r.market_rent!=='') ? formatCurrency(r.market_rent) : '';
                     const mo = (r.total_move_outs!==null && r.total_move_outs!==undefined) ? r.total_move_outs : '';
@@ -288,7 +292,7 @@
                         r.regional_director || '',
                         r.asst_manager || '',
                         r.total_units || '',
-                        r.occupied_units || '',
+                        occUnits,
                         latest || '',
                         occ || '',
                         eff || '',

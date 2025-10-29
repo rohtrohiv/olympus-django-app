@@ -483,14 +483,72 @@ class DashboardService:
         # Table: prepare a small paginated property list from last_day_qs (10 per page)
         # Include additional metric fields so the client table can display
         # latest snapshot, occupancy%, rents, moves and application counts.
-        prop_values = last_day_qs.values(
-            'property_number', 'property_name', 'total_units', 'investor', 'regional_area_manager',
-            'regional_director', 'asst_manager', 'occupied_units',
-            'snapshotdate', 'percentage_occupacy', 'effective_rent', 'market_rent',
-            'total_move_ins', 'total_move_outs', 'applications', 'avg_amount_per_sqft'
-        ).distinct()
+        
+        # When multiple months are selected, show aggregated monthly data instead of snapshots
+        if period_mode == 'month' and has_multiple_periods:
+            # Build aggregated monthly data from period_qs (all days in selected months)
+            from django.db.models import Avg, Max
+            from django.db.models.functions import ExtractYear, ExtractMonth
+            import calendar as month_calendar
+            
+            # Group by property and month, then aggregate
+            prop_values_raw = (period_qs
+                .annotate(year=ExtractYear('snapshotdate'), month=ExtractMonth('snapshotdate'))
+                .values('property_number', 'property_name', 'investor', 'regional_area_manager',
+                       'regional_director', 'asst_manager', 'year', 'month')
+                .annotate(
+                    total_units=Max('total_units'),  # Units typically constant per property
+                    occupied_units=Avg('occupied_units'),  # Average occupancy across the month
+                    percentage_occupacy=Avg('percentage_occupacy'),  # Average occupancy %
+                    effective_rent=Avg('effective_rent'),  # Average effective rent
+                    market_rent=Avg('market_rent'),  # Average market rent
+                    total_move_ins=Sum('total_move_ins'),  # Sum of move-ins across all days
+                    total_move_outs=Sum('total_move_outs'),  # Sum of move-outs across all days
+                    applications=Sum('applications'),  # Sum of applications
+                    avg_amount_per_sqft=Avg('avg_amount_per_sqft'),  # Average $/sqft
+                    snapshotdate=Max('snapshotdate')  # Last snapshot date in the month for reference
+                )
+                .order_by('property_number', '-year', '-month'))
+            
+            # Convert to list and format the data
+            prop_values = []
+            for row in prop_values_raw:
+                # Create a period label like "Jan-2025"
+                month_name = month_calendar.month_abbr[row['month']]
+                period_label = f"{month_name}-{row['year']}"
+                
+                # Round numeric values for display
+                prop_values.append({
+                    'property_number': row['property_number'],
+                    'property_name': row['property_name'],
+                    'investor': row['investor'],
+                    'regional_area_manager': row['regional_area_manager'],
+                    'regional_director': row['regional_director'],
+                    'asst_manager': row['asst_manager'],
+                    'total_units': int(row['total_units'] or 0),
+                    'occupied_units': round(row['occupied_units'] or 0, 1),  # Show avg as decimal
+                    'percentage_occupacy': round(row['percentage_occupacy'] or 0, 2),
+                    'effective_rent': round(row['effective_rent'] or 0, 2),
+                    'market_rent': round(row['market_rent'] or 0, 2),
+                    'total_move_ins': int(row['total_move_ins'] or 0),
+                    'total_move_outs': int(row['total_move_outs'] or 0),
+                    'applications': int(row['applications'] or 0),
+                    'avg_amount_per_sqft': round(row['avg_amount_per_sqft'] or 0, 2),
+                    'snapshotdate': row['snapshotdate'],  # Reference date
+                    'period_label': period_label  # Add period label for display
+                })
+        else:
+            # Single period or non-month mode: use snapshot data as before
+            prop_values = last_day_qs.values(
+                'property_number', 'property_name', 'total_units', 'investor', 'regional_area_manager',
+                'regional_director', 'asst_manager', 'occupied_units',
+                'snapshotdate', 'percentage_occupacy', 'effective_rent', 'market_rent',
+                'total_move_ins', 'total_move_outs', 'applications', 'avg_amount_per_sqft'
+            ).distinct()
+            prop_values = list(prop_values)
+        
         # Use in-memory paginator so view can render `properties` as page object
-        paginator = Paginator(list(prop_values), 10)
+        paginator = Paginator(prop_values, 10)
         page = int(self.params.get('page', 1)) if str(self.params.get('page','1')).isdigit() else 1
         properties_page = paginator.get_page(page)
 
@@ -910,8 +968,6 @@ class DashboardService:
                 period_display_label = f"{len(period_months)} months selected"
             else:
                 period_display_label = ', '.join(period_months)
-        
-        print(f"DEBUG: period_display_label = '{period_display_label}', period_mode = '{period_mode}', period_quarters = {period_quarters}")
 
         # Compose final context returned to view/template
         return {

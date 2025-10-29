@@ -1523,13 +1523,18 @@ def dashboard(request):
 
 
 	# Convert selected_month to JSON-safe format for template JS consumption
-	selected_months_raw = svc_ctx.get('period_month')
-	if isinstance(selected_months_raw, list):
-		selected_months_json = json.dumps(selected_months_raw)
-	elif selected_months_raw:
-		selected_months_json = json.dumps([selected_months_raw])
+	# Use request.GET.getlist to ensure we get ALL selected months from URL
+	selected_months_from_url = request.GET.getlist('period_month')
+	if selected_months_from_url:
+		selected_months_json = json.dumps(selected_months_from_url)
 	else:
-		selected_months_json = json.dumps([])
+		selected_months_raw = svc_ctx.get('period_month')
+		if isinstance(selected_months_raw, list):
+			selected_months_json = json.dumps(selected_months_raw)
+		elif selected_months_raw:
+			selected_months_json = json.dumps([selected_months_raw])
+		else:
+			selected_months_json = json.dumps([])
 
 	context = {
 		'user': user,
@@ -1556,7 +1561,8 @@ def dashboard(request):
 		'unfiltered_investors': svc_unfiltered_ctx.get('investors'),
 		'investors': None,
 		'regional_managers': svc_unfiltered_ctx.get('managers'),
-		'communities': svc_ctx.get('properties_list'),
+		# Deduplicate communities list by property_name (when multi-period, same property appears multiple times)
+		'communities': list({(p.get('property_name') or p.get('name') or p.get('community') or str(p)): p for p in (svc_ctx.get('properties_list') or [])}.values()),
 		'inv_to_regional': svc_unfiltered_ctx.get('investor_managers'),
 		'inv_reg_to_communities': inv_reg_to_communities,
 		'inv_to_regional_json': json.dumps(svc_unfiltered_ctx.get('investor_managers', {})),
