@@ -711,10 +711,9 @@ class DashboardService:
             else:
                 num_weeks = 5
 
-            # initialize empty buckets for week indices 0..num_weeks-1
-            for wi in range(num_weeks):
-                buckets.setdefault(wi, {})
-
+            # Do NOT pre-initialize buckets - only create them when we have actual data
+            # This ensures we only show week groups that have data available
+            
             for r in rows:
                 sd = self._to_date_generic(r.get('snapshotdate'))
                 if not sd:
@@ -837,15 +836,15 @@ class DashboardService:
         chart_rent = {
             'labels': labels,
             'datasets': [
-                {'label': 'Effective', 'data': eff_series, 'borderColor': '#0E555A', 'backgroundColor': 'transparent', 'borderWidth': 2, 'tension': 0.3},
-                {'label': 'Market', 'data': mkt_series, 'borderColor': '#59E6F6', 'backgroundColor': 'transparent', 'borderWidth': 2, 'tension': 0.3},
+                {'label': 'Effective', 'data': eff_series, 'backgroundColor': '#0E555A', 'borderColor': '#0E555A'},
+                {'label': 'Market', 'data': mkt_series, 'backgroundColor': '#C69A58', 'borderColor': '#C69A58'},
             ]
         }
 
         chart_occrev = {
             'labels': labels,
             'datasets': [
-                {'type': 'line', 'label': 'Occupancy %', 'yAxisID': 'yL', 'data': occ_series, 'borderColor': '#59E6F6', 'backgroundColor': 'transparent', 'borderWidth': 2, 'tension': 0.3},
+                {'type': 'bar', 'label': 'Occupancy %', 'yAxisID': 'yL', 'data': occ_series, 'backgroundColor': '#0E555A', 'borderColor': '#0E555A'},
                 {'label': 'Total Revenue (k$)', 'yAxisID': 'yR', 'data': rev_series, 'backgroundColor': '#C69A58'},
             ]
         }

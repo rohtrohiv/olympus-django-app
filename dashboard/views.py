@@ -1273,7 +1273,7 @@ def dashboard(request):
 		chart_renewals = {
 			'labels': labels,
 			'datasets': [
-				{'label': 'Expirations', 'data': expirations, 'backgroundColor': '#E5E7EB', 'borderColor': '#CBD5E1'},
+				{'label': 'Expirations', 'data': expirations, 'backgroundColor': '#59E6F6', 'borderColor': '#59E6F6'},
 				{'label': 'Renewals', 'data': renewals, 'backgroundColor': '#0E555A', 'borderColor': '#0E555A'}
 			]
 		}

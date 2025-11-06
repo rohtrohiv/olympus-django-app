@@ -349,7 +349,7 @@ select[multiple] option:checked {
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 @media (max-width:900px){.grid-2{grid-template-columns:1fr}}
 
-.chart-card{background:var(--card-bg);border:1px dashed var(--border);border-radius:var(--radius);padding:8px;height:280px}
+.chart-card{background:var(--card-bg);border:1px solid rgba(229, 231, 235, 0.5);border-radius:var(--radius);padding:16px;height:420px}
 /* Responsive chart container and canvas */
 .charts-container {
     width: 100%;
@@ -357,24 +357,25 @@ select[multiple] option:checked {
     margin: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: 20px;
+    margin-bottom: 24px;
     justify-content: center;
     align-items: center;
 }
 .chart-card {
     background: var(--card-bg);
-    border: 1px dashed var(--border);
+    border: 1px solid rgba(229, 231, 235, 0.5);
     border-radius: var(--radius);
-    padding: 8px;
-    height: 280px;
+    padding: 16px;
+    height: 420px;
     display: flex;
     align-items: stretch;
     justify-content: center;
-    flex: 1 1 280px;
-    min-width: 220px;
+    flex: 1 1 320px;
+    min-width: 280px;
     max-width: 100%;
     box-sizing: border-box;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
 }
 .chart-card canvas {
     width: 100% !important;
@@ -393,28 +394,28 @@ select[multiple] option:checked {
         gap: 18px;
     }
     .chart-card {
-        min-width: 220px;
-        height: 260px;
+        min-width: 260px;
+        height: 380px;
     }
 }
 @media (max-width: 900px) {
     .charts-container {
-        gap: 12px;
+        gap: 16px;
     }
     .chart-card {
-        min-width: 180px;
-        height: 200px;
+        min-width: 240px;
+        height: 340px;
     }
 }
 @media (max-width: 600px) {
     .charts-container {
         flex-direction: column;
         align-items: center;
-        gap: 10px;
+        gap: 14px;
     }
     .chart-card {
         min-width: 100%;
-        height: 160px;
+        height: 300px;
         flex: 1 1 100%;
     }
 }
@@ -1106,36 +1107,201 @@ select[multiple] option:checked {
         const chartOccRevData = JSON.parse('{{ chart_occrev_json|default:"{}"|escapejs }}');
 
         new Chart(document.getElementById('chartRent'),{
-            type:'line',
+            type:'bar',
             data: chartRentData,
-            options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{ticks:{callback:v=>'$'+v}}}}
+            options:{
+                responsive:true,
+                maintainAspectRatio:false,
+                layout:{
+                    padding:{
+                        top:10,
+                        bottom:10,
+                        left:5,
+                        right:5
+                    }
+                },
+                plugins:{
+                    title:{
+                        display:true,
+                        text:'Rent Comparison',
+                        font:{size:18,weight:'bold'},
+                        padding:{bottom:20}
+                    },
+                    legend:{
+                        display:true,
+                        position:'top',
+                        labels:{
+                            padding:12,
+                            font:{size:13}
+                        }
+                    }
+                },
+                scales:{
+                    x:{
+                        title:{
+                            display:true,
+                            text:'Time Period',
+                            font:{size:13}
+                        },
+                        ticks:{
+                            font:{size:12}
+                        }
+                    },
+                    y:{
+                        beginAtZero:true,
+                        title:{
+                            display:true,
+                            text:'Rent Amount ($)',
+                            font:{size:13}
+                        },
+                        ticks:{
+                            callback:v=>'$'+v,
+                            font:{size:12}
+                        }
+                    }
+                }
+            }
         });
 
         new Chart(document.getElementById('chartOccRev'),{
             type:'bar',
             data: chartOccRevData,
-            options:{responsive:true,maintainAspectRatio:false,scales:{yL:{position:'left',ticks:{callback:v=>v+'%'}},yR:{position:'right',ticks:{callback:v=>'$'+v+'k'}}}}
+            options:{
+                responsive:true,
+                maintainAspectRatio:false,
+                layout:{
+                    padding:{
+                        top:10,
+                        bottom:10,
+                        left:5,
+                        right:5
+                    }
+                },
+                plugins:{
+                    title:{
+                        display:true,
+                        text:'Occupancy & Revenue',
+                        font:{size:18,weight:'bold'},
+                        padding:{bottom:20}
+                    },
+                    legend:{
+                        display:true,
+                        position:'top',
+                        labels:{
+                            padding:12,
+                            font:{size:13}
+                        }
+                    }
+                },
+                scales:{
+                    x:{
+                        title:{
+                            display:true,
+                            text:'Time Period',
+                            font:{size:13}
+                        },
+                        ticks:{
+                            font:{size:12}
+                        }
+                    },
+                    yL:{
+                        position:'left',
+                        beginAtZero:true,
+                        title:{
+                            display:true,
+                            text:'Occupancy (%)',
+                            font:{size:13}
+                        },
+                        ticks:{
+                            callback:v=>v+'%',
+                            font:{size:12}
+                        }
+                    },
+                    yR:{
+                        position:'right',
+                        beginAtZero:true,
+                        title:{
+                            display:true,
+                            text:'Revenue (k$)',
+                            font:{size:13}
+                        },
+                        ticks:{
+                            callback:v=>'$'+v+'k',
+                            font:{size:12}
+                        }
+                    }
+                }
+            }
         });
 
-        // Use server-provided renewals chart data when available, otherwise
-        // fall back to the static demo data embedded in the template.
+        // Use server-provided renewals chart data when available
+        // If no data is available, display "No Data Available" message instead of demo data
         let renewalsChartData = {};
         try{
             renewalsChartData = JSON.parse('{{ chart_renewals_json|default:"{}"|escapejs }}');
         }catch(e){ renewalsChartData = {}; }
 
         if(!renewalsChartData || !renewalsChartData.labels || renewalsChartData.labels.length === 0){
-            renewalsChartData = {labels:['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'], datasets:[
-                {label:'Expirations',data:[22,20,26,28,27,29],backgroundColor:'#E5E7EB',borderColor:'#CBD5E1'},
-                {label:'Renewals',data:[10,9,12,11,13,13],backgroundColor:'#0E555A',borderColor:'#0E555A'}
-            ]};
+            // Show "No Data Available" message
+            const chartContainer = document.getElementById('chartRenewals').parentElement;
+            chartContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748B;font-size:14px;">No data available for the selected period</div>';
+        } else {
+            new Chart(document.getElementById('chartRenewals'),{
+                type:'bar',
+                data: renewalsChartData,
+                options:{
+                    responsive:true,
+                    maintainAspectRatio:false,
+                    layout:{
+                        padding:{
+                            top:10,
+                            bottom:10,
+                            left:5,
+                            right:5
+                        }
+                    },
+                    plugins:{
+                        title:{
+                            display:true,
+                            text:'Lease Renewals & Expirations',
+                            font:{size:18,weight:'bold'},
+                            padding:{bottom:20}
+                        },
+                        legend:{
+                            display:true,
+                            position:'top',
+                            labels:{
+                                padding:12,
+                                font:{size:13}
+                            }
+                        }
+                    },
+                    scales:{
+                        x:{
+                            title:{
+                                display:true,
+                                text:'Time Period',
+                                font:{size:13}
+                            },
+                            ticks:{
+                                font:{size:12}
+                            }
+                        },
+                        y:{
+                            beginAtZero:true,
+                            title:{
+                                display:true,
+                                text:'Number of Leases',
+                                font:{size:13}
+                            },
+                            ticks:{
+                                font:{size:12}
+                            }
+                        }
+                    }
+                }
+            });
         }
-
-        new Chart(document.getElementById('chartRenewals'),{
-            type:'bar',
-            data: renewalsChartData,
-            options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}}}
-        });
 
         // Move-Out Reasons chart: use server-provided payload when available
         let moveoutChartData = {};
@@ -1143,88 +1309,158 @@ select[multiple] option:checked {
             moveoutChartData = JSON.parse('{{ chart_moveout_json|default:"{}"|escapejs }}');
         }catch(e){ moveoutChartData = {}; }
 
-        // Fallback demo payload
-        const demoMoveout = {labels:['Affordability','Dissatisfied','Home Purchase'], datasets:[{data:[18,16,14],backgroundColor:['#0E555A','#C69A58','#93C5FD']}]};
-        if(!moveoutChartData || (!moveoutChartData.labels || moveoutChartData.labels.length === 0) && (!moveoutChartData.datasets || moveoutChartData.datasets.length === 0)){
-            moveoutChartData = demoMoveout;
-        }
+        // Check if we have valid data
+        const hasValidMoveoutData = moveoutChartData && 
+            ((moveoutChartData.labels && moveoutChartData.labels.length > 0) || 
+             (moveoutChartData.datasets && moveoutChartData.datasets.length > 0 && 
+              moveoutChartData.datasets.some(ds => ds.data && ds.data.length > 0)));
 
-        // Normalize server payloads into a doughnut-friendly shape.
-        // Server may provide time-series per category (multiple datasets with label=category)
-        // For a doughnut we want labels=[categories] and a single dataset with summed values per category.
-        let doughnutData = null;
-        try{
-            if(moveoutChartData && Array.isArray(moveoutChartData.datasets) && moveoutChartData.datasets.length > 1){
-                // multiple datasets -> compute totals per dataset (each dataset represents a category)
-                const labels = moveoutChartData.datasets.map(ds => ds.label || '');
-                const data = moveoutChartData.datasets.map(ds => {
-                    if(!Array.isArray(ds.data)) return 0;
-                    return ds.data.reduce((acc, v) => acc + (Number(v) || 0), 0);
-                });
-                const palette = ['#0E555A','#C69A58','#93C5FD','#1E40AF','#059669','#5B21B6','#EA580C','#7C2D12','#0E555A'];
-                const bg = labels.map((_, i) => palette[i % palette.length]);
-                doughnutData = {labels: labels, datasets: [{data: data, backgroundColor: bg}]};
-            }else if(moveoutChartData && Array.isArray(moveoutChartData.datasets) && moveoutChartData.datasets.length === 1){
-                // already in pie-friendly form: ensure backgroundColor is an array matching labels
-                const ds = moveoutChartData.datasets[0];
-                const labels = moveoutChartData.labels && moveoutChartData.labels.length ? moveoutChartData.labels : (ds.labels || []);
-                let bg = ds.backgroundColor;
-                if(!Array.isArray(bg)){
+        if(!hasValidMoveoutData){
+            // Show "No Data Available" message
+            const chartContainer = document.getElementById('chartMoveOut').parentElement;
+            chartContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748B;font-size:14px;">No data available for the selected period</div>';
+        } else {
+            // Normalize server payloads into a doughnut-friendly shape.
+            // Server may provide time-series per category (multiple datasets with label=category)
+            // For a doughnut we want labels=[categories] and a single dataset with summed values per category.
+            let doughnutData = null;
+            try{
+                if(moveoutChartData && Array.isArray(moveoutChartData.datasets) && moveoutChartData.datasets.length > 1){
+                    // multiple datasets -> compute totals per dataset (each dataset represents a category)
+                    const labels = moveoutChartData.datasets.map(ds => ds.label || '');
+                    const data = moveoutChartData.datasets.map(ds => {
+                        if(!Array.isArray(ds.data)) return 0;
+                        return ds.data.reduce((acc, v) => acc + (Number(v) || 0), 0);
+                    });
                     const palette = ['#0E555A','#C69A58','#93C5FD','#1E40AF','#059669','#5B21B6','#EA580C','#7C2D12','#0E555A'];
-                    bg = labels.map((_, i) => palette[i % palette.length]);
+                    const bg = labels.map((_, i) => palette[i % palette.length]);
+                    doughnutData = {labels: labels, datasets: [{data: data, backgroundColor: bg}]};
+                }else if(moveoutChartData && Array.isArray(moveoutChartData.datasets) && moveoutChartData.datasets.length === 1){
+                    // already in pie-friendly form: ensure backgroundColor is an array matching labels
+                    const ds = moveoutChartData.datasets[0];
+                    const labels = moveoutChartData.labels && moveoutChartData.labels.length ? moveoutChartData.labels : (ds.labels || []);
+                    let bg = ds.backgroundColor;
+                    if(!Array.isArray(bg)){
+                        const palette = ['#0E555A','#C69A58','#93C5FD','#1E40AF','#059669','#5B21B6','#EA580C','#7C2D12','#0E555A'];
+                        bg = labels.map((_, i) => palette[i % palette.length]);
+                    }
+                    doughnutData = {labels: labels, datasets: [{data: ds.data || [], backgroundColor: bg}]};
+                }else{
+                    // use the object as-is (server-provided pie data)
+                    doughnutData = moveoutChartData;
                 }
-                doughnutData = {labels: labels, datasets: [{data: ds.data || [], backgroundColor: bg}]};
-            }else{
-                // use the object as-is (demo or server-provided pie data)
+            }catch(e){
                 doughnutData = moveoutChartData;
             }
-        }catch(e){
-            doughnutData = demoMoveout;
-        }
 
-        new Chart(document.getElementById('chartMoveOut'),{
-            type:'doughnut',
-            data: doughnutData,
-            options:{
-                responsive:true,
-                maintainAspectRatio:false,
-                aspectRatio: 1,
-                plugins:{
-                    legend:{
-                        position:'bottom',
-                        labels:{
-                            boxWidth:10,
-                            padding:8,
-                            font: { size: 12 },
-                            usePointStyle: true,
-                            // allow longer labels to wrap
-                            maxWidth: 200
+            new Chart(document.getElementById('chartMoveOut'),{
+                type:'doughnut',
+                data: doughnutData,
+                options:{
+                    responsive:true,
+                    maintainAspectRatio:false,
+                    aspectRatio: 1,
+                    layout:{
+                        padding:{
+                            top:10,
+                            bottom:10,
+                            left:5,
+                            right:5
+                        }
+                    },
+                    plugins:{
+                        title:{
+                            display:true,
+                            text:'Move-Out Reasons',
+                            font:{size:18,weight:'bold'},
+                            padding:{bottom:20}
+                        },
+                        legend:{
+                            position:'bottom',
+                            labels:{
+                                boxWidth:12,
+                                padding:10,
+                                font: { size: 13 },
+                                usePointStyle: true,
+                                // allow longer labels to wrap
+                                maxWidth: 200
+                            }
                         }
                     }
-                },
-                layout: { padding: { bottom: 6 } }
-            }
-        });
+                }
+            });
+        }
 
-        // Use server-provided expense chart data when available, otherwise fall back
-        // to the static demo data embedded in the template.
+        // Use server-provided expense chart data when available
+        // If no data is available, display "No Data Available" message instead of demo data
         let expenseChartData = {};
         try{
             expenseChartData = JSON.parse('{{ chart_expense_json|default:"{}"|escapejs }}');
         }catch(e){ expenseChartData = {}; }
 
         if(!expenseChartData || !expenseChartData.labels || expenseChartData.labels.length === 0){
-            expenseChartData = {labels:['Jan-25','Feb-25','Mar-25','Apr-25','May-25','Jun-25'], datasets:[
-                {label:'Controllable',data:[50,52,51,49,48,50],backgroundColor:'#0E555A'},
-                {label:'Non-Controllable',data:[38,40,41,39,37,39],backgroundColor:'#C69A58'}
-            ]};
+            // Show "No Data Available" message
+            const chartContainer = document.getElementById('chartExpense').parentElement;
+            chartContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748B;font-size:14px;">No data available for the selected period</div>';
+        } else {
+            new Chart(document.getElementById('chartExpense'),{
+                type:'bar',
+                data: expenseChartData,
+                options:{
+                    responsive:true,
+                    maintainAspectRatio:false,
+                    layout:{
+                        padding:{
+                            top:10,
+                            bottom:10,
+                            left:5,
+                            right:5
+                        }
+                    },
+                    plugins:{
+                        title:{
+                            display:true,
+                            text:'Operating Expenses',
+                            font:{size:18,weight:'bold'},
+                            padding:{bottom:20}
+                        },
+                        legend:{
+                            display:true,
+                            position:'top',
+                            labels:{
+                                padding:12,
+                                font:{size:13}
+                            }
+                        }
+                    },
+                    scales:{
+                        x:{
+                            stacked:true,
+                            title:{
+                                display:true,
+                                text:'Time Period',
+                                font:{size:13}
+                            },
+                            ticks:{
+                                font:{size:12}
+                            }
+                        },
+                        y:{
+                            stacked:true,
+                            title:{
+                                display:true,
+                                text:'Expense Amount (k$)',
+                                font:{size:13}
+                            },
+                            ticks:{
+                                callback:v=>'$'+v+'k',
+                                font:{size:12}
+                            }
+                        }
+                    }
+                }
+            });
         }
-
-        new Chart(document.getElementById('chartExpense'),{
-            type:'bar',
-            data: expenseChartData,
-            options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>'$'+v+'k'}}}}
-        });
 
     // Summary Charts - Properties and Units Over Time (Yearly Growth)
         const years = ['2021', '2022', '2023', '2024', '2025'];
