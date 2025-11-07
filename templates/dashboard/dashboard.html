@@ -132,6 +132,147 @@ div[style*="width:100%"].drawer-open {
 }
 .filter-chip-remove:hover{color:#d92f44}
 
+/* Custom dropdown with checkboxes */
+.custom-dropdown {
+    position: relative;
+    width: 100%;
+}
+.dropdown-toggle {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #0B3A3F;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.dropdown-toggle:hover {
+    border-color: #59E6F6;
+}
+.dropdown-toggle:focus {
+    outline: none;
+    border-color: #59E6F6;
+    box-shadow: 0 0 0 3px rgba(89, 230, 246, 0.1);
+}
+.dropdown-toggle::after {
+    content: '▼';
+    font-size: 10px;
+    color: #64748B;
+    transition: transform 0.2s;
+}
+.dropdown-toggle.open::after {
+    transform: rotate(180deg);
+}
+.dropdown-toggle .placeholder {
+    color: #64748B;
+}
+.dropdown-toggle .selected-count {
+    color: #0E555A;
+    font-weight: 700;
+}
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 100;
+    display: none;
+}
+.dropdown-menu.open {
+    display: block;
+}
+.dropdown-menu-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+    transition: background 0.15s;
+}
+.dropdown-menu-item:last-child {
+    border-bottom: none;
+}
+.dropdown-menu-item:hover {
+    background: #F3F6F8;
+}
+.dropdown-menu-item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #0E555A;
+}
+.dropdown-menu-item label {
+    flex: 1;
+    cursor: pointer;
+    font-size: 13px;
+    color: #0B3A3F;
+    font-weight: 500;
+    user-select: none;
+}
+.dropdown-search {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+}
+.dropdown-search input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+}
+.dropdown-search input:focus {
+    border-color: #59E6F6;
+    box-shadow: 0 0 0 2px rgba(89, 230, 246, 0.1);
+}
+.dropdown-actions {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 6px;
+    z-index: 1;
+}
+.dropdown-actions button {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #0B3A3F;
+}
+.dropdown-actions button:hover {
+    background: #F3F6F8;
+    border-color: #59E6F6;
+}
+.dropdown-actions button:active {
+    transform: scale(0.98);
+}
+
 /* Multi-select dropdown styling */
 select[multiple] {
     cursor: pointer;
@@ -470,9 +611,16 @@ select[multiple] option:checked {
         <!-- FILTER PANE (inserted) -->
         <aside class="filter-pane" id="filterPane" aria-hidden="true">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-                <h3 style="flex:1">Filters</h3>
+                <h3 style="flex:1;margin:0;">Filters</h3>
                 <button class="filter-close" id="filterClose" aria-label="Close filters">&times;</button>
             </div>
+            
+            <!-- Top Action Buttons -->
+            <div class="filter-actions" style="margin-bottom:12px;">
+                <button type="button" id="applyFiltersTop" class="logout-btn" style="background:#59E6F6;color:#063235;">Apply</button>
+                <button type="button" id="clearFiltersTop" class="logout-btn" style="background:#E5E7EB;color:#0B3A3F;">Clear</button>
+            </div>
+            
             <div class="filter-section">
                 <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Period</div>
                 <!-- Period mode toggle -->
@@ -483,85 +631,234 @@ select[multiple] option:checked {
                 </div>
 
                 <form method="get" action="/dashboard" id="filter-period-form">
-                    <!-- Year select - now multi-select -->
-                    <div style="font-size:10px;color:var(--muted);margin-bottom:6px;" id="yearMultiHint">Click to select multiple years</div>
-                    <select name="period_year" id="filterPeriodYear" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:block;min-height:100px;">
-                        <option value="all" {% if selected_year == 'all' %}selected{% endif %}>All Years</option>
-                        {% for year, data in period_options.items %}
-                            <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
-                        {% endfor %}
-                    </select>
+                    <!-- Year custom dropdown -->
+                    <div id="yearDropdownContainer" class="custom-dropdown" style="display:block;">
+                        <button type="button" class="dropdown-toggle" id="yearDropdownToggle">
+                            <span class="placeholder">Select years...</span>
+                        </button>
+                        <div class="dropdown-menu" id="yearDropdownMenu">
+                            <div class="dropdown-search">
+                                <input type="text" placeholder="Search years..." id="yearSearchInput">
+                            </div>
+                            <div id="yearDropdownItems">
+                                <div class="dropdown-menu-item">
+                                    <input type="checkbox" id="year-all" value="all" {% if selected_year == 'all' %}checked{% endif %}>
+                                    <label for="year-all">All Years</label>
+                                </div>
+                                {% for year, data in period_options.items %}
+                                <div class="dropdown-menu-item">
+                                    <input type="checkbox" id="year-{{ year }}" value="{{ year }}" {% if year == selected_year %}checked{% endif %}>
+                                    <label for="year-{{ year }}">{{ year }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="dropdown-actions">
+                                <button type="button" class="select-all-btn" data-dropdown="year">Select All</button>
+                                <button type="button" class="clear-all-btn" data-dropdown="year">Clear All</button>
+                            </div>
+                        </div>
+                        <select name="period_year" id="filterPeriodYear" multiple style="display:none;">
+                            <option value="all" {% if selected_year == 'all' %}selected{% endif %}>All Years</option>
+                            {% for year, data in period_options.items %}
+                                <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div id="yearChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
 
-                    <!-- Quarter select - now multi-select and independent -->
-                    <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:6px;display:none;" id="quarterMultiHint">Click to select multiple quarters</div>
-                    <select name="period_quarter" id="filterPeriodQuarter" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;min-height:100px;">
-                        {% for year, data in period_options.items %}
-                            {% for quarter, months in data.quarters.items %}
-                                <option value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ quarter }} {{ year }}</option>
-                            {% endfor %}
-                        {% endfor %}
-                    </select>
-                    <div id="quarterChips" class="filter-chips" style="margin-top:8px;display:none;flex-wrap:wrap;gap:6px;"></div>
-
-                    <!-- Month select (hidden by default) - now multi-select -->
-                    <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:6px;display:none;" id="monthMultiHint">Click to select multiple months</div>
-                    <select name="period_month" id="filterPeriodMonth" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;display:none;margin-top:8px;min-height:100px;">
-                        {% for year, data in period_options.items %}
-                            {% for quarter, months in data.quarters.items %}
-                                {% for month in months %}
-                                    <!-- Attach data-year and data-quarter so we can filter options client-side -->
-                                    <option value="{{ month }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ month }} {{ year }}</option>
+                    <!-- Quarter custom dropdown -->
+                    <div id="quarterDropdownContainer" class="custom-dropdown" style="display:none;margin-top:8px;">
+                        <button type="button" class="dropdown-toggle" id="quarterDropdownToggle">
+                            <span class="placeholder">Select quarters...</span>
+                        </button>
+                        <div class="dropdown-menu" id="quarterDropdownMenu">
+                            <div class="dropdown-search">
+                                <input type="text" placeholder="Search quarters..." id="quarterSearchInput">
+                            </div>
+                            <div id="quarterDropdownItems">
+                                {% for year, data in period_options.items %}
+                                    {% for quarter, months in data.quarters.items %}
+                                    <div class="dropdown-menu-item">
+                                        <input type="checkbox" id="quarter-{{ quarter }}-{{ year }}" value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">
+                                        <label for="quarter-{{ quarter }}-{{ year }}">{{ quarter }} {{ year }}</label>
+                                    </div>
+                                    {% endfor %}
+                                {% endfor %}
+                            </div>
+                            <div class="dropdown-actions">
+                                <button type="button" class="select-all-btn" data-dropdown="quarter">Select All</button>
+                                <button type="button" class="clear-all-btn" data-dropdown="quarter">Clear All</button>
+                            </div>
+                        </div>
+                        <select name="period_quarter" id="filterPeriodQuarter" multiple style="display:none;">
+                            {% for year, data in period_options.items %}
+                                {% for quarter, months in data.quarters.items %}
+                                    <option value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ quarter }} {{ year }}</option>
                                 {% endfor %}
                             {% endfor %}
-                        {% endfor %}
-                    </select>
+                        </select>
+                    </div>
+                    <div id="quarterChips" class="filter-chips" style="margin-top:8px;display:none;flex-wrap:wrap;gap:6px;"></div>
+
+                    <!-- Month custom dropdown -->
+                    <div id="monthDropdownContainer" class="custom-dropdown" style="display:none;margin-top:8px;">
+                        <button type="button" class="dropdown-toggle" id="monthDropdownToggle">
+                            <span class="placeholder">Select months...</span>
+                        </button>
+                        <div class="dropdown-menu" id="monthDropdownMenu">
+                            <div class="dropdown-search">
+                                <input type="text" placeholder="Search months..." id="monthSearchInput">
+                            </div>
+                            <div id="monthDropdownItems">
+                                {% for year, data in period_options.items %}
+                                    {% for quarter, months in data.quarters.items %}
+                                        {% for month in months %}
+                                        <div class="dropdown-menu-item">
+                                            <input type="checkbox" id="month-{{ month }}-{{ year }}" value="{{ month }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">
+                                            <label for="month-{{ month }}-{{ year }}">{{ month }} {{ year }}</label>
+                                        </div>
+                                        {% endfor %}
+                                    {% endfor %}
+                                {% endfor %}
+                            </div>
+                            <div class="dropdown-actions">
+                                <button type="button" class="select-all-btn" data-dropdown="month">Select All</button>
+                                <button type="button" class="clear-all-btn" data-dropdown="month">Clear All</button>
+                            </div>
+                        </div>
+                        <select name="period_month" id="filterPeriodMonth" multiple style="display:none;">
+                            {% for year, data in period_options.items %}
+                                {% for quarter, months in data.quarters.items %}
+                                    {% for month in months %}
+                                        <option value="{{ month }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ month }} {{ year }}</option>
+                                    {% endfor %}
+                                {% endfor %}
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div id="monthChips" class="filter-chips" style="margin-top:8px;display:none;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
             <div class="filter-section">
-                <div style="font-weight:700;margin-bottom:4px;color:#0B3A3F">Investor</div>
-                <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Click to select multiple</div>
+                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Investor</div>
                 <form method="get" action="/dashboard" id="filter-investor-form">
-                    <select name="investor" id="filterInvestor" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;min-height:80px;">
-                        {% for inv in investors %}
-                            <option value="{{ inv }}" {% if inv in selected_investor %}selected{% endif %}>{{ inv }}</option>
-                        {% endfor %}
-                    </select>
+                    <div id="investorDropdownContainer" class="custom-dropdown">
+                        <button type="button" class="dropdown-toggle" id="investorDropdownToggle">
+                            <span class="placeholder">Select investors...</span>
+                        </button>
+                        <div class="dropdown-menu" id="investorDropdownMenu">
+                            <div class="dropdown-search">
+                                <input type="text" placeholder="Search investors..." id="investorSearchInput">
+                            </div>
+                            <div id="investorDropdownItems">
+                                {% for inv in investors %}
+                                <div class="dropdown-menu-item">
+                                    <input type="checkbox" id="investor-{{ forloop.counter }}" value="{{ inv }}" {% if inv in selected_investor %}checked{% endif %}>
+                                    <label for="investor-{{ forloop.counter }}">{{ inv }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="dropdown-actions">
+                                <button type="button" class="select-all-btn" data-dropdown="investor">Select All</button>
+                                <button type="button" class="clear-all-btn" data-dropdown="investor">Clear All</button>
+                            </div>
+                        </div>
+                        <select name="investor" id="filterInvestor" multiple style="display:none;">
+                            {% for inv in investors %}
+                                <option value="{{ inv }}" {% if inv in selected_investor %}selected{% endif %}>{{ inv }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div id="investorChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
             <div class="filter-section">
-                <div style="font-weight:700;margin-bottom:4px;color:#0B3A3F">Regional Manager</div>
-                <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Click to select multiple</div>
+                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Regional Manager</div>
                 <form method="get" action="/dashboard" id="filter-regional-form">
-                    <select name="regional_manager" id="filterRegional" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;min-height:80px;">
-                        {% for rm in regional_managers %}
-                            <option value="{{ rm }}" {% if rm in selected_regional_manager %}selected{% endif %}>{{ rm }}</option>
-                        {% endfor %}
-                    </select>
+                    <div id="regionalDropdownContainer" class="custom-dropdown">
+                        <button type="button" class="dropdown-toggle" id="regionalDropdownToggle">
+                            <span class="placeholder">Select regional managers...</span>
+                        </button>
+                        <div class="dropdown-menu" id="regionalDropdownMenu">
+                            <div class="dropdown-search">
+                                <input type="text" placeholder="Search regional managers..." id="regionalSearchInput">
+                            </div>
+                            <div id="regionalDropdownItems">
+                                {% for rm in regional_managers %}
+                                <div class="dropdown-menu-item">
+                                    <input type="checkbox" id="regional-{{ forloop.counter }}" value="{{ rm }}" {% if rm in selected_regional_manager %}checked{% endif %}>
+                                    <label for="regional-{{ forloop.counter }}">{{ rm }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="dropdown-actions">
+                                <button type="button" class="select-all-btn" data-dropdown="regional">Select All</button>
+                                <button type="button" class="clear-all-btn" data-dropdown="regional">Clear All</button>
+                            </div>
+                        </div>
+                        <select name="regional_manager" id="filterRegional" multiple style="display:none;">
+                            {% for rm in regional_managers %}
+                                <option value="{{ rm }}" {% if rm in selected_regional_manager %}selected{% endif %}>{{ rm }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div id="regionalChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
             <div class="filter-section">
-                <div style="font-weight:700;margin-bottom:4px;color:#0B3A3F">Community</div>
-                <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Click to select multiple</div>
+                <div style="font-weight:700;margin-bottom:8px;color:#0B3A3F">Community</div>
                 <form method="get" action="/dashboard" id="filter-community-form">
-                    <select name="community" id="filterCommunity" multiple style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);font-weight:700;background:#fff;min-height:80px;">
-                        {% for c in communities %}
-                            {% if c.community_name %}
-                                <option value="{{ c.community_name }}" {% if c.community_name in selected_community %}selected{% endif %}>{{ c.community_name }}</option>
-                            {% elif c.name %}
-                                <option value="{{ c.name }}" {% if c.name in selected_community %}selected{% endif %}>{{ c.name }}</option>
-                            {% elif c.community %}
-                                <option value="{{ c.community }}" {% if c.community in selected_community %}selected{% endif %}>{{ c.community }}</option>
-                            {% elif c.property_name %}
-                                <option value="{{ c.property_name }}" {% if c.property_name in selected_community %}selected{% endif %}>{{ c.property_name }}</option>
-                            {% else %}
-                                <option value="{{ c }}" {% if c in selected_community %}selected{% endif %}>{{ c }}</option>
-                            {% endif %}
-                        {% endfor %}
-                    </select>
+                    <div id="communityDropdownContainer" class="custom-dropdown">
+                        <button type="button" class="dropdown-toggle" id="communityDropdownToggle">
+                            <span class="placeholder">Select communities...</span>
+                        </button>
+                        <div class="dropdown-menu" id="communityDropdownMenu">
+                            <div class="dropdown-search">
+                                <input type="text" placeholder="Search communities..." id="communitySearchInput">
+                            </div>
+                            <div id="communityDropdownItems">
+                                {% for c in communities %}
+                                <div class="dropdown-menu-item">
+                                    {% if c.community_name %}
+                                        <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.community_name }}" {% if c.community_name in selected_community %}checked{% endif %}>
+                                        <label for="community-{{ forloop.counter }}">{{ c.community_name }}</label>
+                                    {% elif c.name %}
+                                        <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.name }}" {% if c.name in selected_community %}checked{% endif %}>
+                                        <label for="community-{{ forloop.counter }}">{{ c.name }}</label>
+                                    {% elif c.community %}
+                                        <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.community }}" {% if c.community in selected_community %}checked{% endif %}>
+                                        <label for="community-{{ forloop.counter }}">{{ c.community }}</label>
+                                    {% elif c.property_name %}
+                                        <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.property_name }}" {% if c.property_name in selected_community %}checked{% endif %}>
+                                        <label for="community-{{ forloop.counter }}">{{ c.property_name }}</label>
+                                    {% else %}
+                                        <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c }}" {% if c in selected_community %}checked{% endif %}>
+                                        <label for="community-{{ forloop.counter }}">{{ c }}</label>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="dropdown-actions">
+                                <button type="button" class="select-all-btn" data-dropdown="community">Select All</button>
+                                <button type="button" class="clear-all-btn" data-dropdown="community">Clear All</button>
+                            </div>
+                        </div>
+                        <select name="community" id="filterCommunity" multiple style="display:none;">
+                            {% for c in communities %}
+                                {% if c.community_name %}
+                                    <option value="{{ c.community_name }}" {% if c.community_name in selected_community %}selected{% endif %}>{{ c.community_name }}</option>
+                                {% elif c.name %}
+                                    <option value="{{ c.name }}" {% if c.name in selected_community %}selected{% endif %}>{{ c.name }}</option>
+                                {% elif c.community %}
+                                    <option value="{{ c.community }}" {% if c.community in selected_community %}selected{% endif %}>{{ c.community }}</option>
+                                {% elif c.property_name %}
+                                    <option value="{{ c.property_name }}" {% if c.property_name in selected_community %}selected{% endif %}>{{ c.property_name }}</option>
+                                {% else %}
+                                    <option value="{{ c }}" {% if c in selected_community %}selected{% endif %}>{{ c }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div id="communityChips" class="filter-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
                 </form>
             </div>
@@ -679,6 +976,45 @@ select[multiple] option:checked {
                 ev.stopPropagation();
                 ev.preventDefault();
                 opt.selected = false;
+                
+                // Also uncheck the corresponding checkbox in custom dropdown
+                const checkbox = document.querySelector(`input[type="checkbox"][value="${CSS.escape(opt.value)}"]`);
+                if(checkbox) checkbox.checked = false;
+                
+                // Update the dropdown toggle text by finding the appropriate dropdown
+                // Get the dropdown ID from the chips container ID
+                const dropdownMap = {
+                    'yearChips': 'yearDropdownToggle',
+                    'quarterChips': 'quarterDropdownToggle',
+                    'monthChips': 'monthDropdownToggle',
+                    'investorChips': 'investorDropdownToggle',
+                    'regionalChips': 'regionalDropdownToggle',
+                    'communityChips': 'communityDropdownToggle'
+                };
+                
+                const toggleId = dropdownMap[chipsContainerId];
+                if(toggleId) {
+                    const toggle = document.getElementById(toggleId);
+                    if(toggle) {
+                        // Update toggle text
+                        const selectedOptions = Array.from(selectEl.selectedOptions);
+                        if (selectedOptions.length === 0) {
+                            const placeholderText = chipsContainerId.includes('year') ? 'Select years...' :
+                                                   chipsContainerId.includes('quarter') ? 'Select quarters...' :
+                                                   chipsContainerId.includes('month') ? 'Select months...' :
+                                                   chipsContainerId.includes('investor') ? 'Select investors...' :
+                                                   chipsContainerId.includes('regional') ? 'Select regional managers...' :
+                                                   chipsContainerId.includes('community') ? 'Select communities...' :
+                                                   'Select...';
+                            toggle.innerHTML = `<span class="placeholder">${placeholderText}</span>`;
+                        } else if (selectedOptions.length === 1) {
+                            toggle.innerHTML = `<span class="selected-count">${selectedOptions[0].textContent}</span>`;
+                        } else {
+                            toggle.innerHTML = `<span class="selected-count">${selectedOptions.length} selected</span>`;
+                        }
+                    }
+                }
+                
                 // Trigger change event to update dependent dropdowns, cascades, and re-render chips
                 selectEl.dispatchEvent(new Event('change'));
             });
@@ -727,43 +1063,272 @@ select[multiple] option:checked {
         });
     }
     
-    makeMultiSelectToggleable(selInvestor, 'investorChips');
-    makeMultiSelectToggleable(selRegional, 'regionalChips');
-    makeMultiSelectToggleable(selCommunity, 'communityChips');
+    // Remove old multi-select togglable initialization - now using custom dropdowns
+    // makeMultiSelectToggleable(selInvestor, 'investorChips');
+    // makeMultiSelectToggleable(selRegional, 'regionalChips');
+    // makeMultiSelectToggleable(selCommunity, 'communityChips');
+
+    // Custom dropdown with checkboxes functionality
+    function initCustomDropdown(toggleId, menuId, selectId, chipsId, searchInputId) {
+        const toggle = document.getElementById(toggleId);
+        const menu = document.getElementById(menuId);
+        const select = document.getElementById(selectId);
+        const searchInput = document.getElementById(searchInputId);
+        
+        if (!toggle || !menu || !select) return;
+        
+        // Toggle dropdown
+        toggle.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const isOpen = menu.classList.contains('open');
+            
+            // Close all other dropdowns
+            document.querySelectorAll('.dropdown-menu.open').forEach(m => {
+                if (m !== menu) {
+                    m.classList.remove('open');
+                    m.previousElementSibling.classList.remove('open');
+                }
+            });
+            
+            menu.classList.toggle('open');
+            toggle.classList.toggle('open');
+            
+            if (!isOpen && searchInput) {
+                setTimeout(() => searchInput.focus(), 100);
+            }
+        });
+        
+        // Handle checkbox changes
+        const checkboxes = menu.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                // Update hidden select element
+                const option = select.querySelector(`option[value="${this.value}"]`);
+                if (option) {
+                    option.selected = this.checked;
+                }
+                
+                // Update toggle button text
+                updateToggleText();
+                
+                // Update chips
+                renderChips(select, chipsId);
+            });
+            
+            // Also update on label click
+            const label = checkbox.nextElementSibling;
+            if (label) {
+                label.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                });
+            }
+        });
+        
+        // Search functionality
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const items = menu.querySelectorAll('.dropdown-menu-item');
+                
+                items.forEach(item => {
+                    const label = item.querySelector('label');
+                    if (label) {
+                        const text = label.textContent.toLowerCase();
+                        item.style.display = text.includes(searchTerm) ? 'flex' : 'none';
+                    }
+                });
+            });
+            
+            // Prevent dropdown from closing when clicking search input
+            searchInput.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        }
+        
+        // Update toggle button text based on selections
+        function updateToggleText() {
+            const selectedOptions = Array.from(select.selectedOptions);
+            const placeholder = toggle.querySelector('.placeholder');
+            
+            if (selectedOptions.length === 0) {
+                toggle.innerHTML = `<span class="placeholder">${placeholder.textContent}</span>`;
+                toggle.innerHTML += '<span></span>'; // for the arrow
+            } else if (selectedOptions.length === 1) {
+                toggle.innerHTML = `<span class="selected-count">${selectedOptions[0].textContent}</span>`;
+                toggle.innerHTML += '<span></span>'; // for the arrow
+            } else {
+                toggle.innerHTML = `<span class="selected-count">${selectedOptions.length} selected</span>`;
+                toggle.innerHTML += '<span></span>'; // for the arrow
+            }
+            
+            // Re-add the arrow
+            const arrow = toggle.querySelector('span:last-child');
+            if (arrow) {
+                arrow.className = '';
+                arrow.style.cssText = '';
+            }
+        }
+        
+        // Initialize toggle text
+        updateToggleText();
+        
+        // Sync checkboxes with select element (for pre-selected values)
+        Array.from(select.selectedOptions).forEach(option => {
+            const checkbox = menu.querySelector(`input[value="${option.value}"]`);
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+        
+        // Update chips on change - THIS IS IMPORTANT for chip removal
+        select.addEventListener('change', function() {
+            updateToggleText();
+            renderChips(select, chipsId);
+        });
+        
+        return { toggle, menu, select, updateToggleText };
+    }
+
+    // Initialize custom dropdowns for period filters
+    const yearDropdown = initCustomDropdown('yearDropdownToggle', 'yearDropdownMenu', 'filterPeriodYear', 'yearChips', 'yearSearchInput');
+    const quarterDropdown = initCustomDropdown('quarterDropdownToggle', 'quarterDropdownMenu', 'filterPeriodQuarter', 'quarterChips', 'quarterSearchInput');
+    const monthDropdown = initCustomDropdown('monthDropdownToggle', 'monthDropdownMenu', 'filterPeriodMonth', 'monthChips', 'monthSearchInput');
+    
+    // Initialize custom dropdowns for other filters
+    const investorDropdown = initCustomDropdown('investorDropdownToggle', 'investorDropdownMenu', 'filterInvestor', 'investorChips', 'investorSearchInput');
+    const regionalDropdown = initCustomDropdown('regionalDropdownToggle', 'regionalDropdownMenu', 'filterRegional', 'regionalChips', 'regionalSearchInput');
+    const communityDropdown = initCustomDropdown('communityDropdownToggle', 'communityDropdownMenu', 'filterCommunity', 'communityChips', 'communitySearchInput');
+
+    // Add Select All / Clear All functionality
+    document.querySelectorAll('.select-all-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const dropdown = this.dataset.dropdown;
+            const menu = document.getElementById(`${dropdown}DropdownMenu`);
+            
+            // Handle different select element naming conventions
+            let select;
+            if (dropdown === 'year' || dropdown === 'quarter' || dropdown === 'month') {
+                select = document.getElementById(`filterPeriod${dropdown.charAt(0).toUpperCase() + dropdown.slice(1)}`);
+            } else if (dropdown === 'investor') {
+                select = document.getElementById('filterInvestor');
+            } else if (dropdown === 'regional') {
+                select = document.getElementById('filterRegional');
+            } else if (dropdown === 'community') {
+                select = document.getElementById('filterCommunity');
+            }
+            
+            if (menu && select) {
+                // Check all visible checkboxes
+                const checkboxes = menu.querySelectorAll('.dropdown-menu-item:not([style*="display: none"]) input[type="checkbox"]');
+                checkboxes.forEach(cb => {
+                    cb.checked = true;
+                    const option = select.querySelector(`option[value="${cb.value}"]`);
+                    if (option) option.selected = true;
+                });
+                
+                // Update UI
+                const dropdowns = { 
+                    year: yearDropdown, 
+                    quarter: quarterDropdown, 
+                    month: monthDropdown,
+                    investor: investorDropdown,
+                    regional: regionalDropdown,
+                    community: communityDropdown
+                };
+                if (dropdowns[dropdown]) dropdowns[dropdown].updateToggleText();
+                renderChips(select, `${dropdown}Chips`);
+            }
+        });
+    });
+
+    document.querySelectorAll('.clear-all-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const dropdown = this.dataset.dropdown;
+            const menu = document.getElementById(`${dropdown}DropdownMenu`);
+            
+            // Handle different select element naming conventions
+            let select;
+            if (dropdown === 'year' || dropdown === 'quarter' || dropdown === 'month') {
+                select = document.getElementById(`filterPeriod${dropdown.charAt(0).toUpperCase() + dropdown.slice(1)}`);
+            } else if (dropdown === 'investor') {
+                select = document.getElementById('filterInvestor');
+            } else if (dropdown === 'regional') {
+                select = document.getElementById('filterRegional');
+            } else if (dropdown === 'community') {
+                select = document.getElementById('filterCommunity');
+            }
+            
+            if (menu && select) {
+                // Uncheck all checkboxes
+                const checkboxes = menu.querySelectorAll('input[type="checkbox"]');
+                checkboxes.forEach(cb => {
+                    cb.checked = false;
+                    const option = select.querySelector(`option[value="${cb.value}"]`);
+                    if (option) option.selected = false;
+                });
+                
+                // Update UI
+                const dropdowns = { 
+                    year: yearDropdown, 
+                    quarter: quarterDropdown, 
+                    month: monthDropdown,
+                    investor: investorDropdown,
+                    regional: regionalDropdown,
+                    community: communityDropdown
+                };
+                if (dropdowns[dropdown]) dropdowns[dropdown].updateToggleText();
+                renderChips(select, `${dropdown}Chips`);
+            }
+        });
+    });
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.custom-dropdown')) {
+            document.querySelectorAll('.dropdown-menu.open').forEach(menu => {
+                menu.classList.remove('open');
+                const toggle = menu.previousElementSibling;
+                if (toggle) toggle.classList.remove('open');
+            });
+        }
+    });
 
     // Period mode toggle logic (Year / Quarter / Month)
     const periodModeBtns = document.querySelectorAll('.period-mode-btn');
     const selYear = document.getElementById('filterPeriodYear');
     const selQuarter = document.getElementById('filterPeriodQuarter');
     const selMonth = document.getElementById('filterPeriodMonth');
-    const yearMultiHint = document.getElementById('yearMultiHint');
-    const quarterMultiHint = document.getElementById('quarterMultiHint');
-    const monthMultiHint = document.getElementById('monthMultiHint');
+    const yearDropdownContainer = document.getElementById('yearDropdownContainer');
+    const quarterDropdownContainer = document.getElementById('quarterDropdownContainer');
+    const monthDropdownContainer = document.getElementById('monthDropdownContainer');
     const yearChips = document.getElementById('yearChips');
     const quarterChips = document.getElementById('quarterChips');
     const monthChips = document.getElementById('monthChips');
     let activeMode = 'year';
 
-    // Wire multi-select behavior for all period selects
-    makeMultiSelectToggleable(selYear, 'yearChips');
-    makeMultiSelectToggleable(selQuarter, 'quarterChips');
-    makeMultiSelectToggleable(selMonth, 'monthChips');
-
     function setMode(mode){
         activeMode = mode;
         periodModeBtns.forEach(b=>{ b.style.background = (b.dataset.mode === mode) ? '#eef6fb' : 'transparent'; b.setAttribute('aria-pressed', b.dataset.mode === mode); });
         
-        // Show/hide appropriate dropdowns and their hints/chips
-        selYear.style.display = (mode === 'year') ? 'block' : 'none';
-        if(yearMultiHint) yearMultiHint.style.display = (mode === 'year') ? 'block' : 'none';
+        // Close all dropdowns when switching modes
+        document.querySelectorAll('.dropdown-menu.open').forEach(menu => {
+            menu.classList.remove('open');
+            const toggle = menu.previousElementSibling;
+            if (toggle) toggle.classList.remove('open');
+        });
+        
+        // Show/hide appropriate dropdowns and their chips
+        if(yearDropdownContainer) yearDropdownContainer.style.display = (mode === 'year') ? 'block' : 'none';
         if(yearChips) yearChips.style.display = (mode === 'year') ? 'flex' : 'none';
         
-        selQuarter.style.display = (mode === 'quarter') ? 'block' : 'none';
-        if(quarterMultiHint) quarterMultiHint.style.display = (mode === 'quarter') ? 'block' : 'none';
+        if(quarterDropdownContainer) quarterDropdownContainer.style.display = (mode === 'quarter') ? 'block' : 'none';
         if(quarterChips) quarterChips.style.display = (mode === 'quarter') ? 'flex' : 'none';
         
-        selMonth.style.display = (mode === 'month') ? 'block' : 'none';
-        if(monthMultiHint) monthMultiHint.style.display = (mode === 'month') ? 'block' : 'none';
+        if(monthDropdownContainer) monthDropdownContainer.style.display = (mode === 'month') ? 'block' : 'none';
         if(monthChips) monthChips.style.display = (mode === 'month') ? 'flex' : 'none';
     }
     periodModeBtns.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
@@ -779,31 +1344,64 @@ select[multiple] option:checked {
             setMode('year'); 
             // Render chips for any pre-selected years
             renderChips(selYear, 'yearChips');
+            if(yearDropdown) yearDropdown.updateToggleText();
             return; 
         }
         if(initialSelectedPeriod.match(/Q[1-4]/)){
             setMode('quarter');
-            Array.from(selQuarter.options).forEach(opt=>{ if(opt.value===initialSelectedPeriod) opt.selected=true; });
+            Array.from(selQuarter.options).forEach(opt=>{ 
+                if(opt.value===initialSelectedPeriod) {
+                    opt.selected=true;
+                    // Also check the checkbox
+                    const checkbox = document.querySelector(`#quarterDropdownMenu input[value="${opt.value}"]`);
+                    if(checkbox) checkbox.checked = true;
+                }
+            });
             // Re-render chips after selecting options
             renderChips(selQuarter, 'quarterChips');
+            if(quarterDropdown) quarterDropdown.updateToggleText();
         } else if(initialSelectedPeriod.match(/Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/) || (initialSelectedMonths && initialSelectedMonths.length > 0)){
             setMode('month');
             // Support multi-month: mark all selected months
             if(initialSelectedMonths && initialSelectedMonths.length > 0){
-                Array.from(selMonth.options).forEach(opt=>{ if(initialSelectedMonths.indexOf(opt.value) !== -1) opt.selected=true; });
+                Array.from(selMonth.options).forEach(opt=>{ 
+                    if(initialSelectedMonths.indexOf(opt.value) !== -1) {
+                        opt.selected=true;
+                        // Also check the checkbox
+                        const checkbox = document.querySelector(`#monthDropdownMenu input[value="${opt.value}"]`);
+                        if(checkbox) checkbox.checked = true;
+                    }
+                });
             } else {
-                Array.from(selMonth.options).forEach(opt=>{ if(opt.value===initialSelectedPeriod) opt.selected=true; });
+                Array.from(selMonth.options).forEach(opt=>{ 
+                    if(opt.value===initialSelectedPeriod) {
+                        opt.selected=true;
+                        // Also check the checkbox
+                        const checkbox = document.querySelector(`#monthDropdownMenu input[value="${opt.value}"]`);
+                        if(checkbox) checkbox.checked = true;
+                    }
+                });
             }
             // re-render chips after selecting options
             renderChips(selMonth, 'monthChips');
+            if(monthDropdown) monthDropdown.updateToggleText();
         } else if(initialSelectedYear){
             setMode('year');
-            Array.from(selYear.options).forEach(opt=>{ if(opt.value===initialSelectedYear) opt.selected=true; });
+            Array.from(selYear.options).forEach(opt=>{ 
+                if(opt.value===initialSelectedYear) {
+                    opt.selected=true;
+                    // Also check the checkbox
+                    const checkbox = document.querySelector(`#yearDropdownMenu input[value="${opt.value}"]`);
+                    if(checkbox) checkbox.checked = true;
+                }
+            });
             // Re-render chips after selecting options
             renderChips(selYear, 'yearChips');
+            if(yearDropdown) yearDropdown.updateToggleText();
         } else {
             setMode('year');
             renderChips(selYear, 'yearChips');
+            if(yearDropdown) yearDropdown.updateToggleText();
         }
     }
 
@@ -991,61 +1589,88 @@ select[multiple] option:checked {
         }, 0);
     }catch(e){ console.warn('Dependent dropdown init failed', e); }
 
+    // Shared function for Apply filter logic
+    function applyFilters() {
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if(loadingOverlay) loadingOverlay.style.display = 'flex';
+        const params = new URLSearchParams(window.location.search);
+        // Preserve existing params
+        const periodYearSel = document.getElementById('filterPeriodYear');
+        const periodYears = Array.from(periodYearSel.selectedOptions).map(opt => opt.value);
+        
+        const periodQuarterSel = document.getElementById('filterPeriodQuarter');
+        const periodQuarters = Array.from(periodQuarterSel.selectedOptions).map(opt => opt.value);
+        
+        // Multi-month: get all selected months
+        const periodMonthSel = document.getElementById('filterPeriodMonth');
+        const periodMonths = Array.from(periodMonthSel.selectedOptions).map(opt => opt.value);
+        
+        // Multi-select: get all selected values
+        const investorSel = document.getElementById('filterInvestor');
+        const investors = Array.from(investorSel.selectedOptions).map(opt => opt.value);
+        const regionalSel = document.getElementById('filterRegional');
+        const regionals = Array.from(regionalSel.selectedOptions).map(opt => opt.value);
+        const communitySel = document.getElementById('filterCommunity');
+        const communities = Array.from(communitySel.selectedOptions).map(opt => opt.value);
+        
+        // Determine which period is active and set explicit mode/year/month params
+        let mode = activeMode;
+        // Clear old filters
+        params.delete('period'); params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month'); params.delete('investor'); params.delete('regional_manager'); params.delete('community');
+        // Set new filters
+        if(mode) params.set('period_mode', mode);
+        if(mode === 'year') {
+            // Multi-year: append each selected year
+            periodYears.forEach(py => { if(py) params.append('period_year', py); });
+            // legacy 'period' param: use first selected year for compatibility
+            if(periodYears.length > 0) params.set('period', periodYears[0]);
+        }
+        if(mode === 'quarter') {
+            // Multi-quarter: append each selected quarter
+            periodQuarters.forEach(pq => { if(pq) params.append('period_quarter', pq); });
+            // legacy 'period' param: use first selected quarter for compatibility
+            if(periodQuarters.length > 0) params.set('period', periodQuarters[0]);
+        }
+        if(mode === 'month') {
+            // Multi-month: append each selected month
+            periodMonths.forEach(pm => { if(pm) params.append('period_month', pm); });
+            // legacy 'period' param: use first selected month for compatibility
+            if(periodMonths.length > 0) params.set('period', periodMonths[0]);
+        }
+        // Multi-select: append each selected value
+        investors.forEach(inv => { if(inv) params.append('investor', inv); });
+        regionals.forEach(rm => { if(rm) params.append('regional_manager', rm); });
+        communities.forEach(comm => { if(comm) params.append('community', comm); });
+        window.location.href = '/dashboard?' + params.toString();
+    }
+
+    // Shared function for Clear filter logic
+    function clearFilters() {
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if(loadingOverlay) loadingOverlay.style.display = 'flex';
+        const params = new URLSearchParams(window.location.search);
+        // Remove all filters including explicit period params so Clear resets period too
+        params.delete('period');
+        params.delete('period_mode');
+        params.delete('period_year');
+        params.delete('period_quarter');
+        params.delete('period_month');
+        params.delete('investor');
+        params.delete('regional_manager');
+        params.delete('community');
+        // Keep other params if any
+        window.location.href = '/dashboard?' + params.toString();
+    }
+
     // Apply: submit via GET preserving other params where possible
     if(applyBtn){
-        applyBtn.addEventListener('click', function(){
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            if(loadingOverlay) loadingOverlay.style.display = 'flex';
-            const params = new URLSearchParams(window.location.search);
-            // Preserve existing params
-            const periodYearSel = document.getElementById('filterPeriodYear');
-            const periodYears = Array.from(periodYearSel.selectedOptions).map(opt => opt.value);
-            
-            const periodQuarterSel = document.getElementById('filterPeriodQuarter');
-            const periodQuarters = Array.from(periodQuarterSel.selectedOptions).map(opt => opt.value);
-            
-            // Multi-month: get all selected months
-            const periodMonthSel = document.getElementById('filterPeriodMonth');
-            const periodMonths = Array.from(periodMonthSel.selectedOptions).map(opt => opt.value);
-            
-            // Multi-select: get all selected values
-            const investorSel = document.getElementById('filterInvestor');
-            const investors = Array.from(investorSel.selectedOptions).map(opt => opt.value);
-            const regionalSel = document.getElementById('filterRegional');
-            const regionals = Array.from(regionalSel.selectedOptions).map(opt => opt.value);
-            const communitySel = document.getElementById('filterCommunity');
-            const communities = Array.from(communitySel.selectedOptions).map(opt => opt.value);
-            
-            // Determine which period is active and set explicit mode/year/month params
-            let mode = activeMode;
-            // Clear old filters
-            params.delete('period'); params.delete('period_mode'); params.delete('period_year'); params.delete('period_quarter'); params.delete('period_month'); params.delete('investor'); params.delete('regional_manager'); params.delete('community');
-            // Set new filters
-            if(mode) params.set('period_mode', mode);
-            if(mode === 'year') {
-                // Multi-year: append each selected year
-                periodYears.forEach(py => { if(py) params.append('period_year', py); });
-                // legacy 'period' param: use first selected year for compatibility
-                if(periodYears.length > 0) params.set('period', periodYears[0]);
-            }
-            if(mode === 'quarter') {
-                // Multi-quarter: append each selected quarter
-                periodQuarters.forEach(pq => { if(pq) params.append('period_quarter', pq); });
-                // legacy 'period' param: use first selected quarter for compatibility
-                if(periodQuarters.length > 0) params.set('period', periodQuarters[0]);
-            }
-            if(mode === 'month') {
-                // Multi-month: append each selected month
-                periodMonths.forEach(pm => { if(pm) params.append('period_month', pm); });
-                // legacy 'period' param: use first selected month for compatibility
-                if(periodMonths.length > 0) params.set('period', periodMonths[0]);
-            }
-            // Multi-select: append each selected value
-            investors.forEach(inv => { if(inv) params.append('investor', inv); });
-            regionals.forEach(rm => { if(rm) params.append('regional_manager', rm); });
-            communities.forEach(comm => { if(comm) params.append('community', comm); });
-            window.location.href = '/dashboard?' + params.toString();
-        });
+        applyBtn.addEventListener('click', applyFilters);
+    }
+
+    // Top Apply button
+    const applyBtnTop = document.getElementById('applyFiltersTop');
+    if(applyBtnTop){
+        applyBtnTop.addEventListener('click', applyFilters);
     }
 
     // Ensure KPI card handlers can be rebound after AJAX replacement
@@ -1057,22 +1682,13 @@ select[multiple] option:checked {
     }
 
     if(clearBtn){
-        clearBtn.addEventListener('click', function(){
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            if(loadingOverlay) loadingOverlay.style.display = 'flex';
-            const params = new URLSearchParams(window.location.search);
-            // Remove all filters including explicit period params so Clear resets period too
-            params.delete('period');
-            params.delete('period_mode');
-            params.delete('period_year');
-            params.delete('period_quarter');
-            params.delete('period_month');
-            params.delete('investor');
-            params.delete('regional_manager');
-            params.delete('community');
-            // Keep other params if any
-            window.location.href = '/dashboard?' + params.toString();
-        });
+        clearBtn.addEventListener('click', clearFilters);
+    }
+
+    // Top Clear button
+    const clearBtnTop = document.getElementById('clearFiltersTop');
+    if(clearBtnTop){
+        clearBtnTop.addEventListener('click', clearFilters);
     }
 
     // Clicking outside filter pane should close it. Ignore clicks on chip remove buttons.
@@ -1138,6 +1754,9 @@ select[multiple] option:checked {
                 },
                 scales:{
                     x:{
+                        grid:{
+                            display:false
+                        },
                         title:{
                             display:true,
                             text:'Time Period',
@@ -1148,6 +1767,9 @@ select[multiple] option:checked {
                         }
                     },
                     y:{
+                        grid:{
+                            display:false
+                        },
                         beginAtZero:true,
                         title:{
                             display:true,
@@ -1195,6 +1817,9 @@ select[multiple] option:checked {
                 },
                 scales:{
                     x:{
+                        grid:{
+                            display:false
+                        },
                         title:{
                             display:true,
                             text:'Time Period',
@@ -1205,6 +1830,9 @@ select[multiple] option:checked {
                         }
                     },
                     yL:{
+                        grid:{
+                            display:false
+                        },
                         position:'left',
                         beginAtZero:true,
                         title:{
@@ -1218,6 +1846,9 @@ select[multiple] option:checked {
                         }
                     },
                     yR:{
+                        grid:{
+                            display:false
+                        },
                         position:'right',
                         beginAtZero:true,
                         title:{
@@ -1278,6 +1909,9 @@ select[multiple] option:checked {
                     },
                     scales:{
                         x:{
+                            grid:{
+                                display:false
+                            },
                             title:{
                                 display:true,
                                 text:'Time Period',
@@ -1288,6 +1922,9 @@ select[multiple] option:checked {
                             }
                         },
                         y:{
+                            grid:{
+                                display:false
+                            },
                             beginAtZero:true,
                             title:{
                                 display:true,
@@ -1435,6 +2072,9 @@ select[multiple] option:checked {
                     },
                     scales:{
                         x:{
+                            grid:{
+                                display:false
+                            },
                             stacked:true,
                             title:{
                                 display:true,
@@ -1446,6 +2086,9 @@ select[multiple] option:checked {
                             }
                         },
                         y:{
+                            grid:{
+                                display:false
+                            },
                             stacked:true,
                             title:{
                                 display:true,
@@ -2418,7 +3061,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <!-- Tab Navigation -->
         <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid #E5E7EB;">
             <button id="tab-occupancy" class="modal-tab active" onclick="switchOccupancyModalTab('occupancy')" style="padding:12px 24px;background:none;border:none;border-bottom:3px solid #0E555A;color:#0E555A;font-weight:700;font-size:15px;cursor:pointer;transition:all 0.2s;">
-                Occupancy & Revenue
+                Occupancy & Units
             </button>
             <button id="tab-correlation" class="modal-tab" onclick="switchOccupancyModalTab('correlation')" style="padding:12px 24px;background:none;border:none;border-bottom:3px solid transparent;color:#64748B;font-weight:600;font-size:15px;cursor:pointer;transition:all 0.2s;">
                 Correlation Analysis
@@ -2466,7 +3109,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         <!-- Tab Content: Occupancy & Revenue -->
         <div id="tab-content-occupancy" class="tab-content" style="display:block;">
-            <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Occupancy & Revenue</h2>
+            <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Occupancy & Units</h2>
             <div style="height:450px;">
                 <canvas id="modalChartOccupancy"></canvas>
             </div>

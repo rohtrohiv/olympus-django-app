@@ -1,78 +1,200 @@
 <div style="width:100%;margin-top:32px;" id="property-table-fragment">
-    <div class="property-table-container" style="padding:24px;background:#f7f9fc;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03);">
-        <h2 style="margin-bottom:16px;">Property List <span style="font-size:16px;color:#4f6bed;font-weight:500;">({{ period_display_label }})</span></h2>
+    <div class="property-table-container" style="padding:28px;background:#ffffff;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.06);border:1px solid #E5E7EB;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #F3F4F6;">
+            <div>
+                <h2 style="margin:0;font-size:24px;font-weight:700;color:#0B3A3F;display:flex;align-items:center;gap:12px;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0E555A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                    Property Portfolio
+                </h2>
+                <p style="margin:6px 0 0 0;font-size:14px;color:#64748B;font-weight:500;">{{ period_display_label }}</p>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <span id="table-record-count" style="font-size:13px;color:#64748B;padding:6px 12px;background:#F3F4F6;border-radius:6px;font-weight:500;"></span>
+            </div>
+        </div>
         <style>
             /* Scrolling wrapper for property table and sticky header */
             .property-table-scroll{
                 position:relative;
                 overflow-y:auto;
                 overflow-x:auto;
-                max-height: calc(100vh - var(--topbar-h) - 200px); /* leave room for KPI/cards */
+                max-height: calc(100vh - var(--topbar-h) - 200px);
                 -webkit-overflow-scrolling: touch;
+                border-radius:12px;
+                border:1px solid #E5E7EB;
             }
-            /* Use separate border model so sticky header renders correctly */
-            #property-table{ width:100%; border-collapse:separate; border-spacing:0; }
-            /* Sticky header */
+            /* Modern table styling */
+            #property-table{ 
+                width:100%; 
+                border-collapse:separate; 
+                border-spacing:0;
+                font-size:14px;
+            }
+            /* Sticky header with modern gradient */
             #property-table thead th {
                 position: sticky;
                 top: 0;
                 z-index: 5;
-                background: #e3e8f7;
-                backdrop-filter: blur(2px);
+                background: linear-gradient(135deg, #0E555A 0%, #0B3A3F 100%);
+                color: #ffffff;
+                font-weight: 600;
+                font-size: 13px;
+                letter-spacing: 0.3px;
+                text-transform: uppercase;
+                padding: 16px 14px;
+                border-bottom: 2px solid #C69A58;
+                transition: all 0.2s ease;
             }
-            #property-table thead th .sort-indicator { font-size: 12px; color: #6b7280; margin-left:6px; }
-            #property-table thead th:hover { background:#dbe6fb; }
-            /* Use ARIA-compliant values for styling when available */
-            #property-table thead th[aria-sort="ascending"] { background: #e9f0ff; }
-            #property-table thead th[aria-sort="descending"] { background: #eef2ff; }
-            /* subtle shadow for header so it's visually distinct while sticky */
-            #property-table thead th::after{ content:''; position:absolute; left:0; right:0; bottom:-1px; height:1px; box-shadow:0 2px 6px rgba(0,0,0,0.06); z-index:4 }
-            /* center-align table body cells */
-            #property-table tbody td { text-align: center; vertical-align: middle; }
+            #property-table thead th .sort-indicator { 
+                font-size: 14px; 
+                color: #C69A58; 
+                margin-left:6px;
+                transition: transform 0.2s ease;
+            }
+            #property-table thead th:hover { 
+                background: linear-gradient(135deg, #115E64 0%, #0D4248 100%);
+                transform: translateY(-1px);
+            }
+            #property-table thead th[aria-sort="ascending"],
+            #property-table thead th[aria-sort="descending"] { 
+                background: linear-gradient(135deg, #C69A58 0%, #A67C3F 100%);
+                color: #ffffff;
+            }
+            /* Enhanced shadow for sticky header */
+            #property-table thead th::after{ 
+                content:''; 
+                position:absolute; 
+                left:0; 
+                right:0; 
+                bottom:-2px; 
+                height:2px; 
+                box-shadow:0 4px 12px rgba(14,85,90,0.15); 
+                z-index:4;
+            }
+            /* Modern table body styling */
+            #property-table tbody td { 
+                text-align: center; 
+                vertical-align: middle;
+                padding: 14px 12px;
+                border-bottom: 1px solid #F3F4F6;
+                color: #1F2937;
+                font-size: 13px;
+                transition: background-color 0.15s ease;
+            }
+            #property-table tbody tr {
+                transition: all 0.2s ease;
+            }
+            #property-table tbody tr:hover {
+                background: linear-gradient(90deg, rgba(89,230,246,0.08) 0%, rgba(14,85,90,0.05) 100%);
+                transform: scale(1.002);
+                box-shadow: 0 2px 8px rgba(14,85,90,0.08);
+            }
+            #property-table tbody tr:nth-child(even) {
+                background: #FAFBFC;
+            }
+            #property-table tbody tr:nth-child(even):hover {
+                background: linear-gradient(90deg, rgba(89,230,246,0.08) 0%, rgba(14,85,90,0.05) 100%);
+            }
+            /* Highlight numeric cells */
+            #property-table tbody td:nth-child(7),
+            #property-table tbody td:nth-child(8),
+            #property-table tbody td:nth-child(10),
+            #property-table tbody td:nth-child(11),
+            #property-table tbody td:nth-child(12),
+            #property-table tbody td:nth-child(13),
+            #property-table tbody td:nth-child(14) {
+                font-weight: 600;
+                color: #0E555A;
+            }
+            /* Currency values styling */
+            #property-table tbody td:nth-child(11),
+            #property-table tbody td:nth-child(12),
+            #property-table tbody td:nth-child(14) {
+                color: #059669;
+                font-family: 'Segoe UI', 'Roboto', monospace;
+            }
+            /* Occupancy percentage styling */
+            #property-table tbody td:nth-child(10) {
+                color: #C69A58;
+                font-weight: 700;
+            }
         </style>
         <div class="property-table-scroll">
             <!-- Embed full properties JSON for client-side search/sort -->
             {{ all_properties|json_script:"properties-data" }}
-            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <input id="property-table-search" type="search" placeholder="Search properties (name, number, investor, manager...)" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;" />
-                    <select id="property-table-column" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;">
-                        <option value="all">All columns</option>
-                        <option value="property_number">Property Number</option>
-                        <option value="property_name">Property Name</option>
-                        <option value="investor">Investor</option>
-                        <option value="regional_area_manager">Regional Manager</option>
-                        <option value="regional_director">Regional Director</option>
-                        <option value="asst_manager">Asst Manager</option>
-                    </select>
-                    <button id="property-table-clear" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;background:#f1f5f9;">Clear</button>
-                    <button id="property-table-export" type="button" style="padding:8px 12px;border-radius:8px;border:1px solid #cfd8dc;background:#e6fffa;color:#064e3b;">Export CSV</button>
+            
+            <!-- Enhanced Search & Filter Panel -->
+            <div style="background:linear-gradient(135deg, #F8FAFC 0%, #F3F6F8 100%);border-radius:12px;padding:20px;margin-bottom:20px;border:1px solid #E5E7EB;">
+                <div style="display:flex;flex-direction:column;gap:14px;">
+                    <!-- Search Row -->
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:280px;position:relative;">
+                            <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:#64748B;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.35-4.35"></path>
+                            </svg>
+                            <input id="property-table-search" type="search" placeholder="Search properties (name, number, investor, manager...)" style="width:100%;padding:11px 14px 11px 42px;border-radius:10px;border:2px solid #E5E7EB;font-size:14px;transition:all 0.2s;background:#ffffff;" onfocus="this.style.borderColor='#0E555A';this.style.boxShadow='0 0 0 3px rgba(14,85,90,0.1)'" onblur="this.style.borderColor='#E5E7EB';this.style.boxShadow='none'" />
+                        </div>
+                        <select id="property-table-column" style="padding:11px 14px;border-radius:10px;border:2px solid #E5E7EB;font-size:14px;font-weight:500;color:#1F2937;background:#ffffff;cursor:pointer;transition:all 0.2s;min-width:180px;" onfocus="this.style.borderColor='#0E555A'" onblur="this.style.borderColor='#E5E7EB'">
+                            <option value="all">🔍 All Columns</option>
+                            <option value="property_number">🏢 Property Number</option>
+                            <option value="property_name">📍 Property Name</option>
+                            <option value="investor">💼 Investor</option>
+                            <option value="regional_area_manager">👤 Regional Manager</option>
+                            <option value="regional_director">🎯 Regional Director</option>
+                            <option value="asst_manager">👥 Asst Manager</option>
+                        </select>
+                        <button id="property-table-clear" style="padding:11px 18px;border-radius:10px;border:2px solid #E5E7EB;background:#ffffff;font-weight:600;color:#64748B;cursor:pointer;transition:all 0.2s;font-size:14px;white-space:nowrap;" onmouseover="this.style.background='#F3F4F6';this.style.borderColor='#0E555A'" onmouseout="this.style.background='#ffffff';this.style.borderColor='#E5E7EB'">
+                            <svg style="display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:middle;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            Clear
+                        </button>
+                        <button id="property-table-export" type="button" style="padding:11px 18px;border-radius:10px;border:2px solid #059669;background:#10B981;color:#ffffff;font-weight:600;cursor:pointer;transition:all 0.2s;font-size:14px;white-space:nowrap;box-shadow:0 2px 6px rgba(16,185,129,0.25);" onmouseover="this.style.background='#059669';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 10px rgba(16,185,129,0.35)'" onmouseout="this.style.background='#10B981';this.style.transform='translateY(0)';this.style.boxShadow='0 2px 6px rgba(16,185,129,0.25)'">
+                            <svg style="display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:middle;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            Export CSV
+                        </button>
+                    </div>
+                    
+                    <!-- Options Row -->
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+                        <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:#ffffff;border-radius:8px;border:1px solid #E5E7EB;">
+                            <input id="togglePagination" type="checkbox" style="width:18px;height:18px;cursor:pointer;accent-color:#0E555A;" />
+                            <label for="togglePagination" style="font-size:13px;color:#1F2937;font-weight:500;cursor:pointer;user-select:none;">Show All Rows (Disable Pagination)</label>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#64748B;padding:8px 14px;background:#ffffff;border-radius:8px;border:1px solid #E5E7EB;">
+                            <svg width="16" height="16" fill="none" stroke="#64748B" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M12 16v-4M12 8h.01"></path>
+                            </svg>
+                            <span style="font-weight:500;">Click column headers to sort • Click again to reverse</span>
+                        </div>
+                    </div>
                 </div>
-                <!-- New: Toggle to disable pagination and show all rows -->
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <input id="togglePagination" type="checkbox" />
-                    <label for="togglePagination" style="font-size:13px;color:#374151;">Disable Pagination (Show all)</label>
-                </div>
-                <div style="font-size:13px;color:#6b7280;">Tip: Click any column header to sort — click again to toggle ascending/descending. You can also press Enter when a header is focused.</div>
             </div>
             
-            <table id="property-table" style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.04);">
+            <table id="property-table" style="width:100%;border-collapse:collapse;background:#fff;">
             <thead>
-                <tr style="background:#e3e8f7;">
-                    <th data-sort-key="property_number" style="padding:8px 12px;cursor:pointer;user-select:none;">Property Number<span class="sort-indicator"></span></th>
-                    <th data-sort-key="property_name" style="padding:8px 12px;cursor:pointer;user-select:none;">Property Name<span class="sort-indicator"></span></th>
-                    <th data-sort-key="investor" style="padding:8px 12px;cursor:pointer;user-select:none;">Investor<span class="sort-indicator"></span></th>
-                    <th data-sort-key="regional_area_manager" style="padding:8px 12px;cursor:pointer;user-select:none;">Regional Manager<span class="sort-indicator"></span></th>
-                    <th data-sort-key="regional_director" style="padding:8px 12px;cursor:pointer;user-select:none;">Regional Director<span class="sort-indicator"></span></th>
-                    <th data-sort-key="asst_manager" style="padding:8px 12px;cursor:pointer;user-select:none;">Asst Manager<span class="sort-indicator"></span></th>
-                    <th data-sort-key="total_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Total Units<span class="sort-indicator"></span></th>
-                    <th data-sort-key="occupied_units" style="padding:8px 12px;cursor:pointer;user-select:none;">Occupied Units<span class="sort-indicator"></span></th>
-                    <th data-sort-key="latest_snapshot_date" style="padding:8px 12px;cursor:pointer;user-select:none;">Period/Snapshot<span class="sort-indicator"></span></th>
-                    <th data-sort-key="occupancy_pct" style="padding:8px 12px;cursor:pointer;user-select:none;">Occupancy %<span class="sort-indicator"></span></th>
-                    <th data-sort-key="effective_rent" style="padding:8px 12px;cursor:pointer;user-select:none;">Effective Rent<span class="sort-indicator"></span></th>
-                    <th data-sort-key="market_rent" style="padding:8px 12px;cursor:pointer;user-select:none;">Market Rent<span class="sort-indicator"></span></th>
-                    <th data-sort-key="total_move_outs" style="padding:8px 12px;cursor:pointer;user-select:none;">Move Outs<span class="sort-indicator"></span></th>
-                    <th data-sort-key="avg_amount_per_sqft" style="padding:8px 12px;cursor:pointer;user-select:none;">Avg $/sqft<span class="sort-indicator"></span></th>
+                <tr>
+                    <th data-sort-key="property_number" style="cursor:pointer;user-select:none;text-align:center;">Property #<span class="sort-indicator"></span></th>
+                    <th data-sort-key="property_name" style="cursor:pointer;user-select:none;text-align:center;">Property Name<span class="sort-indicator"></span></th>
+                    <th data-sort-key="investor" style="cursor:pointer;user-select:none;text-align:center;">Investor<span class="sort-indicator"></span></th>
+                    <th data-sort-key="regional_area_manager" style="cursor:pointer;user-select:none;text-align:center;">Regional Mgr<span class="sort-indicator"></span></th>
+                    <th data-sort-key="regional_director" style="cursor:pointer;user-select:none;text-align:center;">Regional Dir<span class="sort-indicator"></span></th>
+                    <th data-sort-key="asst_manager" style="cursor:pointer;user-select:none;text-align:center;">Asst Mgr<span class="sort-indicator"></span></th>
+                    <th data-sort-key="total_units" style="cursor:pointer;user-select:none;text-align:center;">Total Units<span class="sort-indicator"></span></th>
+                    <th data-sort-key="occupied_units" style="cursor:pointer;user-select:none;text-align:center;">Occupied<span class="sort-indicator"></span></th>
+                    <th data-sort-key="latest_snapshot_date" style="cursor:pointer;user-select:none;text-align:center;">Period<span class="sort-indicator"></span></th>
+                    <th data-sort-key="occupancy_pct" style="cursor:pointer;user-select:none;text-align:center;">Occupancy %<span class="sort-indicator"></span></th>
+                    <th data-sort-key="effective_rent" style="cursor:pointer;user-select:none;text-align:center;">Effective Rent<span class="sort-indicator"></span></th>
+                    <th data-sort-key="market_rent" style="cursor:pointer;user-select:none;text-align:center;">Market Rent<span class="sort-indicator"></span></th>
+                    <th data-sort-key="total_move_outs" style="cursor:pointer;user-select:none;text-align:center;">Move Outs<span class="sort-indicator"></span></th>
+                    <th data-sort-key="avg_amount_per_sqft" style="cursor:pointer;user-select:none;text-align:center;">Avg $/sqft<span class="sort-indicator"></span></th>
                 </tr>
             </thead>
             <tbody id="property-table-body">
@@ -81,37 +203,37 @@
         </table>
         </div>
     </div>
-        <div id="server-pagination" style="margin-top:16px;text-align:center;">
+        <div id="server-pagination" style="margin-top:20px;text-align:center;">
             {% if properties.has_other_pages %}
                 <nav aria-label="Table pagination">
-                    <ul style="display:inline-flex;list-style:none;padding:0;">
+                    <ul style="display:inline-flex;list-style:none;padding:0;gap:6px;">
                         {% if properties.has_previous %}
-                            <li><a href="?page={{ properties.previous_page_number }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">Previous</a></li>
+                            <li><a href="?page={{ properties.previous_page_number }}" style="padding:10px 16px;background:linear-gradient(135deg,#0E555A 0%,#0B3A3F 100%);color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;transition:all 0.2s;box-shadow:0 2px 6px rgba(14,85,90,0.2);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 10px rgba(14,85,90,0.3)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 6px rgba(14,85,90,0.2)'">← Previous</a></li>
                         {% endif %}
                         {% for num in properties.paginator.page_range %}
                             {% if num == 1 and properties.number > 4 %}
-                                <li><a href="?page=1" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">1</a></li>
-                                <li><span style="padding:8px 12px;margin:0 4px;">...</span></li>
+                                <li><a href="?page=1" style="padding:10px 14px;background:#F3F4F6;border-radius:8px;text-decoration:none;color:#1F2937;font-weight:500;font-size:13px;transition:all 0.2s;" onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">1</a></li>
+                                <li><span style="padding:10px 8px;color:#64748B;font-weight:600;">...</span></li>
                             {% elif num == properties.number or num == properties.number|add:'-1' or num == properties.number|add:'1' %}
                                 {% if properties.number == num %}
-                                    <li><span style="padding:8px 12px;margin:0 4px;background:#4f6bed;color:#fff;border-radius:4px;">{{ num }}</span></li>
+                                    <li><span style="padding:10px 14px;background:linear-gradient(135deg,#C69A58 0%,#A67C3F 100%);color:#ffffff;border-radius:8px;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(198,154,88,0.3);">{{ num }}</span></li>
                                 {% else %}
-                                    <li><a href="?page={{ num }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">{{ num }}</a></li>
+                                    <li><a href="?page={{ num }}" style="padding:10px 14px;background:#F3F4F6;border-radius:8px;text-decoration:none;color:#1F2937;font-weight:500;font-size:13px;transition:all 0.2s;" onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">{{ num }}</a></li>
                                 {% endif %}
                             {% elif num == properties.paginator.num_pages and properties.number < properties.paginator.num_pages|add:'-3' %}
-                                <li><span style="padding:8px 12px;margin:0 4px;">...</span></li>
-                                <li><a href="?page={{ properties.paginator.num_pages }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">{{ properties.paginator.num_pages }}</a></li>
+                                <li><span style="padding:10px 8px;color:#64748B;font-weight:600;">...</span></li>
+                                <li><a href="?page={{ properties.paginator.num_pages }}" style="padding:10px 14px;background:#F3F4F6;border-radius:8px;text-decoration:none;color:#1F2937;font-weight:500;font-size:13px;transition:all 0.2s;" onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">{{ properties.paginator.num_pages }}</a></li>
                             {% endif %}
                         {% endfor %}
                         {% if properties.has_next %}
-                            <li><a href="?page={{ properties.next_page_number }}" style="padding:8px 12px;margin:0 4px;background:#e3e8f7;border-radius:4px;text-decoration:none;color:#333;">Next</a></li>
+                            <li><a href="?page={{ properties.next_page_number }}" style="padding:10px 16px;background:linear-gradient(135deg,#0E555A 0%,#0B3A3F 100%);color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;transition:all 0.2s;box-shadow:0 2px 6px rgba(14,85,90,0.2);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 10px rgba(14,85,90,0.3)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 6px rgba(14,85,90,0.2)'">Next →</a></li>
                         {% endif %}
                     </ul>
                 </nav>
             {% endif %}
         </div>
         <!-- client-side pagination rendered here -->
-        <div id="client-pagination" style="margin-top:12px;text-align:center;"></div>
+        <div id="client-pagination" style="margin-top:20px;text-align:center;"></div>
 
         <script>
         (function(){
@@ -157,8 +279,21 @@
                 tbody.innerHTML = '';
                 const start = (currentPage-1)*pageSize;
                 const pageItems = paginationDisabled ? filtered.slice() : filtered.slice(start, start+pageSize);
+                
+                // Update record count display
+                const recordCount = document.getElementById('table-record-count');
+                if (recordCount) {
+                    const total = fullData.length;
+                    const showing = filtered.length;
+                    if (showing === total) {
+                        recordCount.innerHTML = `<strong>${total.toLocaleString()}</strong> Properties`;
+                    } else {
+                        recordCount.innerHTML = `<strong>${showing.toLocaleString()}</strong> of <strong>${total.toLocaleString()}</strong> Properties`;
+                    }
+                }
+                
                 if (!pageItems.length){
-                    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:16px;">No data available.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;padding:40px;color:#94A3B8;font-size:15px;"><div style="margin-bottom:8px;"><svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin:0 auto;display:block;opacity:0.5;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div style="font-weight:600;">No properties found</div><div style="font-size:13px;margin-top:4px;">Try adjusting your search or filter criteria</div></td></tr>';
                     renderPagination();
                     return;
                 }
@@ -172,20 +307,20 @@
                     const mo = (r.total_move_outs!==null && r.total_move_outs!==undefined) ? r.total_move_outs : '-';
                     const sqft = (r.avg_amount_per_sqft!==null && r.avg_amount_per_sqft!==undefined && r.avg_amount_per_sqft!=='') ? ('$'+Number(r.avg_amount_per_sqft).toFixed(2)) : '-';
                     return `<tr>
-                        <td style="padding:8px 12px;">${r.property_number || ''}</td>
-                        <td style="padding:8px 12px;">${r.property_name || ''}</td>
-                        <td style="padding:8px 12px;">${r.investor || ''}</td>
-                        <td style="padding:8px 12px;">${r.regional_area_manager || ''}</td>
-                        <td style="padding:8px 12px;">${r.regional_director || ''}</td>
-                        <td style="padding:8px 12px;">${r.asst_manager || ''}</td>
-                        <td style="padding:8px 12px;">${r.total_units || ''}</td>
-                        <td style="padding:8px 12px;">${occUnits}</td>
-                        <td style="padding:8px 12px;">${latest || ''}</td>
-                        <td style="padding:8px 12px;">${occ || ''}</td>
-                        <td style="padding:8px 12px;">${eff}</td>
-                        <td style="padding:8px 12px;">${mkt}</td>
-                        <td style="padding:8px 12px;">${mo}</td>
-                        <td style="padding:8px 12px;">${sqft}</td>
+                        <td style="padding:14px 12px;font-weight:600;">${r.property_number || ''}</td>
+                        <td style="padding:14px 12px;text-align:left;font-weight:600;color:#0B3A3F;">${r.property_name || ''}</td>
+                        <td style="padding:14px 12px;">${r.investor || ''}</td>
+                        <td style="padding:14px 12px;">${r.regional_area_manager || ''}</td>
+                        <td style="padding:14px 12px;">${r.regional_director || ''}</td>
+                        <td style="padding:14px 12px;">${r.asst_manager || ''}</td>
+                        <td style="padding:14px 12px;">${r.total_units || ''}</td>
+                        <td style="padding:14px 12px;">${occUnits}</td>
+                        <td style="padding:14px 12px;font-size:12px;color:#64748B;">${latest || ''}</td>
+                        <td style="padding:14px 12px;">${occ ? occ + '%' : ''}</td>
+                        <td style="padding:14px 12px;">${eff}</td>
+                        <td style="padding:14px 12px;">${mkt}</td>
+                        <td style="padding:14px 12px;">${mo}</td>
+                        <td style="padding:14px 12px;">${sqft}</td>
                     </tr>`;
                 }).join('\n');
                 tbody.innerHTML = rowsHtml;
@@ -203,18 +338,26 @@
                 }
                 if (serverPg) serverPg.style.display = 'none';
                 const total = Math.ceil(filtered.length / pageSize) || 1;
-                let html = '';
+                let html = '<div style="display:flex;align-items:center;justify-content:center;gap:6px;">';
                 if (total > 1){
-                    if (currentPage > 1) html += `<button data-page="${currentPage-1}" class="pg-btn" style="padding:6px 10px;margin:0 4px;">Previous</button>`;
+                    if (currentPage > 1) {
+                        html += `<button data-page="${currentPage-1}" class="pg-btn" style="padding:10px 16px;background:linear-gradient(135deg,#0E555A 0%,#0B3A3F 100%);color:#ffffff;border-radius:8px;border:none;font-weight:600;font-size:13px;cursor:pointer;transition:all 0.2s;box-shadow:0 2px 6px rgba(14,85,90,0.2);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 10px rgba(14,85,90,0.3)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 6px rgba(14,85,90,0.2)'">← Previous</button>`;
+                    }
                     // show up to 7 pages
                     const start = Math.max(1, currentPage-3);
                     const end = Math.min(total, currentPage+3);
                     for(let p=start;p<=end;p++){
-                        if (p===currentPage) html += `<button disabled style="padding:6px 10px;margin:0 4px;background:#4f6bed;color:#fff;border-radius:4px;">${p}</button>`;
-                        else html += `<button data-page="${p}" class="pg-btn" style="padding:6px 10px;margin:0 4px;">${p}</button>`;
+                        if (p===currentPage) {
+                            html += `<button disabled style="padding:10px 14px;background:linear-gradient(135deg,#C69A58 0%,#A67C3F 100%);color:#ffffff;border-radius:8px;border:none;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(198,154,88,0.3);cursor:default;">${p}</button>`;
+                        } else {
+                            html += `<button data-page="${p}" class="pg-btn" style="padding:10px 14px;background:#F3F4F6;border-radius:8px;border:none;color:#1F2937;font-weight:500;font-size:13px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">${p}</button>`;
+                        }
                     }
-                    if (currentPage < total) html += `<button data-page="${currentPage+1}" class="pg-btn" style="padding:6px 10px;margin:0 4px;">Next</button>`;
+                    if (currentPage < total) {
+                        html += `<button data-page="${currentPage+1}" class="pg-btn" style="padding:10px 16px;background:linear-gradient(135deg,#0E555A 0%,#0B3A3F 100%);color:#ffffff;border-radius:8px;border:none;font-weight:600;font-size:13px;cursor:pointer;transition:all 0.2s;box-shadow:0 2px 6px rgba(14,85,90,0.2);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 10px rgba(14,85,90,0.3)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 6px rgba(14,85,90,0.2)'">Next →</button>`;
+                    }
                 }
+                html += '</div>';
                 container.innerHTML = html;
                 // attach handlers
                 container.querySelectorAll('.pg-btn').forEach(b=> b.addEventListener('click', (e)=>{ currentPage = parseInt(e.currentTarget.getAttribute('data-page')); renderTable(); }));
@@ -324,17 +467,17 @@
             // Initialize header affordances (indicator, title, keyboard accessibility)
             const headerCells = Array.from(document.querySelectorAll('#property-table thead th[data-sort-key]'));
             headerCells.forEach(th => {
-                th.setAttribute('title','Click to sort');
+                th.setAttribute('title','Click to sort by this column');
                 th.tabIndex = 0; // make focusable
                 const si = th.querySelector('.sort-indicator');
-                if (si) si.textContent = ' ↕';
+                if (si) si.textContent = ' ⇅';
                 // keyboard support
                 th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); th.click(); } });
                 th.addEventListener('click', () => {
                     const key = th.getAttribute('data-sort-key');
                     if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = 1; }
                     // update indicators and aria-sort
-                    headerCells.forEach(h => { const s = h.querySelector('.sort-indicator'); if (s) s.textContent = ' ↕'; h.removeAttribute('aria-sort'); });
+                    headerCells.forEach(h => { const s = h.querySelector('.sort-indicator'); if (s) s.textContent = ' ⇅'; h.removeAttribute('aria-sort'); });
                     const clickedIndicator = th.querySelector('.sort-indicator');
                     if (clickedIndicator) clickedIndicator.textContent = sortDir===1 ? ' ▲' : ' ▼';
                     th.setAttribute('aria-sort', sortDir===1 ? 'ascending' : 'descending');
