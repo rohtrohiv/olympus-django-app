@@ -929,39 +929,80 @@ def parse_period(period):
 def dashboard(request):
 	user = request.user
 	# If the user didn't supply any period-related parameters, default to the
-	# latest available month (server-side) rather than the full 'all years' set.
+	# PREVIOUS month (server-side) to ensure complete data is shown.
+	# Current month data may be incomplete since it's still being collected.
 	period_params = ['period_mode', 'period_year', 'period_quarter', 'period_month', 'period']
 	has_period_param = any([p in request.GET and request.GET.get(p) for p in period_params])
 	if not has_period_param:
-		# Inspect available periods via the DashboardService so the server picks
-		# the latest month present in the DB. Fall back to 'all years' when no
-		# month data is available (e.g., empty DB during local dev).
+		# Inspect available periods via the DashboardPageService so the server picks
+		# the PREVIOUS month relative to current date.
 		svc_probe = DashboardPageService({})
 		svc_periods = svc_probe.get_context().get('periods') or {}
 		# periods structure: { '2025': { 'months': [...], 'quarters': {...} }, ... }
 		if svc_periods:
-			# choose newest year then newest month within that year's quarters
+			# Calculate previous month (not latest month)
 			try:
-				latest_year = next(iter(sorted(svc_periods.keys(), reverse=True)))
-				# Find latest month by traversing quarters (quarters contain month names)
-				quarters = svc_periods.get(latest_year, {}).get('quarters', {})
-				if quarters:
-					latest_quarter = next(iter(sorted(quarters.keys(), reverse=True)))
-					months = quarters.get(latest_quarter, [])
-					if months:
-						latest_month = sorted(months, key=lambda m: datetime.strptime(m, '%b'))[-1]
-						params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
-					else:
-						# no months found -> fall back to all years
-						params = {'period_mode': 'year', 'period_year': 'all'}
+				today = datetime.now()
+				current_month = today.month
+				current_year = today.year
+				
+				# Calculate previous month
+				if current_month == 1:
+					prev_month = 12
+					prev_year = current_year - 1
 				else:
-					# no quarters -> try months top-level (compat)
-					months_top = svc_periods.get(latest_year, {}).get('months') or []
-					if months_top:
-						latest_month = sorted(months_top, key=lambda m: datetime.strptime(m, '%b'))[-1]
-						params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
+					prev_month = current_month - 1
+					prev_year = current_year
+				
+				prev_month_name = datetime.strptime(f"{prev_month:02d}", "%m").strftime("%b")
+				prev_year_str = str(prev_year)
+				
+				# Check if previous month exists in our data
+				if prev_year_str in svc_periods:
+					year_data = svc_periods[prev_year_str]
+					if prev_month_name in year_data.get('months', []):
+						# Previous month found in data
+						params = {'period_mode': 'month', 'period_month': f"{prev_month_name}-{prev_year_str}"}
 					else:
-						params = {'period_mode': 'year', 'period_year': 'all'}
+						# Previous month not in data, fall back to latest available
+						latest_year = next(iter(sorted(svc_periods.keys(), reverse=True)))
+						quarters = svc_periods.get(latest_year, {}).get('quarters', {})
+						if quarters:
+							latest_quarter = next(iter(sorted(quarters.keys(), reverse=True)))
+							months = quarters.get(latest_quarter, [])
+							if months:
+								latest_month = sorted(months, key=lambda m: datetime.strptime(m, '%b'))[-1]
+								params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
+							else:
+								params = {'period_mode': 'year', 'period_year': 'all'}
+						else:
+							# no quarters -> try months top-level (compat)
+							months_top = svc_periods.get(latest_year, {}).get('months') or []
+							if months_top:
+								latest_month = sorted(months_top, key=lambda m: datetime.strptime(m, '%b'))[-1]
+								params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
+							else:
+								params = {'period_mode': 'year', 'period_year': 'all'}
+				else:
+					# Previous year not in data, fall back to latest available
+					latest_year = next(iter(sorted(svc_periods.keys(), reverse=True)))
+					quarters = svc_periods.get(latest_year, {}).get('quarters', {})
+					if quarters:
+						latest_quarter = next(iter(sorted(quarters.keys(), reverse=True)))
+						months = quarters.get(latest_quarter, [])
+						if months:
+							latest_month = sorted(months, key=lambda m: datetime.strptime(m, '%b'))[-1]
+							params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
+						else:
+							params = {'period_mode': 'year', 'period_year': 'all'}
+					else:
+						# no quarters -> try months top-level (compat)
+						months_top = svc_periods.get(latest_year, {}).get('months') or []
+						if months_top:
+							latest_month = sorted(months_top, key=lambda m: datetime.strptime(m, '%b'))[-1]
+							params = {'period_mode': 'month', 'period_month': f"{latest_month}-{latest_year}"}
+						else:
+							params = {'period_mode': 'year', 'period_year': 'all'}
 			except Exception:
 				params = {'period_mode': 'year', 'period_year': 'all'}
 		else:

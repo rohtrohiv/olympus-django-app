@@ -72,6 +72,46 @@ class DashboardService:
             }
         return sorted_periods
 
+    def _get_previous_month_period(self, sorted_periods):
+        """Calculate the previous month's period string from available data.
+        
+        Returns the previous month relative to the current date if it exists in the data,
+        otherwise returns the most recent month available in the data.
+        This ensures we show complete data rather than incomplete current month data.
+        
+        Returns: tuple of (period_string, period_mode) e.g. ("Oct-2025", "month")
+        """
+        if not sorted_periods:
+            return None, None
+            
+        # Get current date
+        today = datetime.now()
+        current_year = today.year
+        current_month = today.month
+        
+        # Calculate previous month
+        if current_month == 1:
+            prev_month = 12
+            prev_year = current_year - 1
+        else:
+            prev_month = current_month - 1
+            prev_year = current_year
+        
+        prev_month_name = datetime.strptime(f"{prev_month:02d}", "%m").strftime("%b")
+        prev_year_str = str(prev_year)
+        
+        # Check if previous month exists in our data
+        if prev_year_str in sorted_periods:
+            if prev_month_name in sorted_periods[prev_year_str]["months"]:
+                return f"{prev_month_name}-{prev_year_str}", "month"
+        
+        # If previous month doesn't exist, fall back to the latest available month
+        latest_year = next(iter(sorted(sorted_periods.keys(), reverse=True)))
+        latest_quarter = next(iter(sorted(sorted_periods[latest_year]['quarters'].keys(), reverse=True)))
+        latest_month = sorted(sorted_periods[latest_year]['quarters'][latest_quarter], key=lambda m: datetime.strptime(m, "%b"))[-1]
+        
+        return f"{latest_month}-{latest_year}", "month"
+
     def _to_date_generic(self, dv):
         """Normalize various snapshotdate formats to a date object or None."""
         if dv is None:
@@ -207,12 +247,12 @@ class DashboardService:
         if period_mode == 'year' and str(period_year).lower() == 'all':
             selected_period = 'All time'
         if not (period_year or period_quarter or period_month or selected_period) and sorted_periods:
-            latest_year = next(iter(sorted(sorted_periods.keys(), reverse=True)))
-            latest_quarter = next(iter(sorted(sorted_periods[latest_year]['quarters'].keys(), reverse=True)))
-            latest_month = sorted(sorted_periods[latest_year]['quarters'][latest_quarter], key=lambda m: datetime.strptime(m, "%b"))[-1]
-            selected_period = f"{latest_month}-{latest_year}"
-            period_mode = 'month'
-            period_month = selected_period
+            # Use previous month by default (since current month data may be incomplete)
+            default_period, default_mode = self._get_previous_month_period(sorted_periods)
+            if default_period:
+                selected_period = default_period
+                period_mode = default_mode
+                period_month = selected_period
 
         # Build base queryset and apply simple filters from params
         qs = OlympusLeaseTrendAnalysis.objects.all()
@@ -284,14 +324,14 @@ class DashboardService:
         if exclude_blackstone and 'BLACKSTONE/LIVCOR' not in sel_up:
             qs = qs.exclude(investor__iexact='BLACKSTONE/LIVCOR')
 
-        # Determine the initial latest-month selection: prefer explicit period params, otherwise latest available
+        # Determine the initial latest-month selection: prefer explicit period params, otherwise previous month
         if not (period_year or period_quarter or period_month or selected_period) and sorted_periods:
-            latest_year = next(iter(sorted(sorted_periods.keys(), reverse=True)))
-            latest_quarter = next(iter(sorted(sorted_periods[latest_year]['quarters'].keys(), reverse=True)))
-            latest_month = sorted(sorted_periods[latest_year]['quarters'][latest_quarter], key=lambda m: datetime.strptime(m, "%b"))[-1]
-            selected_period = f"{latest_month}-{latest_year}"
-            period_mode = 'month'
-            period_month = selected_period
+            # Use previous month by default (since current month data may be incomplete)
+            default_period, default_mode = self._get_previous_month_period(sorted_periods)
+            if default_period:
+                selected_period = default_period
+                period_mode = default_mode
+                period_month = selected_period
 
         # Build a filtered queryset for the selected period (support multi-month selection)
         period_qs = qs
