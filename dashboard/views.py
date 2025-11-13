@@ -23,6 +23,56 @@ def sample_page(request):
 
 
 @login_required
+def financial_reporting(request):
+	"""Financial reporting page with expandable P&L breakdown.
+	
+	Displays financial data by community with period comparison,
+	expandable categories, and filtering capabilities.
+	"""
+	# Mock data for demo - will be replaced with real data from database
+	context = {
+		'page_title': 'Financial Reporting',
+		'communities': [
+			{
+				'name': 'Olympus Waterford',
+				'actual': 1852299,
+				'variance': -2.52,
+				'per_unit': 9905,
+				'units': 187,
+				'breakdown': [
+					{'category': 'Income', 'sub_category': 'Operating Revenue', 'sub_sub_category': '4010 - Gross Potential Rent', 'actual': 354860, 'variance': 2.21, 'per_unit': 1898},
+					{'category': 'Income', 'sub_category': 'Operating Revenue', 'sub_sub_category': '4020 - Vacancy Loss', 'actual': -15420, 'variance': -1.35, 'per_unit': -82},
+					{'category': 'Operating Expense', 'sub_category': 'Insurance & Taxes', 'sub_sub_category': '6710 - Insurance - Expense', 'actual': 6004, 'variance': -0.02, 'per_unit': 32},
+					{'category': 'Operating Expense', 'sub_category': 'Payroll', 'sub_sub_category': '6200 - Payroll', 'actual': 45280, 'variance': 1.15, 'per_unit': 242},
+					{'category': 'Net Operating Income', 'sub_category': 'Total', 'sub_sub_category': '', 'actual': 194992, 'variance': -6.57, 'per_unit': 1043},
+				]
+			},
+			{
+				'name': 'Olympus Grandview',
+				'actual': 2156780,
+				'variance': 3.42,
+				'per_unit': 11245,
+				'units': 192,
+				'breakdown': []
+			},
+			{
+				'name': 'Olympus Riverside',
+				'actual': 1645920,
+				'variance': -1.28,
+				'per_unit': 8876,
+				'units': 185,
+				'breakdown': []
+			}
+		],
+		'years': ['2025', '2024', '2023'],
+		'quarters': ['Q1', 'Q2', 'Q3', 'Q4'],
+		'months': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+	}
+	
+	return render(request, 'dashboard/financial_reporting.html', context)
+
+
+@login_required
 def property_analytics(request):
 	"""Simple property analytics placeholder page.
 
@@ -114,6 +164,13 @@ def advanced_analytics(request):
 		investor_managers = {}
 		property_managers = {}
 	
+	# Get period options for filter panel (years with quarters and months)
+	# Use DashboardPageService to get properly formatted period options
+	from .dashboard_service import DashboardPageService
+	# Pass empty params to get all available periods
+	period_service = DashboardPageService({})
+	period_context = period_service.get_context()
+	
 	# Serialize to JSON for JavaScript
 	import json
 	context = {
@@ -126,6 +183,17 @@ def advanced_analytics(request):
 		'property_managers_json': json.dumps(property_managers),
 		'properties_json': json.dumps(properties),
 		'managers_json': json.dumps(managers),
+		# Filter panel required context
+		'period_options': period_context.get('periods'),
+		'selected_year': period_context.get('period_year'),
+		'selected_quarter': period_context.get('period_quarter'),
+		'selected_month': period_context.get('period_month'),
+		'selected_period_mode': period_context.get('period_mode', 'year'),
+		'investors_list': investors,  # For filter panel dropdown
+		'regional_managers': managers,  # For filter panel dropdown
+		'communities': [{'property_name': p} for p in properties],  # For filter panel dropdown
+		'inv_to_regional_json': json.dumps(investor_managers),
+		'inv_reg_to_communities_json': json.dumps(investor_properties),
 	}
 	return render(request, 'property_analytics_advanced.html', context)
 
@@ -136,18 +204,46 @@ def analytics_query(request):
 	
 	Processes filter parameters and returns aggregated data for charts,
 	tables, and summary statistics. Supports various groupings and metrics.
+	Accepts filters from both the filter panel and inline form controls.
 	"""
 	if request.method != 'POST':
 		return JsonResponse({'error': 'POST method required'}, status=405)
 	
 	try:
-		# Get filter parameters
+		# Debug logging
+		import logging
+		logger = logging.getLogger(__name__)
+		logger.info(f"Analytics query received - POST data: {dict(request.POST.lists())}")
+		
+		# Get filter parameters - support both filter panel and inline form
+		# Filter panel parameters
+		period_years = request.POST.getlist('period_year')
+		period_quarters = request.POST.getlist('period_quarter')
+		period_months = request.POST.getlist('period_month')
+		period_mode = request.POST.get('period_mode', '')
+		filter_investors = request.POST.getlist('investor')  # from filter panel
+		filter_managers = request.POST.getlist('regional_manager')  # from filter panel
+		filter_communities = request.POST.getlist('community')  # from filter panel
+		
+		logger.info(f"Period mode: {period_mode}, Years: {period_years}, Quarters: {period_quarters}, Months: {period_months}")
+		logger.info(f"Filters - Investors: {filter_investors}, Managers: {filter_managers}, Communities: {filter_communities}")
+		
+		# Inline form parameters (legacy)
 		date_range = request.POST.get('date_range', 'last_30_days')
 		start_date = request.POST.get('start_date')
 		end_date = request.POST.get('end_date') 
 		properties = request.POST.getlist('properties')
 		investors = request.POST.getlist('investors')
 		managers = request.POST.getlist('managers')
+		
+		# Merge filter panel and inline parameters
+		if filter_investors:
+			investors = filter_investors
+		if filter_managers:
+			managers = filter_managers
+		if filter_communities:
+			properties = filter_communities
+			
 		group_by = request.POST.get('group_by', '')
 		metrics = request.POST.getlist('metrics')
 		aggregation = request.POST.get('aggregation', 'sum')
@@ -155,58 +251,108 @@ def analytics_query(request):
 		# Build base queryset
 		qs = OlympusLeaseTrendAnalysis.objects.all()
 		
-		# Apply date filters
-		from datetime import datetime, timedelta
-		if date_range == 'custom' and start_date and end_date:
-			# Handle both date formats: YYYY-MM-DD and Mon-YYYY
-			qs = qs.filter(
-				Q(snapshotdate__gte=start_date, snapshotdate__lte=end_date) |
-				Q(snapshotdate__contains=start_date[:4]) |
-				Q(snapshotdate__contains=end_date[:4])
-			)
-		elif date_range == 'last_30_days':
-			thirty_days_ago = datetime.now() - timedelta(days=30)
-			cutoff_date = thirty_days_ago.strftime('%Y-%m-%d')
-			cutoff_month = thirty_days_ago.strftime('%b-%Y')
-			qs = qs.filter(
-				Q(snapshotdate__gte=cutoff_date) |
-				Q(snapshotdate__contains=cutoff_month)
-			)
-		elif date_range == 'last_90_days':
-			ninety_days_ago = datetime.now() - timedelta(days=90)
-			cutoff_date = ninety_days_ago.strftime('%Y-%m-%d')
-			cutoff_month = ninety_days_ago.strftime('%b-%Y')
-			# Include exact-date rows and month-year formatted rows
-			qs = qs.filter(
-				Q(snapshotdate__gte=cutoff_date) |
-				Q(snapshotdate__contains=cutoff_month)
-			)
-		elif date_range == 'last_6_months':
-			six_months_ago = datetime.now() - timedelta(days=180)
-			cutoff_date = six_months_ago.strftime('%Y-%m-%d')
-			cutoff_month = six_months_ago.strftime('%b-%Y')
-			qs = qs.filter(
-				Q(snapshotdate__gte=cutoff_date) |
-				Q(snapshotdate__contains=cutoff_month)
-			)
-		elif date_range == 'current_year':
-			# Return rows for the current calendar year up to today. Some rows
-			# may be stored as 'Mon-YYYY' strings so include both year-lookup
-			# (works for DateField values) and a simple contains fallback.
-			this_year = datetime.now().year
-			today = datetime.now().date()
-			qs = qs.filter(
-				Q(snapshotdate__year=this_year, snapshotdate__lte=today) |
-				Q(snapshotdate__contains=str(this_year))
-			)
-		elif date_range == 'last_year':
-			# Interpret 'last_year' as the previous calendar year (Jan 1 - Dec 31 of prior year)
-			prev_year = datetime.now().year - 1
-			# Use __year lookup for DateFields and a contains fallback for string-stored month-year values
-			qs = qs.filter(
-				Q(snapshotdate__year=prev_year) |
-				Q(snapshotdate__contains=str(prev_year))
-			)
+		# Apply period filters from filter panel if present
+		if period_mode and (period_years or period_quarters or period_months):
+			logger.info(f"Applying period filters - Mode: {period_mode}")
+			from datetime import datetime, timedelta
+			if period_mode == 'year' and period_years:
+				if 'all' not in period_years:
+					# Year filtering: snapshotdate is typically stored as "Mon-YYYY" format
+					# Build Q objects for each year to match any month in that year
+					year_queries = Q()
+					for year in period_years:
+						if year and year != 'all':
+							# Match any date containing the year (e.g., "Jan-2024", "Feb-2024", etc.)
+							year_queries |= Q(snapshotdate__contains=f'-{year}')
+							logger.info(f"Adding year filter for: {year}")
+					
+					if year_queries:
+						qs = qs.filter(year_queries)
+						logger.info(f"Queryset filtered by years, count: {qs.count()}")
+			elif period_mode == 'quarter' and period_quarters:
+				# Quarter filtering: Parse quarter format like "Q1-2024" or "2024-Q1"
+				if 'all' not in period_quarters:
+					quarter_queries = Q()
+					for quarter in period_quarters:
+						if quarter and quarter != 'all':
+							# Parse quarter (e.g., "Q1-2024" or "2024-Q1")
+							if '-Q' in quarter or 'Q' in quarter:
+								parts = quarter.replace('Q', '').split('-')
+								if len(parts) == 2:
+									q_num = parts[0] if parts[0].isdigit() and int(parts[0]) <= 4 else parts[1]
+									year = parts[1] if parts[0].isdigit() and int(parts[0]) <= 4 else parts[0]
+									
+									# Map quarter to months
+									quarter_months = {
+										'1': ['Jan', 'Feb', 'Mar'],
+										'2': ['Apr', 'May', 'Jun'],
+										'3': ['Jul', 'Aug', 'Sep'],
+										'4': ['Oct', 'Nov', 'Dec']
+									}
+									
+									months = quarter_months.get(str(q_num), [])
+									for month in months:
+										quarter_queries |= Q(snapshotdate__startswith=f'{month}-{year}')
+					
+					if quarter_queries:
+						qs = qs.filter(quarter_queries)
+			elif period_mode == 'month' and period_months:
+				if 'all' not in period_months:
+					# Period months format: "Oct-2025", exact match
+					qs = qs.filter(snapshotdate__in=period_months)
+		# Apply date filters from inline form if no period filters
+		elif date_range:
+			from datetime import datetime, timedelta
+			if date_range == 'custom' and start_date and end_date:
+				# Handle both date formats: YYYY-MM-DD and Mon-YYYY
+				qs = qs.filter(
+					Q(snapshotdate__gte=start_date, snapshotdate__lte=end_date) |
+					Q(snapshotdate__contains=start_date[:4]) |
+					Q(snapshotdate__contains=end_date[:4])
+				)
+			elif date_range == 'last_30_days':
+				thirty_days_ago = datetime.now() - timedelta(days=30)
+				cutoff_date = thirty_days_ago.strftime('%Y-%m-%d')
+				cutoff_month = thirty_days_ago.strftime('%b-%Y')
+				qs = qs.filter(
+					Q(snapshotdate__gte=cutoff_date) |
+					Q(snapshotdate__contains=cutoff_month)
+				)
+			elif date_range == 'last_90_days':
+				ninety_days_ago = datetime.now() - timedelta(days=90)
+				cutoff_date = ninety_days_ago.strftime('%Y-%m-%d')
+				cutoff_month = ninety_days_ago.strftime('%b-%Y')
+				# Include exact-date rows and month-year formatted rows
+				qs = qs.filter(
+					Q(snapshotdate__gte=cutoff_date) |
+					Q(snapshotdate__contains=cutoff_month)
+				)
+			elif date_range == 'last_6_months':
+				six_months_ago = datetime.now() - timedelta(days=180)
+				cutoff_date = six_months_ago.strftime('%Y-%m-%d')
+				cutoff_month = six_months_ago.strftime('%b-%Y')
+				qs = qs.filter(
+					Q(snapshotdate__gte=cutoff_date) |
+					Q(snapshotdate__contains=cutoff_month)
+				)
+			elif date_range == 'current_year':
+				# Return rows for the current calendar year up to today. Some rows
+				# may be stored as 'Mon-YYYY' strings so include both year-lookup
+				# (works for DateField values) and a simple contains fallback.
+				this_year = datetime.now().year
+				today = datetime.now().date()
+				qs = qs.filter(
+					Q(snapshotdate__year=this_year, snapshotdate__lte=today) |
+					Q(snapshotdate__contains=str(this_year))
+				)
+			elif date_range == 'last_year':
+				# Interpret 'last_year' as the previous calendar year (Jan 1 - Dec 31 of prior year)
+				prev_year = datetime.now().year - 1
+				# Use __year lookup for DateFields and a contains fallback for string-stored month-year values
+				qs = qs.filter(
+					Q(snapshotdate__year=prev_year) |
+					Q(snapshotdate__contains=str(prev_year))
+				)
 		
 		# Apply other filters
 		if properties and 'all' not in properties:
@@ -297,27 +443,69 @@ def analytics_query(request):
 					if mval not in managers:
 						continue
 
-				# Date range filtering
-				sd = _to_date_generic(item.get('snapshotdate'))
-				if sd is None:
+				# Period filtering from filter panel (takes priority)
+				snapshot_str = str(item.get('snapshotdate', ''))
+				period_match = True
+				
+				if period_mode and (period_years or period_quarters or period_months):
+					if period_mode == 'year' and period_years and 'all' not in period_years:
+						# Check if snapshot contains any selected year (e.g., "Jan-2024" contains "2024")
+						period_match = any(f'-{year}' in snapshot_str for year in period_years if year)
+					elif period_mode == 'quarter' and period_quarters and 'all' not in period_quarters:
+						# Check if snapshot month is in selected quarters
+						quarter_match = False
+						for quarter in period_quarters:
+							if quarter and quarter != 'all':
+								# Parse quarter (e.g., "Q1-2024")
+								if '-Q' in quarter or 'Q' in quarter:
+									parts = quarter.replace('Q', '').split('-')
+									if len(parts) == 2:
+										q_num = parts[0] if parts[0].isdigit() and int(parts[0]) <= 4 else parts[1]
+										year = parts[1] if parts[0].isdigit() and int(parts[0]) <= 4 else parts[0]
+										
+										# Map quarter to months
+										quarter_months = {
+											'1': ['Jan', 'Feb', 'Mar'],
+											'2': ['Apr', 'May', 'Jun'],
+											'3': ['Jul', 'Aug', 'Sep'],
+											'4': ['Oct', 'Nov', 'Dec']
+										}
+										
+										months = quarter_months.get(str(q_num), [])
+										for month in months:
+											if snapshot_str.startswith(f'{month}-{year}'):
+												quarter_match = True
+												break
+						period_match = quarter_match
+					elif period_mode == 'month' and period_months and 'all' not in period_months:
+						# Exact match for months (e.g., "Oct-2025")
+						period_match = snapshot_str in period_months
+				# Date range filtering (only if no period filters)
+				elif date_range:
+					sd = _to_date_generic(item.get('snapshotdate'))
+					if sd is None:
+						period_match = False
+					else:
+						if date_range == 'last_30_days' and sd < thirty:
+							period_match = False
+						elif date_range == 'last_90_days' and sd < ninety:
+							period_match = False
+						elif date_range == 'last_6_months' and sd < six_months:
+							period_match = False
+						elif date_range == 'last_year' and sd < one_year:
+							period_match = False
+						elif date_range == 'custom' and start_date and end_date:
+							# parse provided start/end
+							try:
+								start_d = datetime.strptime(start_date, '%Y-%m-%d').date()
+								ex_d = datetime.strptime(end_date, '%Y-%m-%d').date()
+								if sd < start_d or sd > ex_d:
+									period_match = False
+							except Exception:
+								pass
+				
+				if not period_match:
 					continue
-				if date_range == 'last_30_days' and sd < thirty:
-					continue
-				if date_range == 'last_90_days' and sd < ninety:
-					continue
-				if date_range == 'last_6_months' and sd < six_months:
-					continue
-				if date_range == 'last_year' and sd < one_year:
-					continue
-				if date_range == 'custom' and start_date and end_date:
-					# parse provided start/end
-					try:
-						start_d = datetime.strptime(start_date, '%Y-%m-%d').date()
-						ex_d = datetime.strptime(end_date, '%Y-%m-%d').date()
-						if sd < start_d or sd > ex_d:
-							continue
-					except Exception:
-						pass
 
 				all_data.append(item)
 			use_cached = True
@@ -1229,11 +1417,8 @@ def dashboard(request):
 					           renewal_conv_avg=Avg('renewel_conversion'),
 					           avg_turn=Avg('average_turn_time'))
 					 .order_by('year'))
-			# When multiple years selected, show all; otherwise show last 6
-			if selected_years and len(selected_years) > 1:
-				rows = list(grouped)
-			else:
-				rows = list(grouped)[-6:]
+			# When multiple years selected or viewing from modal, show all
+			rows = list(grouped)
 		else:
 			grouped = (monthly_qs
 				 .annotate(year=ExtractYear('enddateofmonth'), month=ExtractMonth('enddateofmonth'))
@@ -1249,11 +1434,8 @@ def dashboard(request):
 				           renewal_conv_avg=Avg('renewel_conversion'),
 				           avg_turn=Avg('average_turn_time'))
 				 .order_by('year', 'month'))
-			# When multiple quarters/months selected, show all; otherwise show last 6
-			if (selected_quarters and len(selected_quarters) > 1) or (selected_months and len(selected_months) > 1):
-				rows = list(grouped)
-			else:
-				rows = list(grouped)[-6:]
+			# When multiple periods selected or viewing from modal, show all
+			rows = list(grouped)
 
 		# Build charts and KPI aggregates from rows
 		labels = []
@@ -1266,13 +1448,31 @@ def dashboard(request):
 		total_service_requests = 0
 		total_exposure = 0
 		total_delinquency = 0
-		# For pooled averages (avg_turn_time, renewal_conv) compute numerator/denominator
+		# For pooled averages (avg_turn_time, renewal_conv, exposure, delinquency) compute numerator/denominator
 		turn_num = 0.0
 		turn_den = 0
 		rc_num = 0.0
 		rc_den = 0
+		exp_num = 0.0
+		exp_den = 0
+		del_num = 0.0
+		del_den = 0
+		
+		# Debug logging
+		print(f"\n{'='*80}")
+		print(f"DASHBOARD KPI AGGREGATION")
+		print(f"{'='*80}")
+		print(f"Total rows after aggregation: {len(rows)}")
+		print(f"Community filter: {community_list}")
+		print(f"Selected months: {selected_months}")
+		print(f"Period mode: {sel_mode}")
+		print(f"{'='*80}\n")
+		
 		from datetime import datetime as _dt
 		for r in rows:
+			# Debug: log raw row data
+			print(f"Row data: year={r.get('year')}, month={r.get('month')}, cnt={r.get('cnt')}, delinquency_sum={r.get('delinquency_sum')}, exposure_sum={r.get('exposure_sum')}")
+			
 			if show_by_year:
 				y = int(r.get('year') or 0)
 				labels.append(str(y) if y else '')
@@ -1297,10 +1497,24 @@ def dashboard(request):
 
 			# KPIs accumulation
 			total_service_requests += int(r.get('service_requests_sum') or 0)
-			total_exposure += int(r.get('exposure_sum') or 0)
-			total_delinquency += int(r.get('delinquency_sum') or 0)
-
+			
 			cnt = int(r.get('cnt') or 0)
+			
+			# Average exposure (convert to percentage by dividing by 100)
+			exp = r.get('exposure_sum')
+			if exp is not None and cnt:
+				exp_num += float(exp)
+				exp_den += cnt
+			
+			# Average delinquency (convert to percentage by dividing by 100)
+			# Delinquency is stored as raw number in DB, need to convert to percentage
+			del_val = r.get('delinquency_sum')
+			if del_val is not None and cnt:
+				del_num += float(del_val)
+				del_den += cnt
+				# Debug logging
+				print(f"  -> Delinquency accumulation: del_sum={del_val}, cnt={cnt}, cumulative del_num={del_num}, del_den={del_den}")
+			
 			avg_turn = r.get('avg_turn')
 			if avg_turn is not None and cnt:
 				turn_num += float(avg_turn) * cnt
@@ -1330,21 +1544,61 @@ def dashboard(request):
 		# Compute KPI overrides
 		kpi_overrides = {}
 		kpi_overrides['service_requests'] = int(total_service_requests)
-		kpi_overrides['exposure'] = int(total_exposure)
-		kpi_overrides['delinquency'] = int(total_delinquency)
+		if exp_den:
+			# Exposure is stored as decimal in DB (0.132), convert to percentage (13.2%)
+			kpi_overrides['exposure'] = round((exp_num / exp_den) * 100, 3)
+		if del_den:
+			# Delinquency is stored as decimal in DB (0.122), convert to percentage (12.2%)
+			kpi_overrides['delinquency'] = round((del_num / del_den) * 100, 3)
+			# Debug logging
+			print(f"\n{'*'*60}")
+			print(f"FINAL DELINQUENCY KPI CALCULATION")
+			print(f"{'*'*60}")
+			print(f"del_num (sum): {del_num}")
+			print(f"del_den (count): {del_den}")
+			print(f"Result (del_num/del_den) * 100: {kpi_overrides['delinquency']}")
+			print(f"{'*'*60}\n")
 		if turn_den:
 			kpi_overrides['avg_turn_time'] = round(turn_num / turn_den, 1)
 		if rc_den:
 			kpi_overrides['renewal_conversion'] = round(rc_num / rc_den, 1)
 
+		# Build delinquency trend chart
+		# For more accurate data, collect delinquency per period
+		delinquency_data = []
+		for r in rows:
+			del_sum = r.get('delinquency_sum')
+			cnt = int(r.get('cnt') or 1)
+			if del_sum is not None and cnt > 0:
+				# Average delinquency for this period
+				# DB stores as decimal (0.122), convert to percentage (12.2%)
+				avg_delinquency = (float(del_sum) / cnt) * 100
+				delinquency_data.append(round(avg_delinquency, 3))
+			else:
+				delinquency_data.append(0.0)
+		
+		chart_delinquency = {
+			'labels': labels,
+			'data': delinquency_data
+		}
+
 		# NOTE: KPI overrides and chart payloads will be applied to the template context
 		# after the primary context dict is built further below. We store them in
-		# local variables here (chart_renewals, chart_expense, kpi_overrides).
+		# local variables here (chart_renewals, chart_expense, chart_delinquency, kpi_overrides).
 
-	except Exception:
+	except Exception as e:
 		# On any failure, provide empty chart payloads and no KPI overrides
+		print(f"\n{'!'*80}")
+		print(f"EXCEPTION IN DASHBOARD KPI AGGREGATION")
+		print(f"{'!'*80}")
+		print(f"Exception: {str(e)}")
+		import traceback
+		traceback.print_exc()
+		print(f"{'!'*80}\n")
+		
 		chart_renewals = {'labels': [], 'datasets': []}
 		chart_expense = {'labels': [], 'datasets': []}
+		chart_delinquency = {'labels': [], 'data': []}
 		kpi_overrides = {}
 
 	# Build Move-Out Reasons chart from monthly moveout reasons table.
@@ -1614,16 +1868,30 @@ def dashboard(request):
 		'chart_renewals_json': json.dumps(chart_renewals),
 		'chart_expense_json': json.dumps(chart_expense),
 		'chart_moveout_json': json.dumps(chart_moveout),
+		'delinquency_chart_data': chart_delinquency,
 	}
 
 	# Apply KPI overrides computed by the consolidated monthly aggregation (if any)
 	try:
+		print(f"\n{'='*80}")
+		print(f"APPLYING KPI OVERRIDES")
+		print(f"{'='*80}")
+		print(f"KPI Overrides: {kpi_overrides}")
+		
 		kpi = context.get('kpi') or {}
+		print(f"Original KPI delinquency: {kpi.get('delinquency', 'NOT SET')}")
+		
 		for k, v in (kpi_overrides or {}).items():
 			kpi[k] = v
 		context['kpi'] = kpi
-	except Exception:
+		
+		print(f"Final KPI delinquency: {kpi.get('delinquency', 'NOT SET')}")
+		print(f"{'='*80}\n")
+	except Exception as ex:
 		# keep existing KPIs on unexpected failures
+		print(f"EXCEPTION applying KPI overrides: {str(ex)}")
+		import traceback
+		traceback.print_exc()
 		pass
 
 	chart_props = dict(svc_ctx.get('chart_properties', {}) or {})
@@ -1710,6 +1978,7 @@ def dashboard(request):
 				'chart_properties_json': context.get('chart_properties_json'),
 				'chart_correlation_json': context.get('chart_correlation_json'),
 				'chart_rent_json': context.get('chart_rent_json'),
+				'delinquency_data': context.get('delinquency_chart_data'),
 				'selected_period': svc_ctx.get('selected_period')
 			})
 		# Default AJAX response for KPI/table updates

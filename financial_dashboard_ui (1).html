@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Olympus Property Financial Report</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #0b1923;
+      color: #e0e8ef;
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      padding: 30px;
+    }
+
+    h2 {
+      color: #22d3ee;
+      font-weight: 600;
+      margin-bottom: 2rem;
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      background: linear-gradient(90deg, #102a36, #163946);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      margin-bottom: 2rem;
+    }
+
+    select, .btn-custom {
+      background-color: #183842;
+      color: #00e1ff;
+      border: 1px solid #2c525e;
+      border-radius: 8px;
+      padding: 10px 15px;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+
+    select:hover, .btn-custom:hover {
+      background-color: #1f4955;
+    }
+
+    .table-container {
+      background: #122933;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      overflow: hidden;
+    }
+
+    th {
+      background-color: #1a3a46;
+      color: #00d8ff;
+      padding: 12px;
+      text-transform: uppercase;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 10px 12px;
+      border-top: 1px solid #1f404b;
+    }
+
+    tr:hover {
+      background-color: #1e4855;
+      transition: background-color 0.2s ease-in-out;
+    }
+
+    .expand-btn {
+      color: #22d3ee;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .nested-table {
+      display: none;
+      background-color: #162f37;
+      transition: all 0.3s ease-in-out;
+    }
+
+    .nested-header {
+      background-color: #1b3943;
+      color: #00d8ff;
+      font-weight: 500;
+      padding: 10px;
+    }
+
+    .search-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1rem;
+    }
+
+    .search-input {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #2c525e;
+      background: #183842;
+      color: #fff;
+      width: 250px;
+    }
+
+    .dropdown-period {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      background-color: #183842;
+      min-width: 250px;
+      border-radius: 8px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+      padding: 10px;
+      z-index: 1;
+    }
+
+    .dropdown-period:hover .dropdown-content {
+      display: block;
+    }
+
+    .dropdown-content select {
+      margin-bottom: 10px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h2>Olympus Property Financial Report</h2>
+
+  <div class="filter-bar">
+    <select><option>Community</option><option>All</option></select>
+    <select><option>Regional VP / Sr. VP</option><option>All</option></select>
+    <select><option>Regional Manager</option><option>All</option></select>
+    <select><option>Investor</option><option>All</option></select>
+
+    <div class="dropdown-period">
+      <button class="btn-custom">Select Period ▾</button>
+      <div class="dropdown-content">
+        <label class="text-light mb-2">Compare Quarters:</label>
+        <select id="compareQuarter1">
+          <option value="">Select Quarter 1</option>
+          <option>2025 - Q1</option>
+          <option>2025 - Q2</option>
+          <option>2025 - Q3</option>
+          <option>2025 - Q4</option>
+          <option>2026 - Q1</option>
+        </select>
+        <select id="compareQuarter2">
+          <option value="">Select Quarter 2</option>
+          <option>2025 - Q1</option>
+          <option>2025 - Q2</option>
+          <option>2025 - Q3</option>
+          <option>2025 - Q4</option>
+          <option>2026 - Q1</option>
+        </select>
+        <hr class="text-light">
+        <select id="yearSelect">
+          <option value="">Select Year</option>
+          <option>2025</option>
+          <option>2026</option>
+          <option>2027</option>
+        </select>
+        <select id="quarterSelect">
+          <option value="">Select Quarter</option>
+          <option>Q1</option>
+          <option>Q2</option>
+          <option>Q3</option>
+          <option>Q4</option>
+        </select>
+        <select id="monthSelect">
+          <option value="">Select Month</option>
+          <option>January</option>
+          <option>February</option>
+          <option>March</option>
+          <option>April</option>
+          <option>May</option>
+          <option>June</option>
+          <option>July</option>
+          <option>August</option>
+          <option>September</option>
+          <option>October</option>
+          <option>November</option>
+          <option>December</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="btn-custom">Apply Filters</button>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" class="search-input" id="searchInput" placeholder="Search Community...">
+  </div>
+
+  <div class="table-container">
+    <table class="table table-borderless table-dark align-middle">
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th></th>
+          <th>Community</th>
+          <th>Actual</th>
+          <th>Period % Var</th>
+          <th>Per Unit</th>
+        </tr>
+      </thead>
+      <tbody id="propertyTable">
+        <tr>
+          <td><input type="checkbox" class="compare-checkbox"></td>
+          <td class="expand-btn">+</td>
+          <td>Olympus Waterford</td>
+          <td>$1,852,299</td>
+          <td>-2.52%</td>
+          <td>$9,905</td>
+        </tr>
+        <tr class="nested-table">
+          <td colspan="6">
+            <div class="nested-header">Financial Breakdown</div>
+            <table class="table table-borderless table-sm text-light mb-0">
+              <thead>
+                <tr><th>Category</th><th>Sub Category</th><th>Sub Sub Category</th><th>Actual</th><th>% Var</th><th>Per Unit</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Income</td><td>Operating Revenue</td><td>4010 - Gross Potential Rent</td><td>$354,860</td><td>2.21%</td><td>$1,898</td></tr>
+                <tr><td>Operating Expense</td><td>Insurance & Taxes</td><td>6710 - Insurance - Expense</td><td>$6,004</td><td>-0.02%</td><td>$32</td></tr>
+                <tr><td>Net Operating Income</td><td>Total</td><td></td><td>$194,992</td><td>-6.57%</td><td>$1,043</td></tr>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.querySelectorAll('.expand-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const row = this.closest('tr').nextElementSibling;
+        if (row && row.classList.contains('nested-table')) {
+          row.style.display = row.style.display === 'table-row' ? 'none' : 'table-row';
+          this.textContent = this.textContent === '+' ? '-' : '+';
+        }
+      });
+    });
+
+    document.getElementById('searchInput').addEventListener('keyup', function() {
+      const filter = this.value.toLowerCase();
+      document.querySelectorAll('#propertyTable tr:not(.nested-table)').forEach(row => {
+        const text = row.cells[2].textContent.toLowerCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>

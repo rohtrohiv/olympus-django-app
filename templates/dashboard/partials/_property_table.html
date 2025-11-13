@@ -105,7 +105,8 @@
             #property-table tbody td:nth-child(11),
             #property-table tbody td:nth-child(12),
             #property-table tbody td:nth-child(13),
-            #property-table tbody td:nth-child(14) {
+            #property-table tbody td:nth-child(14),
+            #property-table tbody td:nth-child(15) {
                 font-weight: 600;
                 color: #0E555A;
             }
@@ -119,6 +120,11 @@
             /* Occupancy percentage styling */
             #property-table tbody td:nth-child(10) {
                 color: #C69A58;
+                font-weight: 700;
+            }
+            /* Delinquency percentage styling */
+            #property-table tbody td:nth-child(15) {
+                color: #DC2626;
                 font-weight: 700;
             }
         </style>
@@ -195,6 +201,7 @@
                     <th data-sort-key="market_rent" style="cursor:pointer;user-select:none;text-align:center;">Market Rent<span class="sort-indicator"></span></th>
                     <th data-sort-key="total_move_outs" style="cursor:pointer;user-select:none;text-align:center;">Move Outs<span class="sort-indicator"></span></th>
                     <th data-sort-key="avg_amount_per_sqft" style="cursor:pointer;user-select:none;text-align:center;">Avg $/sqft<span class="sort-indicator"></span></th>
+                    <th data-sort-key="delinquency" style="cursor:pointer;user-select:none;text-align:center;">Delinquency %<span class="sort-indicator"></span></th>
                 </tr>
             </thead>
             <tbody id="property-table-body">
@@ -293,7 +300,7 @@
                 }
                 
                 if (!pageItems.length){
-                    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;padding:40px;color:#94A3B8;font-size:15px;"><div style="margin-bottom:8px;"><svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin:0 auto;display:block;opacity:0.5;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div style="font-weight:600;">No properties found</div><div style="font-size:13px;margin-top:4px;">Try adjusting your search or filter criteria</div></td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:40px;color:#94A3B8;font-size:15px;"><div style="margin-bottom:8px;"><svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin:0 auto;display:block;opacity:0.5;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div style="font-weight:600;">No properties found</div><div style="font-size:13px;margin-top:4px;">Try adjusting your search or filter criteria</div></td></tr>';
                     renderPagination();
                     return;
                 }
@@ -306,6 +313,7 @@
                     const mkt = (r.market_rent!==null && r.market_rent!==undefined && r.market_rent!=='') ? ('$'+Number(r.market_rent).toLocaleString()) : '-';
                     const mo = (r.total_move_outs!==null && r.total_move_outs!==undefined) ? r.total_move_outs : '-';
                     const sqft = (r.avg_amount_per_sqft!==null && r.avg_amount_per_sqft!==undefined && r.avg_amount_per_sqft!=='') ? ('$'+Number(r.avg_amount_per_sqft).toFixed(2)) : '-';
+                    const delinq = (r.delinquency !== null && r.delinquency !== undefined && r.delinquency !== '') ? Number(r.delinquency).toFixed(3) + '%' : '-';
                     return `<tr>
                         <td style="padding:14px 12px;font-weight:600;">${r.property_number || ''}</td>
                         <td style="padding:14px 12px;text-align:left;font-weight:600;color:#0B3A3F;">${r.property_name || ''}</td>
@@ -321,6 +329,7 @@
                         <td style="padding:14px 12px;">${mkt}</td>
                         <td style="padding:14px 12px;">${mo}</td>
                         <td style="padding:14px 12px;">${sqft}</td>
+                        <td style="padding:14px 12px;">${delinq}</td>
                     </tr>`;
                 }).join('\n');
                 tbody.innerHTML = rowsHtml;
@@ -414,7 +423,7 @@
                 // columns in desired order
                 const headers = [
                     'Property Number','Property Name','Investor','Regional Manager','Regional Director','Asst Manager',
-                    'Total Units','Occupied Units','Period/Snapshot','Occupancy %','Effective Rent','Market Rent','Move Outs','Avg $/sqft'
+                    'Total Units','Occupied Units','Period/Snapshot','Occupancy %','Effective Rent','Market Rent','Move Outs','Avg $/sqft','Delinquency %'
                 ];
                 const rows = [headers.map(escapeCsv).join(',')];
                 const data = filtered.slice();
@@ -427,6 +436,7 @@
                     const mkt = (r.market_rent!==null && r.market_rent!==undefined && r.market_rent!=='') ? formatCurrency(r.market_rent) : '';
                     const mo = (r.total_move_outs!==null && r.total_move_outs!==undefined) ? r.total_move_outs : '';
                     const sqft = (r.avg_amount_per_sqft!==null && r.avg_amount_per_sqft!==undefined && r.avg_amount_per_sqft!=='') ? ('$'+Number(r.avg_amount_per_sqft).toFixed(2)) : '';
+                    const delinq = (r.delinquency !== null && r.delinquency !== undefined && r.delinquency !== '') ? Number(r.delinquency).toFixed(3) : '';
                     const row = [
                         r.property_number || '',
                         r.property_name || '',
@@ -441,7 +451,8 @@
                         eff || '',
                         mkt || '',
                         mo || '',
-                        sqft || ''
+                        sqft || '',
+                        delinq || ''
                     ];
                     rows.push(row.map(escapeCsv).join(','));
                 });

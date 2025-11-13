@@ -1,12 +1,21 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}Advanced Analytics — Olympus{% endblock %}
 
 {% block extra_head %}
+<!-- Filter Panel CSS -->
+<link rel="stylesheet" href="{% static 'dashboard/filter_panel.css' %}">
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
+  /* Analytics page specific styles */
+  body {
+    background: #F3F6F8;
+  }
+
   /* Use fluid container to prevent centered margins at different zoom levels */
   .container {
     width: 100%;
@@ -20,8 +29,22 @@
     grid-template-rows: auto 1fr;
     gap: 12px;
     padding: 8px;
-    /* Allow the container to size naturally; avoid strict calc heights which can introduce scroll/margins at zoom */
+    width: 100%;
+    box-sizing: border-box;
+    transition: padding-left .28s;
     min-height: calc(100vh - var(--topbar-h) - 24px);
+  }
+
+  /* Adjust container when filter panel is open */
+  .filter-open .analytics-container {
+    padding-left: 260px;
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 1200px) {
+    .filter-open .analytics-container {
+      padding-left: 260px;
+    }
   }
   
   .controls-panel {
@@ -30,7 +53,6 @@
     padding: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     overflow-y: auto;
-    /* Use flexible heights so zooming doesn't create unexpected gaps */
     max-height: 40vh;
     min-height: 180px;
   }
@@ -291,6 +313,27 @@
     font-size: 12px;
   }
 
+  /* Overlay when filter panel is open */
+  .filter-open .analytics-container::before {
+    content: '';
+    position: fixed;
+    left: 260px;
+    top: var(--topbar-h);
+    bottom: 0;
+    right: 0;
+    pointer-events: none;
+    background: rgba(3,11,12,0.28);
+    z-index: 70;
+    transition: opacity .28s;
+    opacity: 1;
+  }
+
+  @media (max-width: 1200px) {
+    .filter-open .analytics-container::before {
+      left: 260px;
+    }
+  }
+
   /* Global full-page loading overlay (matches dashboard.html) */
   .loading-overlay{
     position:fixed;inset:0;background:rgba(3,11,12,0.45);display:none;align-items:center;justify-content:center;z-index:1100;
@@ -335,9 +378,12 @@
 {% endblock %}
 
 {% block content %}
+<!-- Include Filter Panel Partial (includes toggle button) -->
+{% include 'dashboard/partials/_filter_panel.html' with filter_action_url='/analytics/query/' %}
+
 <div class="analytics-container">
   <div class="controls-panel">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
       <h2 style="margin: 0; color: #1F3639; font-size: 18px;">Advanced Analytics</h2>
       <div style="display: flex; gap: 6px;">
         <button type="submit" form="analyticsForm" class="btn" id="analyzeBtn">Analyze Data</button>
@@ -345,59 +391,15 @@
       </div>
     </div>
     
+    <!-- Info banner for filter panel -->
+    <div style="background: #EFF6FF; border-left: 3px solid #0EA5E9; padding: 8px 12px; margin-bottom: 12px; border-radius: 4px; font-size: 11px; color: #0B3A3F;">
+      <strong>💡 Tip:</strong> Use the <strong>🔎 Filter Panel</strong> (left sidebar) to select <strong>Period</strong>, <strong>Investors</strong>, <strong>Communities</strong>, and <strong>Regional Managers</strong>.
+    </div>
+    
     <form id="analyticsForm">
       {% csrf_token %}
       <div class="controls-grid">
-      <div class="control-group">
-        <label for="dateRange">Date Range</label>
-        <select id="dateRange" name="date_range">
-          <option value="last_30_days">Last 30 Days</option>
-          <option value="last_90_days">Last 90 Days</option>
-          <option value="last_6_months">Last 6 Months</option>
-          <option value="current_year">Current Year (to date)</option>
-          <option value="last_year">Last Year</option>
-          <option value="all_time">All Time</option>
-          <option value="custom">Custom Range</option>
-        </select>
-      </div>
-      
-      <div class="control-group" id="customDateRange" style="display: none;">
-        <label for="startDate">Start Date</label>
-        <input type="date" id="startDate" name="start_date">
-        <label for="endDate" style="margin-top: 8px;">End Date</label>
-        <input type="date" id="endDate" name="end_date">
-      </div>
-      
-      <div class="control-group">
-        <label>Properties</label>
-        <input type="text" id="propertySearch" placeholder="Search properties..." style="width: 100%; padding: 3px 8px; border: 1px solid #E5E7EB; border-radius: 4px; font-size: 11px; margin-bottom: 4px;">
-        <div class="multi-select" id="propertySelect">
-          <label><input type="checkbox" name="properties" value="all" checked> All Properties</label>
-          {% for property in properties %}
-          <label><input type="checkbox" name="properties" value="{{ property }}"> {{ property }}</label>
-          {% endfor %}
-        </div>
-      </div>
-      
-      <div class="control-group">
-        <label>Investors</label>
-        <div class="multi-select" id="investorSelect">
-          <label><input type="checkbox" name="investors" value="all" checked> All Investors</label>
-          {% for investor in investors %}
-          <label><input type="checkbox" name="investors" value="{{ investor }}"> {{ investor }}</label>
-          {% endfor %}
-        </div>
-      </div>
-      
-      <div class="control-group">
-        <label>Regional Managers</label>
-        <div class="multi-select" id="managerSelect">
-          <label><input type="checkbox" name="managers" value="all" checked> All Managers</label>
-          {% for manager in managers %}
-          <label><input type="checkbox" name="managers" value="{{ manager }}"> {{ manager }}</label>
-          {% endfor %}
-        </div>
-      </div>
+      <!-- Date Range filter moved to filter panel (Period selection) -->
       
       <div class="control-group">
         <label for="groupBy">Group By</label>
@@ -449,8 +451,8 @@
     </form>
   </div>
 
-  <!-- Global loading overlay (same as dashboard). Default to visible so users see spinner while page loads -->
-  <div id="loadingOverlay" class="loading-overlay" role="status" aria-hidden="false" style="display:flex;">
+  <!-- Global loading overlay (hidden by default, shown during data analysis) -->
+  <div id="loadingOverlay" class="loading-overlay" role="status" aria-hidden="true" style="display:none;">
     <div class="loading-box">
       <div class="loading-spinner" aria-hidden="true"></div>
       <div class="loading-text">Analyzing data…</div>
@@ -560,43 +562,15 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<!-- JSON data (application/json) - safe to include template output here without breaking JS parsing -->
-<script id="investorPropertiesJson" type="application/json">{{ investor_properties_json|safe }}</script>
-<script id="investorManagersJson" type="application/json">{{ investor_managers_json|safe }}</script>
-<script id="propertyManagersJson" type="application/json">{{ property_managers_json|safe }}</script>
-<script id="propertiesJson" type="application/json">{{ properties_json|safe }}</script>
-<script id="managersJson" type="application/json">{{ managers_json|safe }}</script>
-
 <script>
-// Parse JSON blobs from the DOM to keep template tokens out of inline JS logic
-const cascadingData = {
-  investorProperties: JSON.parse(document.getElementById('investorPropertiesJson').textContent || '{}'),
-  investorManagers: JSON.parse(document.getElementById('investorManagersJson').textContent || '{}'),
-  propertyManagers: JSON.parse(document.getElementById('propertyManagersJson').textContent || '{}')
-};
-
-// properties and managers lists are read inside the class constructor from the JSON script tags
-
 class AdvancedAnalytics {
   constructor() {
     this.chart = null;
     this.currentData = null;
     this.currentView = 'summary';
     this.currentChart = 'line';
-    // Load properties and managers JSON from script tags (keeps template tokens out of class body)
-    try {
-      this.allProperties = JSON.parse(document.getElementById('propertiesJson').textContent || '[]');
-    } catch (e) {
-      this.allProperties = [];
-    }
-    try {
-      this.allManagers = JSON.parse(document.getElementById('managersJson').textContent || '[]');
-    } catch (e) {
-      this.allManagers = [];
-    }
     
     this.initializeEventListeners();
-    this.setupCascadingFilters();
     this.initializeDateGrouping();
     this.setupAggregationRules(); // Add aggregation rules setup
     this.loadInitialData();
@@ -995,20 +969,14 @@ class AdvancedAnalytics {
   }
   
   initializeDateGrouping() {
-      // Initialize Date grouping visibility based on current date range selection
-    const dateRange = document.getElementById('dateRange').value;
+    // Date grouping is now always available since we use filter panel periods
     const groupBySelect = document.getElementById('groupBy');
     const dateOption = groupBySelect.querySelector('option[value="snapshotdate"]');
     
-      if (dateOption) {
-      // Show the Date group-by for ranges that include recent days/months
-      if (['last_30_days', 'last_90_days', 'last_6_months', 'custom', 'current_year'].includes(dateRange)) {
-        dateOption.style.display = 'block';
-        dateOption.disabled = false;
-      } else {
-        dateOption.style.display = 'none';
-        dateOption.disabled = true;
-      }
+    if (dateOption) {
+      // Enable Date group-by option (controlled by filter panel period selection)
+      dateOption.style.display = 'block';
+      dateOption.disabled = false;
     }
   }
   
@@ -1023,32 +991,7 @@ class AdvancedAnalytics {
       }
     });
     
-    // Date range change
-    document.getElementById('dateRange').addEventListener('change', (e) => {
-      const customRange = document.getElementById('customDateRange');
-      customRange.style.display = e.target.value === 'custom' ? 'block' : 'none';
-      
-      // Show/hide Date grouping option based on date range
-      const groupBySelect = document.getElementById('groupBy');
-      const dateOption = groupBySelect.querySelector('option[value="snapshotdate"]');
-      
-      if (['last_30_days', 'last_90_days', 'last_6_months', 'custom', 'current_year'].includes(e.target.value)) {
-        // Show date option for last 30 days and custom ranges
-        if (dateOption) {
-          dateOption.style.display = 'block';
-          dateOption.disabled = false;
-        }
-      } else {
-        // Hide date option for other ranges and reset to no grouping if date was selected
-        if (dateOption) {
-          dateOption.style.display = 'none';
-          dateOption.disabled = true;
-          if (groupBySelect.value === 'snapshotdate') {
-            groupBySelect.value = '';
-          }
-        }
-      }
-    });
+    // Date range moved to filter panel - no inline event listener needed
     
     // View toggles
     document.querySelectorAll('.view-toggle[data-view]').forEach(btn => {
@@ -1072,11 +1015,6 @@ class AdvancedAnalytics {
     // Export CSV
     document.getElementById('exportCsv').addEventListener('click', () => {
       this.exportToCsv();
-    });
-    
-    // Property search functionality
-    document.getElementById('propertySearch').addEventListener('input', (e) => {
-      this.filterProperties(e.target.value);
     });
     
     // Reset zoom functionality
@@ -1105,7 +1043,7 @@ class AdvancedAnalytics {
     
     // Keyboard shortcuts for panning
     document.addEventListener('keydown', (e) => {
-      if (this.chart && this.areAllPropertiesSelected() && document.getElementById('chartView').style.display !== 'none') {
+      if (this.chart && this.currentChart !== 'pie' && document.getElementById('chartView').style.display !== 'none') {
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
           this.chart.pan({x: -30}, undefined, 'default');
@@ -1118,180 +1056,7 @@ class AdvancedAnalytics {
       }
     });
     
-    // Select all checkboxes
-    this.setupSelectAll();
-  }
-  
-  setupSelectAll() {
-    ['properties', 'investors', 'managers'].forEach(group => {
-      const container = document.getElementById(group.slice(0, -1) + 'Select');
-      if (!container) return;
-      
-      const allCheckbox = container.querySelector('input[value="all"]');
-      const otherCheckboxes = container.querySelectorAll('input:not([value="all"])');
-      
-      if (allCheckbox) {
-        allCheckbox.addEventListener('change', () => {
-          otherCheckboxes.forEach(cb => cb.checked = allCheckbox.checked);
-          // Refresh chart to update zoom controls when properties change
-          if (group === 'properties' && this.currentData) {
-            setTimeout(() => this.updateChart(), 100);
-          }
-        });
-      }
-      
-      otherCheckboxes.forEach(cb => {
-        cb.addEventListener('change', () => {
-          if (allCheckbox) {
-            allCheckbox.checked = Array.from(otherCheckboxes).every(c => c.checked);
-          }
-          // Refresh chart to update zoom controls when properties change
-          if (group === 'properties' && this.currentData) {
-            setTimeout(() => this.updateChart(), 100);
-          }
-        });
-      });
-    });
-  }
-  
-  setupCascadingFilters() {
-    // Get investor checkboxes
-    const investorCheckboxes = document.querySelectorAll('input[name="investors"]:not([value="all"])');
-    
-    // Add change listeners to investor checkboxes
-    investorCheckboxes.forEach(checkbox => {
-      checkbox.addEventListener('change', () => {
-        this.updateCascadingFilters();
-      });
-    });
-    
-    // Also listen to "All Investors" checkbox
-    const allInvestorsCheckbox = document.querySelector('input[name="investors"][value="all"]');
-    if (allInvestorsCheckbox) {
-      allInvestorsCheckbox.addEventListener('change', () => {
-        this.updateCascadingFilters();
-      });
-    }
-  }
-  
-  updateCascadingFilters() {
-    const selectedInvestors = this.getSelectedInvestors();
-    
-    // Update properties based on selected investors
-    this.updatePropertiesFilter(selectedInvestors);
-    
-    // Update managers based on selected investors
-    this.updateManagersFilter(selectedInvestors);
-  }
-  
-  getSelectedInvestors() {
-    const allInvestorsChecked = document.querySelector('input[name="investors"][value="all"]').checked;
-    
-    if (allInvestorsChecked) {
-      // Return all investors
-      return Object.keys(cascadingData.investorProperties);
-    } else {
-      // Return only checked investors
-      const checked = [];
-      document.querySelectorAll('input[name="investors"]:not([value="all"]):checked').forEach(cb => {
-        checked.push(cb.value);
-      });
-      return checked;
-    }
-  }
-  
-  updatePropertiesFilter(selectedInvestors) {
-    const propertyContainer = document.getElementById('propertySelect');
-    const allPropertyCheckbox = propertyContainer.querySelector('input[value="all"]');
-    const searchTerm = document.getElementById('propertySearch').value.toLowerCase().trim();
-    
-    // Get available properties for selected investors
-    let availableProperties = new Set();
-    
-    if (selectedInvestors.length === 0 || selectedInvestors.length === Object.keys(cascadingData.investorProperties).length) {
-      // No investors selected or all selected - show all properties
-      availableProperties = new Set(this.allProperties);
-    } else {
-      // Show only properties for selected investors
-      selectedInvestors.forEach(investor => {
-        if (cascadingData.investorProperties[investor]) {
-          cascadingData.investorProperties[investor].forEach(prop => {
-            availableProperties.add(prop);
-          });
-        }
-      });
-    }
-    
-    // Update property checkboxes visibility/availability
-    const propertyCheckboxes = propertyContainer.querySelectorAll('input[name="properties"]:not([value="all"])');
-    propertyCheckboxes.forEach(checkbox => {
-      const label = checkbox.closest('label');
-      const propertyName = label.textContent.trim().toLowerCase();
-      
-      // Check both cascading filter and search filter
-      const availableFromCascading = availableProperties.has(checkbox.value);
-      const matchesSearch = searchTerm === '' || propertyName.includes(searchTerm);
-      
-      if (availableFromCascading && matchesSearch) {
-        label.style.display = 'flex';
-        label.style.opacity = '1';
-      } else {
-        label.style.display = 'none';
-        if (!availableFromCascading) {
-          checkbox.checked = false; // Uncheck unavailable properties
-        }
-      }
-    });
-    
-    // Update "All Properties" state
-    const visiblePropertyCheckboxes = Array.from(propertyCheckboxes).filter(cb => {
-      const label = cb.closest('label');
-      return label.style.display !== 'none';
-    });
-    allPropertyCheckbox.checked = visiblePropertyCheckboxes.length > 0 && 
-      visiblePropertyCheckboxes.every(cb => cb.checked);
-  }
-  
-  updateManagersFilter(selectedInvestors) {
-    const managerContainer = document.getElementById('managerSelect');
-    const allManagerCheckbox = managerContainer.querySelector('input[value="all"]');
-    
-    // Get available managers for selected investors
-    let availableManagers = new Set();
-    
-    if (selectedInvestors.length === 0 || selectedInvestors.length === Object.keys(cascadingData.investorManagers).length) {
-      // No investors selected or all selected - show all managers
-      availableManagers = new Set(this.allManagers);
-    } else {
-      // Show only managers for selected investors
-      selectedInvestors.forEach(investor => {
-        if (cascadingData.investorManagers[investor]) {
-          cascadingData.investorManagers[investor].forEach(manager => {
-            availableManagers.add(manager);
-          });
-        }
-      });
-    }
-    
-    // Update manager checkboxes visibility/availability
-    const managerCheckboxes = managerContainer.querySelectorAll('input[name="managers"]:not([value="all"])');
-    managerCheckboxes.forEach(checkbox => {
-      const label = checkbox.closest('label');
-      if (availableManagers.has(checkbox.value)) {
-        label.style.display = 'flex';
-        label.style.opacity = '1';
-      } else {
-        label.style.display = 'none';
-        checkbox.checked = false; // Uncheck unavailable managers
-      }
-    });
-    
-    // Update "All Managers" state
-    const visibleManagerCheckboxes = Array.from(managerCheckboxes).filter(cb => 
-      availableManagers.has(cb.value)
-    );
-    allManagerCheckbox.checked = visibleManagerCheckboxes.length > 0 && 
-      visibleManagerCheckboxes.every(cb => cb.checked);
+    // Select all checkboxes - removed (now using filter panel)
   }
   
   async loadInitialData() {
@@ -1321,6 +1086,73 @@ class AdvancedAnalytics {
           params.set(key, value);
         }
       }
+      
+      // Add filter panel selections if they exist
+      const periodYearSel = document.getElementById('filterPeriodYear');
+      if (periodYearSel) {
+        Array.from(periodYearSel.selectedOptions).forEach(opt => {
+          if (opt.value && opt.value !== 'all') params.append('period_year', opt.value);
+        });
+      }
+      
+      const periodQuarterSel = document.getElementById('filterPeriodQuarter');
+      if (periodQuarterSel) {
+        Array.from(periodQuarterSel.selectedOptions).forEach(opt => {
+          if (opt.value && opt.value !== 'all') params.append('period_quarter', opt.value);
+        });
+      }
+      
+      const periodMonthSel = document.getElementById('filterPeriodMonth');
+      if (periodMonthSel) {
+        Array.from(periodMonthSel.selectedOptions).forEach(opt => {
+          if (opt.value && opt.value !== 'all') params.append('period_month', opt.value);
+        });
+      }
+      
+      const investorSel = document.getElementById('filterInvestor');
+      if (investorSel) {
+        Array.from(investorSel.selectedOptions).forEach(opt => {
+          if (opt.value && opt.value !== 'all') params.append('investor', opt.value);
+        });
+      }
+      
+      const regionalSel = document.getElementById('filterRegional');
+      if (regionalSel) {
+        Array.from(regionalSel.selectedOptions).forEach(opt => {
+          if (opt.value && opt.value !== 'all') params.append('regional_manager', opt.value);
+        });
+      }
+      
+      const communitySel = document.getElementById('filterCommunity');
+      if (communitySel) {
+        Array.from(communitySel.selectedOptions).forEach(opt => {
+          if (opt.value && opt.value !== 'all') params.append('community', opt.value);
+        });
+      }
+      
+      // Determine period mode from filter panel
+      // Check which period dropdown is visible to determine mode
+      const yearDropdown = document.getElementById('yearDropdownContainer');
+      const quarterDropdown = document.getElementById('quarterDropdownContainer');
+      const monthDropdown = document.getElementById('monthDropdownContainer');
+      
+      if (yearDropdown && yearDropdown.style.display !== 'none') {
+        params.set('period_mode', 'year');
+      } else if (quarterDropdown && quarterDropdown.style.display !== 'none') {
+        params.set('period_mode', 'quarter');
+      } else if (monthDropdown && monthDropdown.style.display !== 'none') {
+        params.set('period_mode', 'month');
+      }
+      
+      // Debug: Log filter panel selections
+      console.log('Filter Panel Selections:');
+      console.log('  Period Mode:', params.get('period_mode'));
+      console.log('  Period Years:', params.getAll('period_year'));
+      console.log('  Period Quarters:', params.getAll('period_quarter'));
+      console.log('  Period Months:', params.getAll('period_month'));
+      console.log('  Investors:', params.getAll('investor'));
+      console.log('  Regional Managers:', params.getAll('regional_manager'));
+      console.log('  Communities:', params.getAll('community'));
       
   // Fetch data
   this.showProgress(20, 'Fetching data from server...');
@@ -1442,24 +1274,6 @@ class AdvancedAnalytics {
     this.updateRecordCount();
   }
   
-  // Helper function to check if all properties are selected
-  areAllPropertiesSelected() {
-    const allPropertyCheckbox = document.querySelector('input[name="properties"][value="all"]');
-    if (allPropertyCheckbox && allPropertyCheckbox.checked) {
-      return true;
-    }
-    
-    // Check if all individual properties are checked
-    const propertyCheckboxes = document.querySelectorAll('input[name="properties"]:not([value="all"])');
-    const checkedProperties = document.querySelectorAll('input[name="properties"]:not([value="all"]):checked');
-    const visibleProperties = Array.from(propertyCheckboxes).filter(cb => {
-      const label = cb.closest('label');
-      return label.style.display !== 'none';
-    });
-    
-    return visibleProperties.length > 0 && checkedProperties.length === visibleProperties.length;
-  }
-  
   updateSummary() {
     const summary = this.currentData.summary;
     
@@ -1540,8 +1354,8 @@ class AdvancedAnalytics {
     // Debug: log the chart data being used
     console.log('Chart data:', chartData);
     
-    // Check if all properties are selected to enable zoom/pan
-    const enableZoomPan = this.areAllPropertiesSelected() && this.currentChart !== 'pie';
+    // Enable zoom/pan for all chart types except pie
+    const enableZoomPan = this.currentChart !== 'pie';
 
     // Only hide/show the left-side zoom/pan controls. Keep the chart-type
     // toggle buttons always visible so users can switch chart types even when
@@ -1581,7 +1395,7 @@ class AdvancedAnalytics {
         zoomInfo.textContent = 'Wheel to zoom, drag/buttons/arrow keys to pan';
         zoomInfo.style.color = '#059669'; // Green color when active
       } else {
-        zoomInfo.textContent = 'Zoom/Pan enabled when all properties are selected';
+        zoomInfo.textContent = 'Zoom/Pan disabled for pie charts';
         zoomInfo.style.color = '#6B7280'; // Gray color when inactive
       }
     }
@@ -1781,43 +1595,11 @@ class AdvancedAnalytics {
     }
   }
   
-  filterProperties(searchTerm) {
-    // Trigger cascading filters update which will now consider the search term
-    this.updateCascadingFilters();
-  }
-  
   resetForm() {
     document.getElementById('analyticsForm').reset();
-    document.getElementById('customDateRange').style.display = 'none';
-    
-    // Reset property search
-    document.getElementById('propertySearch').value = '';
-    
-    // Reset all checkboxes
-    document.querySelectorAll('input[value="all"]').forEach(cb => cb.checked = true);
-    document.querySelectorAll('input:not([value="all"])').forEach(cb => cb.checked = false);
-    
-    // Reset cascading filters - show all options
-    this.showAllFilterOptions();
     
     this.currentData = null;
     document.getElementById('exportCsv').style.display = 'none';
-  }
-  
-  showAllFilterOptions() {
-    // Show all property options
-    const propertyLabels = document.querySelectorAll('#propertySelect label:not(:first-child)');
-    propertyLabels.forEach(label => {
-      label.style.display = 'flex';
-      label.style.opacity = '1';
-    });
-    
-    // Show all manager options
-    const managerLabels = document.querySelectorAll('#managerSelect label:not(:first-child)');
-    managerLabels.forEach(label => {
-      label.style.display = 'flex';
-      label.style.opacity = '1';
-    });
   }
   
   exportToCsv() {
@@ -1880,7 +1662,19 @@ class AdvancedAnalytics {
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-  new AdvancedAnalytics();
+  const analyticsInstance = new AdvancedAnalytics();
+  
+  // Expose analytics trigger function globally for filter panel
+  window.triggerAnalytics = function() {
+    analyticsInstance.analyzeData();
+  };
 });
 </script>
+
+<!-- Filter Panel JavaScript -->
+<script>
+  // Set the filter action URL for this page (analytics query endpoint)
+  window.filterActionUrl = '/analytics/query/';
+</script>
+<script src="{% static 'dashboard/filter_panel.js' %}"></script>
 {% endblock %}

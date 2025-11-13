@@ -1077,6 +1077,72 @@ select[multiple] option:checked {
         
         if (!toggle || !menu || !select) return;
         
+        // Function to rebuild dropdown menu items from select options
+        function rebuildDropdownMenu() {
+            // Find the dropdown menu items container (between search and actions)
+            const searchDiv = menu.querySelector('.dropdown-search');
+            const actionsDiv = menu.querySelector('.dropdown-actions');
+            
+            // Remove all existing menu items
+            const existingItems = menu.querySelectorAll('.dropdown-menu-item');
+            existingItems.forEach(item => item.remove());
+            
+            // Get currently selected values to preserve them
+            const selectedValues = Array.from(select.selectedOptions).map(opt => opt.value);
+            
+            // Rebuild menu items from select options
+            const fragment = document.createDocumentFragment();
+            Array.from(select.options).forEach(option => {
+                if (!option.value) return; // Skip empty options
+                
+                const item = document.createElement('div');
+                item.className = 'dropdown-menu-item';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = option.value;
+                checkbox.checked = selectedValues.includes(option.value);
+                checkbox.id = `${selectId}_${option.value.replace(/\s+/g, '_')}`;
+                
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.textContent = option.textContent;
+                
+                item.appendChild(checkbox);
+                item.appendChild(label);
+                fragment.appendChild(item);
+                
+                // Add event listener to checkbox
+                checkbox.addEventListener('change', function() {
+                    const selectOption = select.querySelector(`option[value="${this.value}"]`);
+                    if (selectOption) {
+                        selectOption.selected = this.checked;
+                        select.dispatchEvent(new Event('change'));
+                    }
+                    updateToggleText();
+                    renderChips(select, chipsId);
+                });
+                
+                // Add label click handler
+                label.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                });
+            });
+            
+            // Insert items between search and actions
+            if (actionsDiv) {
+                menu.insertBefore(fragment, actionsDiv);
+            } else if (searchDiv) {
+                searchDiv.parentNode.insertBefore(fragment, searchDiv.nextSibling);
+            } else {
+                menu.appendChild(fragment);
+            }
+            
+            updateToggleText();
+        }
+        
         // Toggle dropdown
         toggle.addEventListener('click', function(e) {
             e.stopPropagation();
@@ -1098,24 +1164,19 @@ select[multiple] option:checked {
             }
         });
         
-        // Handle checkbox changes
+        // Handle checkbox changes (initial binding - will be rebound on rebuild)
         const checkboxes = menu.querySelectorAll('input[type="checkbox"]');
         checkboxes.forEach(checkbox => {
             checkbox.addEventListener('change', function() {
-                // Update hidden select element
                 const option = select.querySelector(`option[value="${this.value}"]`);
                 if (option) {
                     option.selected = this.checked;
+                    select.dispatchEvent(new Event('change'));
                 }
-                
-                // Update toggle button text
                 updateToggleText();
-                
-                // Update chips
                 renderChips(select, chipsId);
             });
             
-            // Also update on label click
             const label = checkbox.nextElementSibling;
             if (label) {
                 label.addEventListener('click', function(e) {
@@ -1141,7 +1202,6 @@ select[multiple] option:checked {
                 });
             });
             
-            // Prevent dropdown from closing when clicking search input
             searchInput.addEventListener('click', function(e) {
                 e.stopPropagation();
             });
@@ -1150,20 +1210,19 @@ select[multiple] option:checked {
         // Update toggle button text based on selections
         function updateToggleText() {
             const selectedOptions = Array.from(select.selectedOptions);
-            const placeholder = toggle.querySelector('.placeholder');
+            const placeholderText = toggle.dataset.placeholder || 'Select...';
             
             if (selectedOptions.length === 0) {
-                toggle.innerHTML = `<span class="placeholder">${placeholder.textContent}</span>`;
-                toggle.innerHTML += '<span></span>'; // for the arrow
+                toggle.innerHTML = `<span class="placeholder">${placeholderText}</span>`;
+                toggle.innerHTML += '<span></span>';
             } else if (selectedOptions.length === 1) {
                 toggle.innerHTML = `<span class="selected-count">${selectedOptions[0].textContent}</span>`;
-                toggle.innerHTML += '<span></span>'; // for the arrow
+                toggle.innerHTML += '<span></span>';
             } else {
                 toggle.innerHTML = `<span class="selected-count">${selectedOptions.length} selected</span>`;
-                toggle.innerHTML += '<span></span>'; // for the arrow
+                toggle.innerHTML += '<span></span>';
             }
             
-            // Re-add the arrow
             const arrow = toggle.querySelector('span:last-child');
             if (arrow) {
                 arrow.className = '';
@@ -1171,10 +1230,16 @@ select[multiple] option:checked {
             }
         }
         
+        // Store placeholder text
+        const placeholderEl = toggle.querySelector('.placeholder');
+        if (placeholderEl) {
+            toggle.dataset.placeholder = placeholderEl.textContent;
+        }
+        
         // Initialize toggle text
         updateToggleText();
         
-        // Sync checkboxes with select element (for pre-selected values)
+        // Sync checkboxes with select element
         Array.from(select.selectedOptions).forEach(option => {
             const checkbox = menu.querySelector(`input[value="${option.value}"]`);
             if (checkbox) {
@@ -1182,13 +1247,13 @@ select[multiple] option:checked {
             }
         });
         
-        // Update chips on change - THIS IS IMPORTANT for chip removal
+        // Update chips on select change
         select.addEventListener('change', function() {
             updateToggleText();
             renderChips(select, chipsId);
         });
         
-        return { toggle, menu, select, updateToggleText };
+        return { toggle, menu, select, updateToggleText, rebuildDropdownMenu };
     }
 
     // Initialize custom dropdowns for period filters
@@ -1473,11 +1538,20 @@ select[multiple] option:checked {
                 if(keep.has(o.value)) opt.selected = true;
                 sel.appendChild(opt);
             });
+            
+            // Rebuild the custom dropdown menu to sync with new select options
+            if(sel.id === 'filterInvestor' && investorDropdown && investorDropdown.rebuildDropdownMenu){
+                investorDropdown.rebuildDropdownMenu();
+            } else if(sel.id === 'filterRegional' && regionalDropdown && regionalDropdown.rebuildDropdownMenu){
+                regionalDropdown.rebuildDropdownMenu();
+            } else if(sel.id === 'filterCommunity' && communityDropdown && communityDropdown.rebuildDropdownMenu){
+                communityDropdown.rebuildDropdownMenu();
+            }
+            
             // Don't rebind or re-render chips during rebuild - will be done after cascade completes
             // Only update chips if we're not in the middle of initialization
             if(typeof isInitializing === 'undefined' || !isInitializing){
                 renderChips(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
-                makeMultiSelectToggleable(sel, sel.id==='filterInvestor' ? 'investorChips' : sel.id==='filterRegional' ? 'regionalChips' : 'communityChips');
             }
         }
 
@@ -3053,6 +3127,59 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
+<!-- Modal for Delinquency Trend -->
+<div id="delinquency-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;overflow-y:auto;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1100px;width:95vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;margin:20px auto;max-height:90vh;overflow-y:auto;">
+        <button onclick="closeDelinquencyChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;z-index:10;">&times;</button>
+        
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Delinquency Trend</h2>
+        
+        <!-- Period Selector -->
+        <div style="background:#F3F6F8;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Years:</div>
+                <div id="delinquencyModalYearContainer" style="display:flex;flex-wrap:wrap;gap:6px;">
+                    {% for year in period_options.keys %}
+                    <button type="button" class="delinquency-year-chip" data-year="{{ year }}" onclick="toggleDelinquencyYearChip(this)" style="padding:6px 14px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;">{{ year }}</button>
+                    {% endfor %}
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Click to select multiple)</span>
+            </div>
+            
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Months:</div>
+                <div id="delinquencyModalMonthContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-width:700px;">
+                    <button type="button" class="delinquency-month-chip" data-month="Jan" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jan</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Feb" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Feb</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Mar" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Mar</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Apr" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Apr</button>
+                    <button type="button" class="delinquency-month-chip" data-month="May" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">May</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Jun" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jun</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Jul" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jul</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Aug" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Aug</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Sep" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Sep</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Oct" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Oct</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Nov" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Nov</button>
+                    <button type="button" class="delinquency-month-chip" data-month="Dec" onclick="toggleDelinquencyMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Dec</button>
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Optional - leave blank for all months)</span>
+            </div>
+            
+            <!-- Apply Button -->
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button onclick="applyDelinquencyModalPeriodChange()" style="padding:8px 24px;background:#0E555A;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0B3A3F'" onmouseout="this.style.background='#0E555A'">
+                    Apply
+                </button>
+            </div>
+        </div>
+        
+        <!-- Chart Container -->
+        <div style="height:450px;">
+            <canvas id="modalChartDelinquency"></canvas>
+        </div>
+    </div>
+</div>
+
 <!-- Modal for Occupancy Chart with Tabs -->
 <div id="occupancy-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;overflow-y:auto;">
     <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1100px;width:95vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;margin:20px auto;max-height:90vh;overflow-y:auto;">
@@ -3857,7 +3984,322 @@ document.addEventListener('click', function(e) {
     if (e.target === modal) {
         closeOccupancyChartModal();
     }
+    const delinquencyModal = document.getElementById('delinquency-chart-modal');
+    if (e.target === delinquencyModal) {
+        closeDelinquencyChartModal();
+    }
 });
+
+// ========== Delinquency Modal Functions ==========
+
+let delinquencyModalChart = null;
+
+function openDelinquencyChartModal() {
+    const modal = document.getElementById('delinquency-chart-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Initialize with current page values
+        initializeDelinquencyModalPeriodSelector();
+        // Render chart
+        renderDelinquencyChartInModal();
+    }
+}
+
+function closeDelinquencyChartModal() {
+    const modal = document.getElementById('delinquency-chart-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function initializeDelinquencyModalPeriodSelector() {
+    // Initialize with current years from server context
+    // eslint-disable-next-line
+    const selectedYearsFromServer = {{ selected_years|safe }};
+    // eslint-disable-next-line
+    const initialYear = '{{ selected_year|default:"" }}';
+    
+    if (selectedYearsFromServer && selectedYearsFromServer.length > 0) {
+        setSelectedDelinquencyYears(selectedYearsFromServer.map(y => String(y)));
+    } else if (initialYear) {
+        setSelectedDelinquencyYears([initialYear]);
+    } else {
+        const firstYearChip = document.querySelector('.delinquency-year-chip');
+        if (firstYearChip) {
+            setSelectedDelinquencyYears([firstYearChip.dataset.year]);
+        }
+    }
+    
+    // Get selected months from server context if in month mode
+    try {
+        const selectedMonthsScript = document.getElementById('initialSelectedMonthsData');
+        if (selectedMonthsScript) {
+            const selectedMonths = JSON.parse(selectedMonthsScript.textContent);
+            if (selectedMonths && selectedMonths.length > 0) {
+                const monthAbbrs = selectedMonths.map(m => {
+                    const parts = m.split('-');
+                    return parts[0];
+                });
+                setSelectedDelinquencyMonths(monthAbbrs);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to initialize delinquency month selector:', e);
+    }
+}
+
+function toggleDelinquencyYearChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '500';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function toggleDelinquencyMonthChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '400';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function getSelectedDelinquencyYears() {
+    const chips = document.querySelectorAll('.delinquency-year-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.year);
+}
+
+function getSelectedDelinquencyMonths() {
+    const chips = document.querySelectorAll('.delinquency-month-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.month);
+}
+
+function setSelectedDelinquencyYears(yearsArray) {
+    document.querySelectorAll('.delinquency-year-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '500';
+    });
+    yearsArray.forEach(year => {
+        const chip = document.querySelector(`.delinquency-year-chip[data-year="${year}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function setSelectedDelinquencyMonths(monthsArray) {
+    document.querySelectorAll('.delinquency-month-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '400';
+    });
+    monthsArray.forEach(month => {
+        const chip = document.querySelector(`.delinquency-month-chip[data-month="${month}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function applyDelinquencyModalPeriodChange() {
+    const years = getSelectedDelinquencyYears();
+    const months = getSelectedDelinquencyMonths();
+    
+    if (years.length === 0) {
+        alert('Please select at least one year');
+        return;
+    }
+    
+    const params = new URLSearchParams();
+    
+    if (months.length === 0) {
+        params.set('period_mode', 'year');
+        years.forEach(y => params.append('period_year', y));
+        params.set('period', years.join(', '));
+    } else {
+        params.set('period_mode', 'month');
+        years.forEach(year => {
+            months.forEach(m => params.append('period_month', `${m}-${year}`));
+        });
+        params.set('period', years.join(', ') + ' ' + (months.length ? months.join(',') : ''));
+    }
+    
+    // Preserve main dashboard filters
+    const mainUrl = new URL(window.location.href);
+    const mainParams = new URLSearchParams(mainUrl.search);
+    const investor = mainParams.getAll('investor');
+    const regional_manager = mainParams.getAll('regional_manager');
+    const community = mainParams.getAll('community');
+    
+    investor.forEach(inv => { if (inv) params.append('investor', inv); });
+    regional_manager.forEach(rm => { if (rm) params.append('regional_manager', rm); });
+    community.forEach(comm => { if (comm) params.append('community', comm); });
+    
+    params.set('format', 'json');
+    
+    const applyBtn = document.querySelector('#delinquency-chart-modal button[onclick="applyDelinquencyModalPeriodChange()"]');
+    const originalBtnText = applyBtn ? applyBtn.textContent : 'Apply';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Loading...';
+    }
+    
+    fetch('/dashboard/?' + params.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.delinquency_data) {
+            renderDelinquencyChartInModal(data.delinquency_data);
+        }
+    })
+    .catch(error => {
+        console.error('Failed to fetch delinquency data:', error);
+        alert('Failed to load delinquency data. Please try again.');
+    })
+    .finally(() => {
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    });
+}
+
+function renderDelinquencyChartInModal(customData = null) {
+    const ctx = document.getElementById('modalChartDelinquency');
+    if (!ctx) return;
+    
+    // Use provided data or fetch from page context
+    let chartData = customData;
+    if (!chartData) {
+        // eslint-disable-next-line
+        chartData = {{ delinquency_chart_data|safe }};
+    }
+    
+    if (delinquencyModalChart) {
+        delinquencyModalChart.destroy();
+    }
+    
+    delinquencyModalChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels || [],
+            datasets: [{
+                label: 'Delinquency %',
+                data: chartData.data || [],
+                backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                borderColor: '#EF4444',
+                borderWidth: 2,
+                borderRadius: 6,
+                hoverBackgroundColor: 'rgba(239, 68, 68, 0.9)',
+                hoverBorderColor: '#DC2626'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        font: { size: 13, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: 12
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#fff',
+                    bodyColor: '#E2E8F0',
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return 'Delinquency: ' + context.parsed.y.toFixed(3) + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Delinquency Rate (%)',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 0, bottom: 10 }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(3) + '%';
+                        },
+                        font: { size: 12 },
+                        color: '#64748B'
+                    },
+                    grid: {
+                        color: 'rgba(229, 231, 235, 0.6)',
+                        drawBorder: false
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Period',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 10, bottom: 0 }
+                    },
+                    ticks: {
+                        font: { size: 12 },
+                        color: '#64748B',
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    }
+                }
+            }
+        }
+    });
+}
+
 </script>
 
 {% endblock %}

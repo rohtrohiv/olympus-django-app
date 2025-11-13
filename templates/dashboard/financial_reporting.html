@@ -1,0 +1,471 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block title %}Financial Reporting - Olympus{% endblock %}
+
+{% block extra_head %}
+<!-- Filter Panel CSS -->
+<link rel="stylesheet" href="{% static 'dashboard/filter_panel.css' %}">
+<style>
+    /* Financial Reporting specific styles matching Olympus design system */
+    :root {
+        --olympus-teal: #0E555A;
+        --olympus-dark-teal: #0B3A3F;
+        --olympus-gold: #C69A58;
+        --olympus-cyan: #59E6F6;
+        --olympus-bg: #F3F6F8;
+    }
+
+    body {
+        background: #F3F6F8;
+    }
+
+    .financial-container {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 24px 16px;
+        width: 100%;
+        box-sizing: border-box;
+        transition: padding-left .28s;
+    }
+
+    /* Adjust container when filter panel is open */
+    .filter-open .financial-container {
+        padding-left: 260px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1200px) {
+        .filter-open .financial-container {
+            padding-left: 260px;
+        }
+    }
+
+    .page-header {
+        margin-bottom: 32px;
+        padding-bottom: 20px;
+        border-bottom: 3px solid var(--olympus-teal);
+    }
+
+    .page-header h1 {
+        color: var(--olympus-dark-teal);
+        font-size: 32px;
+        font-weight: 700;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .page-header h1 svg {
+        width: 36px;
+        height: 36px;
+        color: var(--olympus-teal);
+    }
+
+    /* Search Bar */
+    .search-container {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 20px;
+        transition: padding-right .28s;
+    }
+
+    .filter-open .search-container {
+        padding-right: 12px;
+    }
+
+    .search-input {
+        width: 320px;
+        padding: 12px 16px 12px 44px;
+        border: 2px solid #E5E7EB;
+        border-radius: 10px;
+        background: #FFFFFF;
+        font-size: 14px;
+        position: relative;
+        transition: all 0.2s;
+    }
+
+    .search-wrapper {
+        position: relative;
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 20px;
+        height: 20px;
+        color: #64748B;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--olympus-teal);
+        box-shadow: 0 0 0 3px rgba(14, 85, 90, 0.1);
+    }
+
+    /* Table Styles */
+    .table-wrapper {
+        background: #FFFFFF;
+        border-radius: 16px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        border: 1px solid #E5E7EB;
+        overflow: hidden;
+    }
+
+    .financial-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .financial-table thead th {
+        background: linear-gradient(135deg, var(--olympus-teal) 0%, var(--olympus-dark-teal) 100%);
+        color: #FFFFFF;
+        padding: 16px 14px;
+        text-align: left;
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 3px solid var(--olympus-gold);
+    }
+
+    .financial-table thead th:first-child {
+        width: 60px;
+        text-align: center;
+    }
+
+    .financial-table thead th:nth-child(2) {
+        width: 60px;
+        text-align: center;
+    }
+
+    .financial-table tbody tr {
+        border-bottom: 1px solid #F3F4F6;
+        transition: all 0.2s;
+    }
+
+    .financial-table tbody tr:hover {
+        background: linear-gradient(90deg, rgba(89,230,246,0.08) 0%, rgba(14,85,90,0.05) 100%);
+    }
+
+    .financial-table tbody td {
+        padding: 16px 14px;
+        color: #1F2937;
+        font-size: 14px;
+    }
+
+    .expand-btn {
+        width: 32px;
+        height: 32px;
+        background: var(--olympus-teal);
+        color: #FFFFFF;
+        border: none;
+        border-radius: 6px;
+        font-size: 20px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto;
+    }
+
+    .expand-btn:hover {
+        background: var(--olympus-gold);
+        transform: scale(1.1);
+    }
+
+    .community-name {
+        font-weight: 700;
+        color: var(--olympus-dark-teal);
+    }
+
+    .actual-amount {
+        font-weight: 700;
+        color: #059669;
+        font-family: 'Segoe UI', monospace;
+    }
+
+    .variance-positive {
+        color: #059669;
+        font-weight: 600;
+    }
+
+    .variance-negative {
+        color: #DC2626;
+        font-weight: 600;
+    }
+
+    .per-unit {
+        color: var(--olympus-teal);
+        font-weight: 600;
+    }
+
+    /* Nested Table */
+    .nested-row {
+        display: none;
+        background: #F8FAFC;
+    }
+
+    .nested-row.show {
+        display: table-row;
+    }
+
+    .nested-content {
+        padding: 0;
+    }
+
+    .nested-header {
+        background: linear-gradient(135deg, var(--olympus-gold) 0%, #A67C3F 100%);
+        color: #FFFFFF;
+        padding: 12px 20px;
+        font-weight: 700;
+        font-size: 14px;
+        letter-spacing: 0.5px;
+    }
+
+    .breakdown-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0;
+    }
+
+    .breakdown-table thead th {
+        background: #E5E7EB;
+        color: var(--olympus-dark-teal);
+        padding: 12px 14px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid var(--olympus-teal);
+    }
+
+    .breakdown-table tbody td {
+        padding: 12px 14px;
+        font-size: 13px;
+        border-bottom: 1px solid #E5E7EB;
+    }
+
+    .breakdown-table tbody tr:hover {
+        background: rgba(198, 154, 88, 0.08);
+    }
+
+    .category-cell {
+        font-weight: 600;
+        color: var(--olympus-teal);
+    }
+
+    /* Checkbox */
+    .compare-checkbox {
+        width: 20px;
+        height: 20px;
+        accent-color: var(--olympus-teal);
+        cursor: pointer;
+    }
+
+    /* Overlay when filter panel is open */
+    .filter-open .financial-container::before {
+        content: '';
+        position: fixed;
+        left: 260px;
+        top: var(--topbar-h);
+        bottom: 0;
+        right: 0;
+        pointer-events: none;
+        background: rgba(3,11,12,0.28);
+        z-index: 70;
+        transition: opacity .28s;
+        opacity: 1;
+    }
+
+    @media (max-width: 1200px) {
+        .filter-open .financial-container::before {
+            left: 260px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Loading overlay -->
+<div id="loadingOverlay" class="loading-overlay" role="status" aria-hidden="true">
+    <div class="loading-box">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading...</div>
+    </div>
+</div>
+
+<!-- Include Filter Panel Partial -->
+{% include 'dashboard/partials/_filter_panel.html' with filter_action_url='/financial-reporting/' %}
+
+<div class="financial-container">
+    <div class="page-header">
+        <h1>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+            </svg>
+            Financial Reporting
+        </h1>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-container">
+        <div class="search-wrapper">
+            <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input type="text" class="search-input" id="searchInput" placeholder="Search community...">
+        </div>
+    </div>
+
+    <!-- Financial Table -->
+    <div class="table-wrapper">
+        <table class="financial-table">
+            <thead>
+                <tr>
+                    <th>Select</th>
+                    <th></th>
+                    <th>Community</th>
+                    <th>Actual</th>
+                    <th>Period % Var</th>
+                    <th>Per Unit</th>
+                </tr>
+            </thead>
+            <tbody id="propertyTable">
+                {% for community in communities %}
+                <tr class="main-row" data-community="{{ community.name }}">
+                    <td style="text-align: center;">
+                        <input type="checkbox" class="compare-checkbox">
+                    </td>
+                    <td>
+                        <button class="expand-btn" onclick="toggleRow(this)">+</button>
+                    </td>
+                    <td class="community-name">{{ community.name }}</td>
+                    <td class="actual-amount">${{ community.actual|floatformat:0|intcomma }}</td>
+                    <td class="{% if community.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                        {{ community.variance }}%
+                    </td>
+                    <td class="per-unit">${{ community.per_unit|floatformat:0|intcomma }}</td>
+                </tr>
+                <tr class="nested-row">
+                    <td colspan="6" class="nested-content">
+                        <div class="nested-header">Financial Breakdown - {{ community.name }}</div>
+                        <table class="breakdown-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Sub Category</th>
+                                    <th>Sub Sub Category</th>
+                                    <th>Actual</th>
+                                    <th>% Var</th>
+                                    <th>Per Unit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if community.breakdown %}
+                                    {% for item in community.breakdown %}
+                                    <tr>
+                                        <td class="category-cell">{{ item.category }}</td>
+                                        <td>{{ item.sub_category }}</td>
+                                        <td>{{ item.sub_sub_category }}</td>
+                                        <td class="actual-amount">${{ item.actual|floatformat:0|intcomma }}</td>
+                                        <td class="{% if item.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                                            {{ item.variance }}%
+                                        </td>
+                                        <td class="per-unit">${{ item.per_unit|floatformat:0|intcomma }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="6" style="text-align: center; padding: 24px; color: #94A3B8;">
+                                            No detailed breakdown available
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+// Toggle expand/collapse for financial breakdown
+function toggleRow(btn) {
+    const mainRow = btn.closest('tr');
+    const nestedRow = mainRow.nextElementSibling;
+    
+    if (nestedRow && nestedRow.classList.contains('nested-row')) {
+        nestedRow.classList.toggle('show');
+        btn.textContent = btn.textContent === '+' ? '−' : '+';
+        
+        if (nestedRow.classList.contains('show')) {
+            btn.style.background = '#C69A58';
+        } else {
+            btn.style.background = '#0E555A';
+        }
+    }
+}
+
+// Toggle period dropdown
+function togglePeriodDropdown() {
+    const dropdown = document.querySelector('.period-dropdown');
+    dropdown.classList.toggle('active');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const dropdown = document.querySelector('.period-dropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('active');
+    }
+});
+
+// Search functionality
+document.getElementById('searchInput').addEventListener('keyup', function() {
+    const filter = this.value.toLowerCase();
+    const rows = document.querySelectorAll('#propertyTable tr.main-row');
+    
+    rows.forEach(row => {
+        const community = row.getAttribute('data-community').toLowerCase();
+        const nestedRow = row.nextElementSibling;
+        
+        if (community.includes(filter)) {
+            row.style.display = '';
+            if (nestedRow && nestedRow.classList.contains('nested-row')) {
+                // Keep nested row hidden unless it was expanded
+                if (!nestedRow.classList.contains('show')) {
+                    nestedRow.style.display = 'none';
+                } else {
+                    nestedRow.style.display = '';
+                }
+            }
+        } else {
+            row.style.display = 'none';
+            if (nestedRow && nestedRow.classList.contains('nested-row')) {
+                nestedRow.style.display = 'none';
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- Filter Panel JavaScript -->
+<script>
+    // Set the filter action URL for this page
+    window.filterActionUrl = '/financial-reporting/';
+</script>
+<script src="{% static 'dashboard/filter_panel.js' %}"></script>
+{% endblock %}

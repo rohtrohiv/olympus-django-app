@@ -1,0 +1,335 @@
+/* ===== FILTER PANE (LEFT) ===== */
+.filter-toggle-btn{
+    width:44px;height:44px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:transparent;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;margin-right:8px;color:var(--nav-text);
+}
+.filter-toggle-floating{
+    position:fixed;left:0px;top:calc(var(--topbar-h) + 18px);width:56px;height:56px;border-radius:50%;
+    background:var(--aqua);color:#053033;display:flex;align-items:center;justify-content:center;z-index:90;
+    box-shadow:0 8px 24px rgba(9,45,47,0.12);border:2px solid rgba(255,255,255,0.9);cursor:pointer;font-size:20px
+}
+.filter-toggle-floating{transition:left .28s ease, transform .18s}
+
+/* When filter pane is open, move the floating toggle to sit at the edge of the pane */
+.filter-open .filter-toggle-floating{left:calc(260px + 20px);transform:translateX(0)}
+@media (max-width:1200px){
+    .filter-open .filter-toggle-floating{left:calc(260px + 20px)}
+}
+
+/* Period segmented control */
+.period-mode-btn{cursor:pointer}
+.period-mode-btn[aria-pressed="true"]{background:#eef6fb}
+
+/* When drawer opens, move the floating toggle to the drawer edge */
+.drawer-open .filter-toggle-floating{left:calc(280px + 20px)}
+@media (max-width:1200px){
+    .drawer-open .filter-toggle-floating{left:calc(280px + 20px)}
+}
+
+/* If both drawer and filter are open prefer the larger offset (drawer) */
+.drawer-open.filter-open .filter-toggle-floating{left:calc(280px + 20px) !important}
+@media (max-width:1200px){
+    .drawer-open.filter-open .filter-toggle-floating{left:calc(280px + 20px) !important}
+}
+.filter-pane{
+    position:fixed;left:0;top:var(--topbar-h);bottom:0;width:260px;
+    /* Slightly cooler, subtly tinted background to separate from page bg */
+    background: linear-gradient(180deg, #ffffff 0%, #eefafc 100%);
+    /* branded divider and aqua-tinted shadow for subtle emphasis */
+    border-right: 1px solid rgba(11,58,63,0.06);
+    /* use a faint aqua glow blended with a soft dark shadow to match brand */
+    box-shadow: 6px 0 40px rgba(89,230,246,0.06), 2px 0 18px rgba(9,45,47,0.06);
+    transform:translateX(-100%);transition:transform .28s ease-in-out;z-index:80;padding:12px;overflow:auto;
+}
+.filter-pane.open{transform:translateX(0)}
+.filter-pane h3{margin:0 0 8px;color:#0B3A3F;font-size:14px}
+.filter-section{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px}
+.filter-actions{display:flex;gap:8px;align-items:center}
+
+/* Multi-select chips styling */
+.filter-chips{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;min-height:24px}
+.filter-chip{
+    display:inline-flex;align-items:center;gap:4px;padding:4px 8px;
+    background:#eef6fb;border:1px solid #b3dce8;border-radius:12px;
+    font-size:11px;font-weight:600;color:#0B3A3F;
+}
+.filter-chip-remove{
+    cursor:pointer;padding:0 4px;color:#4f6bed;font-weight:700;
+    border:none;background:none;font-size:14px;line-height:1;
+}
+.filter-chip-remove:hover{color:#d92f44}
+
+/* Custom dropdown with checkboxes */
+.custom-dropdown {
+    position: relative;
+    width: 100%;
+}
+.dropdown-toggle {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #0B3A3F;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.dropdown-toggle:hover {
+    border-color: #59E6F6;
+}
+.dropdown-toggle:focus {
+    outline: none;
+    border-color: #59E6F6;
+    box-shadow: 0 0 0 3px rgba(89, 230, 246, 0.1);
+}
+.dropdown-toggle::after {
+    content: '▼';
+    font-size: 10px;
+    color: #64748B;
+    transition: transform 0.2s;
+}
+.dropdown-toggle.open::after {
+    transform: rotate(180deg);
+}
+.dropdown-toggle .placeholder {
+    color: #64748B;
+}
+.dropdown-toggle .selected-count {
+    color: #0E555A;
+    font-weight: 700;
+}
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 100;
+    display: none;
+}
+.dropdown-menu.open {
+    display: block;
+}
+.dropdown-menu-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+    transition: background 0.15s;
+}
+.dropdown-menu-item:last-child {
+    border-bottom: none;
+}
+.dropdown-menu-item:hover {
+    background: #F3F6F8;
+}
+.dropdown-menu-item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #0E555A;
+}
+.dropdown-menu-item label {
+    flex: 1;
+    cursor: pointer;
+    font-size: 13px;
+    color: #0B3A3F;
+    font-weight: 500;
+    user-select: none;
+}
+.dropdown-search {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+}
+.dropdown-search input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+}
+.dropdown-search input:focus {
+    border-color: #59E6F6;
+    box-shadow: 0 0 0 2px rgba(89, 230, 246, 0.1);
+}
+.dropdown-actions {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 6px;
+    z-index: 1;
+}
+.dropdown-actions button {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #0B3A3F;
+}
+.dropdown-actions button:hover {
+    background: #F3F6F8;
+    border-color: #59E6F6;
+}
+.dropdown-actions button:active {
+    transform: scale(0.98);
+}
+
+/* Multi-select dropdown styling */
+select[multiple] {
+    cursor: pointer;
+}
+select[multiple] option {
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin: 2px 0;
+}
+select[multiple] option:hover {
+    background: #eef6fb !important;
+}
+select[multiple] option:checked {
+    background: #59E6F6 !important;
+    color: #063235;
+    font-weight: 600;
+}
+.filter-close{margin-left:auto;background:none;border:none;padding:8px;border-radius:8px;cursor:pointer;color:#4f6bed}
+
+/* When filter pane is open, use padding and width to keep content within viewport */
+.filter-open .main{padding-left:260px;width:100%;box-sizing:border-box;transition:padding-left .28s}
+.filter-open .charts-container{padding-left:260px;width:100%;box-sizing:border-box;transition:padding-left .28s}
+.filter-open div[style*="width:100%"]{padding-left:260px;box-sizing:border-box;transition:padding-left .28s}
+/* Ensure the property table and its wrapper shift when filter pane is open to avoid overlap */
+.filter-open .property-table-container{padding-left:0px !important;box-sizing:border-box;transition:padding-left .28s}
+.filter-open div[style*="width:100%"] > .property-table-container{padding-left:0px !important}
+@media (max-width:1200px){
+    .filter-open .main,.filter-open .charts-container,div[style*="width:100%"].filter-open{padding-left:260px}
+    .filter-open .property-table-container{padding-left:260px !important}
+}
+
+/* Overlay / shadow over main UI when filter pane is open */
+.filter-open .main::before{
+    content: '';
+    position:fixed;
+    left:260px; /* start at the edge of the filter pane */
+    top:var(--topbar-h);
+    bottom:0;
+    right:0;
+    pointer-events:none; /* allow clicks through */
+    /* solid dim to uniformly de-emphasize main UI when filter is open */
+    background: rgba(3,11,12,0.28);
+    z-index:70;
+    transition:opacity .28s;
+    opacity:1;
+}
+@media (max-width:1200px){
+    .filter-open .main::before{ left:260px }
+}
+
+/* When filter pane is open, reduce KPI card min-width so they shrink instead of wrapping */
+.filter-open .card.kpi {
+    min-width: 200px;
+    flex: 1 1 200px;
+}
+@media (max-width: 1200px) {
+    .filter-open .card.kpi {
+        min-width: 180px;
+        flex: 1 1 180px;
+    }
+}
+
+/* When drawer is open, also reduce KPI card min-width */
+.drawer-open .card.kpi {
+    min-width: 180px;
+    flex: 1 1 180px;
+}
+@media (max-width: 1200px) {
+    .drawer-open .card.kpi {
+        min-width: 160px;
+        flex: 1 1 160px;
+    }
+}
+
+/* When both are open, use smallest size */
+.drawer-open.filter-open .card.kpi,
+.filter-open .drawer-open .card.kpi {
+    min-width: 160px !important;
+    flex: 1 1 160px !important;
+}
+@media (max-width: 1200px) {
+    .drawer-open.filter-open .card.kpi,
+    .filter-open .drawer-open .card.kpi {
+        min-width: 140px !important;
+        flex: 1 1 140px !important;
+    }
+}
+/* If both drawer and filter are open, prefer the larger offset (drawer 280px) to avoid double-shift */
+.drawer-open.filter-open .main,
+.filter-open .main.drawer-open,
+.drawer-open.filter-open .charts-container,
+.filter-open .charts-container.drawer-open,
+.drawer-open.filter-open div[style*="width:100%"],
+.filter-open div[style*="width:100%"].drawer-open{
+    padding-left: 280px !important;
+    width: 100vw !important;
+    box-sizing: border-box;
+}
+@media (max-width:1200px){
+    .drawer-open.filter-open .main,
+    .filter-open .main.drawer-open,
+    .drawer-open.filter-open .charts-container,
+    .filter-open .charts-container.drawer-open,
+    .drawer-open.filter-open div[style*="width:100%"],
+    .filter-open div[style*="width:100%"].drawer-open{
+        padding-left: 280px !important;
+    }
+}
+
+/* When filter pane is open, align property table and main content to the same left edge */
+.filter-open .sidebar{ margin-left: 0 !important; }
+.filter-open .main,
+.filter-open .charts-container,
+.filter-open #property-table-fragment {
+    margin-left: 260px;
+    box-sizing: border-box;
+    transition: margin-left .28s;
+    padding-left: 0 !important;
+}
+.filter-open .property-table-container,
+.filter-open div[style*="width:100%"] {
+    padding-left: 12px !important;
+}
+
+/* Loading overlay (used when Apply/Clear triggers navigation while backend processes) */
+.loading-overlay{
+    position:fixed;inset:0;background:rgba(3,11,12,0.45);display:none;align-items:center;justify-content:center;z-index:1100;
+}
+.loading-box{background:rgba(255,255,255,0.98);padding:12px 16px;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:8px;box-shadow:0 8px 40px rgba(2,6,8,0.35)}
+.loading-spinner{width:42px;height:42px;border-radius:50%;border:4px solid rgba(11,58,63,0.08);border-top-color:#59E6F6;animation:spin 1s linear infinite}
+.loading-text{font-weight:600;color:#052F30;font-size:12px}
+@keyframes spin{to{transform:rotate(360deg)}}

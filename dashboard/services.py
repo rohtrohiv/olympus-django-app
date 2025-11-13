@@ -10,7 +10,7 @@ from django.db.models import IntegerField, Max, Avg, Q, Sum, F, OuterRef, Subque
 from django.db.models.functions import ExtractYear, ExtractMonth
 from django.db import connection
 
-from .models import OlympusLeaseTrendAnalysis, LeaseTrendSummary
+from .models import OlympusLeaseTrendAnalysis, LeaseTrendSummary, OlympusLeaseKpisTrendMonthly, OlympusLeaseMoveoutReasonsTrendMonthly
 
 
 class DashboardService:
@@ -646,6 +646,66 @@ class DashboardService:
                 mo_map = {r['property_number']: int(r['total_move_outs_sum'] or 0) for r in mo_agg}
             except Exception:
                 mo_map = {}
+            
+            # Fetch delinquency data for the selected period
+            delinq_map = {}
+            exposure_map = {}
+            kpi_delinquency = None
+            kpi_exposure = None
+            try:
+                # Parse the selected period to determine which month's KPI data to fetch
+                kpi_qs = OlympusLeaseKpisTrendMonthly.objects.all()
+                
+                # Determine the target month based on period selection
+                if period_mode == 'month' and period_month:
+                    # Parse "Oct-2025" format
+                    mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', period_month)
+                    if mm:
+                        mon_abbr, yr = mm.groups()
+                        try:
+                            mon_num = list(calendar.month_abbr).index(mon_abbr)
+                            yr = int(yr)
+                            # Get the last day of the selected month
+                            last_day = calendar.monthrange(yr, mon_num)[1]
+                            target_date = date(yr, mon_num, last_day)
+                            kpi_qs = kpi_qs.filter(enddateofmonth=target_date)
+                        except (ValueError, IndexError):
+                            pass
+                
+                # Apply community filter if present
+                if selected_community:
+                    kpi_qs = kpi_qs.filter(property_name__in=selected_community)
+                
+                # Aggregate delinquency and exposure per property
+                kpi_agg = kpi_qs.values('property_number', 'delinquency', 'exposure')
+                for r in kpi_agg:
+                    prop_num = r['property_number']
+                    # Convert decimal values to percentages (multiply by 100)
+                    if r['delinquency'] is not None:
+                        delinq_map[prop_num] = r['delinquency'] * 100
+                    if r['exposure'] is not None:
+                        exposure_map[prop_num] = r['exposure'] * 100
+                
+                # Calculate average delinquency and exposure for KPI cards
+                if delinq_map:
+                    kpi_delinquency = sum(delinq_map.values()) / len(delinq_map)
+                if exposure_map:
+                    kpi_exposure = sum(exposure_map.values()) / len(exposure_map)
+            except Exception as e:
+                import traceback
+                print(f"❌ ERROR fetching delinquency: {e}")
+                traceback.print_exc()
+                delinq_map = {}
+                exposure_map = {}
+                kpi_delinquency = None
+                kpi_exposure = None
+            
+            # Add delinquency and exposure to KPI dict
+            if kpi_delinquency is not None:
+                kpi['delinquency'] = kpi_delinquency
+            if kpi_exposure is not None:
+                kpi['exposure'] = kpi_exposure
+            
             # Include additional fields so modals and client-side JSON have
             # investor / manager / director / asst_manager / occupied_units and metric columns
             properties_full = sorted([
@@ -667,7 +727,10 @@ class DashboardService:
                     # prefer aggregated move-out totals from the moveout reasons table when available
                     'total_move_outs': (mo_map.get(r.get('property_number')) if mo_map.get(r.get('property_number')) is not None else (r.get('total_move_outs') or 0)),
                     'applications': r.get('applications') or 0,
-                    'avg_amount_per_sqft': r.get('avg_amount_per_sqft')
+                    'avg_amount_per_sqft': r.get('avg_amount_per_sqft'),
+                    # Add delinquency and exposure data for the selected period (already in percentage form)
+                    'delinquency': delinq_map.get(r.get('property_number')),
+                    'exposure': exposure_map.get(r.get('property_number'))
                 } for r in prop_list
             ], key=lambda x: (x['property_name'] or '').lower())
         except Exception:

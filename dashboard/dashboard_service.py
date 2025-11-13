@@ -279,32 +279,90 @@ class DashboardPageService:
     def _fetch_unique_properties_raw(self, where_sql, params):
         # Use the DISTINCT ON query provided by the user to get one latest row per property
         # If where_sql is present it should already include the leading WHERE
+        # Join with KPIs table to get delinquency data for the selected period
+        
+        # Parse the selected period from params to get the appropriate month
+        import re
+        import calendar
+        period_month = None
+        period_months = []
+        
+        if hasattr(self.params, 'getlist'):
+            period_months = self.params.getlist('period_month')
+        if not period_months:
+            pm_single = self.params.get('period_month') or self.params.get('period')
+            if pm_single:
+                period_months = [pm_single]
+        
+        # Use the first selected period month if available
+        if period_months and period_months[0]:
+            period_str = period_months[0]
+            # Parse format like "Oct-2025"
+            mm = re.match(r'([A-Za-z]{3})[- ](\d{4})', period_str)
+            if mm:
+                mon_abbr, yr = mm.groups()
+                try:
+                    mon_num = list(calendar.month_abbr).index(mon_abbr)
+                    yr = int(yr)
+                    # Get the last day of the selected month for matching
+                    last_day = calendar.monthrange(yr, mon_num)[1]
+                    period_month = f"{yr}-{mon_num:02d}-{last_day:02d}"
+                except (ValueError, IndexError):
+                    pass
+        
+        # Build the KPI join condition based on whether we have a specific period
+        if period_month:
+            # Match exact month for the selected period
+            kpi_join = f'''
+            LEFT JOIN LATERAL (
+                SELECT "delinquency"
+                FROM web_ai.olympus_lease_kpis_trend_monthly
+                WHERE "property_number" = olt."property_number"
+                    AND "enddateofmonth" = '{period_month}'::date
+                LIMIT 1
+            ) kpi_latest ON true
+            '''
+        else:
+            # No specific period selected, get most recent KPI data
+            kpi_join = '''
+            LEFT JOIN LATERAL (
+                SELECT "delinquency"
+                FROM web_ai.olympus_lease_kpis_trend_monthly
+                WHERE "property_number" = olt."property_number"
+                    AND "enddateofmonth" <= olt."snapshot_date"
+                ORDER BY "enddateofmonth" DESC
+                LIMIT 1
+            ) kpi_latest ON true
+            '''
+        
         rows_sql = f'''
-        SELECT DISTINCT ON ("property_number")
-            "property_number",
-            "property_name",
-            "investor",
-            "regional_area_manager",
-            "regional_director",
-            "senior_regional",
-            "asst_manager",
-            "snapshot_date" AS latest_snapshot_date,
-            "total_units",
-            "occupied_units",
+        SELECT DISTINCT ON (olt."property_number")
+            olt."property_number",
+            olt."property_name",
+            olt."investor",
+            olt."regional_area_manager",
+            olt."regional_director",
+            olt."senior_regional",
+            olt."asst_manager",
+            olt."snapshot_date" AS latest_snapshot_date,
+            olt."total_units",
+            olt."occupied_units",
             ROUND(
                 CASE 
-                    WHEN "total_units" > 0 THEN ("occupied_units"::numeric / "total_units") * 100
+                    WHEN olt."total_units" > 0 THEN (olt."occupied_units"::numeric / olt."total_units") * 100
                     ELSE NULL
                 END, 2
             ) AS occupancy_pct,
-            "effective_rent",
-            "market_rent"
-        FROM web_ai.olympus_lease_trend_analysis
+            olt."effective_rent",
+            olt."market_rent",
+            kpi_latest."delinquency"
+        FROM web_ai.olympus_lease_trend_analysis olt
+        {kpi_join}
         {where_sql}
         ORDER BY 
-            "property_number", 
-            "snapshot_date" DESC,
-            COALESCE("eff_rent_modified_date", "snapshot_date") DESC;
+            olt."property_number", 
+            olt."snapshot_date" DESC,
+            COALESCE(olt."eff_rent_modified_date", olt."snapshot_date") DESC;
         '''
         with connection.cursor() as cur:
             cur.execute(rows_sql, params)
