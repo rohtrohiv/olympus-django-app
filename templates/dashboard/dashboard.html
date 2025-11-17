@@ -876,28 +876,39 @@ select[multiple] option:checked {
 
         <!-- Modal for Total Units List -->
     <div id="units-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;">
-            <div class="modal-content" style="background:#fff;border-radius:16px;max-width:600px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
+            <div class="modal-content" style="background:#fff;border-radius:16px;max-width:750px;width:90vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;">
                 <button onclick="closeUnitsModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;">&times;</button>
                 <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Units by Property <span style="font-size:16px;color:#4f6bed;font-weight:500;">(as of {{ selected_period }})</span></h2>
                 <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
                     <input id="units-search" type="text" placeholder="🔍 Search properties..." style="flex:1;padding:10px 16px;border-radius:8px;border:1px solid #cfd8dc;font-size:16px;outline:none;transition:box-shadow 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.07);" onfocus="this.style.boxShadow='0 2px 12px rgba(79,107,237,0.18)'" onblur="this.style.boxShadow='0 2px 8px rgba(79,107,237,0.07)'" />
-                    <span style="color:#4f6bed;font-size:20px;user-select:none;">&#128269;</span>
+                    <button onclick="exportUnitsToCSV(event); return false;" type="button" style="padding:10px 20px;background:#4f6bed;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;box-shadow:0 2px 8px rgba(79,107,237,0.2);display:flex;align-items:center;gap:8px;" onmouseover="this.style.background='#3d56d4';this.style.boxShadow='0 4px 12px rgba(79,107,237,0.3)'" onmouseout="this.style.background='#4f6bed';this.style.boxShadow='0 2px 8px rgba(79,107,237,0.2)'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Export CSV
+                    </button>
                 </div>
                 <div style="max-height:400px;overflow-y:auto;text-align: center;">
-                    <table style="width:100%;border-collapse:collapse;">
+                    <table id="units-table" style="width:100%;border-collapse:collapse;">
                         <thead>
                             <tr style="background:#e3e8f7;">
                                 <th style="padding:8px 12px;white-space:nowrap;">Property Number</th>
                                 <th style="padding:8px 12px;">Property Name</th>
                                 <th style="padding:8px 12px;">Total Units</th>
+                                <th style="padding:8px 12px;background:#d4e4f7;">Occupied Units</th>
+                                <th style="padding:8px 12px;background:#d4e4f7;">Occupancy %</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for row in all_properties %}
-                            <tr class="units-row">
+                            <tr class="units-row" data-property-number="{{ row.property_number }}" data-property-name="{{ row.property_name }}" data-total-units="{{ row.total_units }}" data-occupied-units="{{ row.occupied_units|default:0 }}" data-occupancy-pct="{{ row.occupancy_pct|default:0 }}">
                                 <td style="padding:8px 12px;">{{ row.property_number }}</td>
                                 <td style="padding:8px 12px;">{{ row.property_name }}</td>
-                                <td style="padding:8px 12px;">{{ row.total_units }}</td>
+                                <td style="padding:8px 12px;font-weight:600;">{{ row.total_units }}</td>
+                                <td style="padding:8px 12px;color:#4f6bed;font-weight:600;">{{ row.occupied_units|default:0 }}</td>
+                                <td style="padding:8px 12px;color:#10b981;font-weight:600;">{{ row.occupancy_pct|default:0|floatformat:1 }}%</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -2422,6 +2433,164 @@ function closeUnitsModal() {
     document.getElementById('units-modal').style.display = 'none';
 }
 
+function exportUnitsToCSV(event) {
+    // Prevent global loading overlay from showing
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    
+    // Ensure global loading overlay is hidden immediately
+    try {
+        const globalOverlay = document.getElementById('globalLoadingOverlay');
+        if (globalOverlay) {
+            globalOverlay.style.display = 'none';
+            globalOverlay.setAttribute('aria-hidden', 'true');
+        }
+    } catch (e) {
+        console.error('Error hiding global overlay:', e);
+    }
+    
+    // Show loading state on button only
+    const exportBtn = event ? event.target.closest('button') : null;
+    if (!exportBtn) {
+        console.error('Export button not found');
+        return;
+    }
+    
+    const originalHTML = exportBtn.innerHTML;
+    exportBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        Exporting...
+    `;
+    exportBtn.disabled = true;
+    exportBtn.style.opacity = '0.7';
+    exportBtn.style.cursor = 'not-allowed';
+    
+    // Use setTimeout to allow UI to update before processing
+    setTimeout(() => {
+        try {
+            // Get all visible rows (respecting search filter)
+            const rows = Array.from(document.querySelectorAll('#units-table .units-row'))
+                .filter(row => row.style.display !== 'none');
+            
+            if (rows.length === 0) {
+                alert('No data to export');
+                exportBtn.innerHTML = originalHTML;
+                exportBtn.disabled = false;
+                exportBtn.style.opacity = '1';
+                exportBtn.style.cursor = 'pointer';
+                return;
+            }
+            
+            // Build CSV content
+            let csv = 'Property Number,Property Name,Total Units,Occupied Units,Occupancy %\n';
+            
+            rows.forEach(row => {
+                const propNumber = row.getAttribute('data-property-number') || '';
+                const propName = row.getAttribute('data-property-name') || '';
+                const totalUnits = row.getAttribute('data-total-units') || '0';
+                const occupiedUnits = row.getAttribute('data-occupied-units') || '0';
+                const occupancyPct = row.getAttribute('data-occupancy-pct') || '0';
+                
+                // Escape quotes and wrap in quotes if needed
+                const escapedName = propName.includes(',') || propName.includes('"') 
+                    ? '"' + propName.replace(/"/g, '""') + '"' 
+                    : propName;
+                
+                csv += `${propNumber},${escapedName},${totalUnits},${occupiedUnits},${occupancyPct}\n`;
+            });
+            
+            // Create download link
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            // Generate filename with selected period date
+            const selectedPeriod = '{{ selected_period|default:"" }}';
+            let dateStr = '';
+            
+            if (selectedPeriod) {
+                // Parse different period formats (e.g., "Oct-2025", "Q4-2025", "2025")
+                const periodMatch = selectedPeriod.match(/([A-Za-z]{3})[- ](\d{4})/); // Month format
+                const quarterMatch = selectedPeriod.match(/Q(\d)[- ](\d{4})/); // Quarter format
+                const yearMatch = selectedPeriod.match(/^(\d{4})$/); // Year format
+                
+                if (periodMatch) {
+                    // Month format: Oct-2025 -> 2025-10
+                    const [, month, year] = periodMatch;
+                    const months = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                                  'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12};
+                    const monthNum = months[month] || 1;
+                    dateStr = `${year}_${String(monthNum).padStart(2, '0')}`;
+                } else if (quarterMatch) {
+                    // Quarter format: Q4-2025 -> 2025_Q4
+                    const [, quarter, year] = quarterMatch;
+                    dateStr = `${year}_Q${quarter}`;
+                } else if (yearMatch) {
+                    // Year format: 2025 -> 2025
+                    dateStr = yearMatch[1];
+                } else {
+                    // Default to selected period as-is
+                    dateStr = selectedPeriod.replace(/[^a-zA-Z0-9]/g, '_');
+                }
+            } else {
+                // Fallback to current date if no period specified
+                const now = new Date();
+                dateStr = now.toISOString().split('T')[0].replace(/-/g, '_');
+            }
+            
+            const filename = `units_by_property_${dateStr}.csv`;
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            // Ensure global overlay stays hidden
+            try {
+                const globalOverlay = document.getElementById('globalLoadingOverlay');
+                if (globalOverlay) {
+                    globalOverlay.style.display = 'none';
+                    globalOverlay.setAttribute('aria-hidden', 'true');
+                }
+            } catch (e) {}
+            
+            // Show success message
+            exportBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Exported!
+            `;
+            exportBtn.style.background = '#10b981';
+            exportBtn.style.opacity = '1';
+            exportBtn.style.cursor = 'pointer';
+            
+            // Reset button after 2 seconds
+            setTimeout(() => {
+                exportBtn.innerHTML = originalHTML;
+                exportBtn.style.background = '#4f6bed';
+                exportBtn.disabled = false;
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Export error:', error);
+            alert('Error exporting CSV. Please try again.');
+            exportBtn.innerHTML = originalHTML;
+            exportBtn.disabled = false;
+            exportBtn.style.opacity = '1';
+            exportBtn.style.cursor = 'pointer';
+        }
+    }, 100);
+}
+
 function openPropertiesChartModal() {
     document.getElementById('properties-chart-modal').style.display = 'flex';
     // Re-render the chart in the modal if needed
@@ -3176,6 +3345,218 @@ document.addEventListener('DOMContentLoaded', function() {
         <!-- Chart Container -->
         <div style="height:450px;">
             <canvas id="modalChartDelinquency"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Exposure Chart -->
+<div id="exposure-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;overflow-y:auto;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1100px;width:95vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;margin:20px auto;max-height:90vh;overflow-y:auto;">
+        <button onclick="closeExposureChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;z-index:10;">&times;</button>
+        
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Exposure Trend (8 weeks)</h2>
+        
+        <!-- Period Selector -->
+        <div style="background:#F3F6F8;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Years:</div>
+                <div id="exposureModalYearContainer" style="display:flex;flex-wrap:wrap;gap:6px;">
+                    {% for year in period_options.keys %}
+                    <button type="button" class="exposure-year-chip" data-year="{{ year }}" onclick="toggleExposureYearChip(this)" style="padding:6px 14px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;">{{ year }}</button>
+                    {% endfor %}
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Click to select multiple)</span>
+            </div>
+            
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Months:</div>
+                <div id="exposureModalMonthContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-width:700px;">
+                    <button type="button" class="exposure-month-chip" data-month="Jan" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jan</button>
+                    <button type="button" class="exposure-month-chip" data-month="Feb" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Feb</button>
+                    <button type="button" class="exposure-month-chip" data-month="Mar" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Mar</button>
+                    <button type="button" class="exposure-month-chip" data-month="Apr" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Apr</button>
+                    <button type="button" class="exposure-month-chip" data-month="May" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">May</button>
+                    <button type="button" class="exposure-month-chip" data-month="Jun" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jun</button>
+                    <button type="button" class="exposure-month-chip" data-month="Jul" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jul</button>
+                    <button type="button" class="exposure-month-chip" data-month="Aug" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Aug</button>
+                    <button type="button" class="exposure-month-chip" data-month="Sep" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Sep</button>
+                    <button type="button" class="exposure-month-chip" data-month="Oct" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Oct</button>
+                    <button type="button" class="exposure-month-chip" data-month="Nov" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Nov</button>
+                    <button type="button" class="exposure-month-chip" data-month="Dec" onclick="toggleExposureMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Dec</button>
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Optional - leave blank for all months)</span>
+            </div>
+            
+            <!-- Apply Button -->
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button onclick="applyExposureModalPeriodChange()" style="padding:8px 24px;background:#0E555A;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0B3A3F'" onmouseout="this.style.background='#0E555A'">
+                    Apply
+                </button>
+            </div>
+        </div>
+        
+        <!-- Chart Container -->
+        <div style="height:450px;">
+            <canvas id="modalChartExposure"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Avg Turn Time Chart -->
+<div id="avg-turn-time-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;overflow-y:auto;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1100px;width:95vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;margin:20px auto;max-height:90vh;overflow-y:auto;">
+        <button onclick="closeAvgTurnTimeChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;z-index:10;">&times;</button>
+        
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Average Turn Time Trend</h2>
+        
+        <!-- Period Selector -->
+        <div style="background:#F3F6F8;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Years:</div>
+                <div id="avgTurnTimeModalYearContainer" style="display:flex;flex-wrap:wrap;gap:6px;">
+                    {% for year in period_options.keys %}
+                    <button type="button" class="avg-turn-time-year-chip" data-year="{{ year }}" onclick="toggleAvgTurnTimeYearChip(this)" style="padding:6px 14px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;">{{ year }}</button>
+                    {% endfor %}
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Click to select multiple)</span>
+            </div>
+            
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Months:</div>
+                <div id="avgTurnTimeModalMonthContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-width:700px;">
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Jan" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jan</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Feb" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Feb</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Mar" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Mar</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Apr" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Apr</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="May" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">May</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Jun" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jun</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Jul" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jul</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Aug" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Aug</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Sep" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Sep</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Oct" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Oct</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Nov" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Nov</button>
+                    <button type="button" class="avg-turn-time-month-chip" data-month="Dec" onclick="toggleAvgTurnTimeMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Dec</button>
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Optional - leave blank for all months)</span>
+            </div>
+            
+            <!-- Apply Button -->
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button onclick="applyAvgTurnTimeModalPeriodChange()" style="padding:8px 24px;background:#0E555A;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0B3A3F'" onmouseout="this.style.background='#0E555A'">
+                    Apply
+                </button>
+            </div>
+        </div>
+        
+        <!-- Chart Container -->
+        <div style="height:450px;">
+            <canvas id="modalChartAvgTurnTime"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Service Requests Chart -->
+<div id="service-requests-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;overflow-y:auto;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1100px;width:95vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;margin:20px auto;max-height:90vh;overflow-y:auto;">
+        <button onclick="closeServiceRequestsChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;z-index:10;">&times;</button>
+        
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Service Requests Trend</h2>
+        
+        <!-- Period Selector -->
+        <div style="background:#F3F6F8;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Years:</div>
+                <div id="serviceRequestsModalYearContainer" style="display:flex;flex-wrap:wrap;gap:6px;">
+                    {% for year in period_options.keys %}
+                    <button type="button" class="service-requests-year-chip" data-year="{{ year }}" onclick="toggleServiceRequestsYearChip(this)" style="padding:6px 14px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;">{{ year }}</button>
+                    {% endfor %}
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Click to select multiple)</span>
+            </div>
+            
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Months:</div>
+                <div id="serviceRequestsModalMonthContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-width:700px;">
+                    <button type="button" class="service-requests-month-chip" data-month="Jan" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jan</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Feb" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Feb</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Mar" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Mar</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Apr" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Apr</button>
+                    <button type="button" class="service-requests-month-chip" data-month="May" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">May</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Jun" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jun</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Jul" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jul</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Aug" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Aug</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Sep" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Sep</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Oct" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Oct</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Nov" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Nov</button>
+                    <button type="button" class="service-requests-month-chip" data-month="Dec" onclick="toggleServiceRequestsMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Dec</button>
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Optional - leave blank for all months)</span>
+            </div>
+            
+            <!-- Apply Button -->
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button onclick="applyServiceRequestsModalPeriodChange()" style="padding:8px 24px;background:#0E555A;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0B3A3F'" onmouseout="this.style.background='#0E555A'">
+                    Apply
+                </button>
+            </div>
+        </div>
+        
+        <!-- Chart Container -->
+        <div style="height:450px;">
+            <canvas id="modalChartServiceRequests"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Renewal Conversion Chart -->
+<div id="renewal-conversion-chart-modal" class="modal" style="display:none;position:fixed;z-index:1000;inset:0;width:100%;height:100%;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;overflow-y:auto;">
+    <div class="modal-content" style="background:#fff;border-radius:16px;max-width:1100px;width:95vw;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,.18);position:relative;margin:20px auto;max-height:90vh;overflow-y:auto;">
+        <button onclick="closeRenewalConversionChartModal()" style="position:absolute;top:18px;right:18px;background:none;border:none;font-size:28px;color:#4f6bed;cursor:pointer;z-index:10;">&times;</button>
+        
+        <h2 style="margin-bottom:18px;color:#0B3A3F;font-size:24px;font-weight:700;">Renewal Conversion Trend</h2>
+        
+        <!-- Period Selector -->
+        <div style="background:#F3F6F8;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Years:</div>
+                <div id="renewalConversionModalYearContainer" style="display:flex;flex-wrap:wrap;gap:6px;">
+                    {% for year in period_options.keys %}
+                    <button type="button" class="renewal-conversion-year-chip" data-year="{{ year }}" onclick="toggleRenewalConversionYearChip(this)" style="padding:6px 14px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;">{{ year }}</button>
+                    {% endfor %}
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Click to select multiple)</span>
+            </div>
+            
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="font-weight:600;color:#0B3A3F;font-size:14px;margin-right:8px;">Select Months:</div>
+                <div id="renewalConversionModalMonthContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-width:700px;">
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Jan" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jan</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Feb" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Feb</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Mar" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Mar</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Apr" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Apr</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="May" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">May</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Jun" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jun</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Jul" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Jul</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Aug" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Aug</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Sep" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Sep</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Oct" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Oct</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Nov" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Nov</button>
+                    <button type="button" class="renewal-conversion-month-chip" data-month="Dec" onclick="toggleRenewalConversionMonthChip(this)" style="padding:6px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;color:#0B3A3F;font-size:13px;cursor:pointer;transition:all 0.2s;">Dec</button>
+                </div>
+                <span style="font-size:12px;color:#64748B;margin-left:8px;font-style:italic;">(Optional - leave blank for all months)</span>
+            </div>
+            
+            <!-- Apply Button -->
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button onclick="applyRenewalConversionModalPeriodChange()" style="padding:8px 24px;background:#0E555A;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0B3A3F'" onmouseout="this.style.background='#0E555A'">
+                    Apply
+                </button>
+            </div>
+        </div>
+        
+        <!-- Chart Container -->
+        <div style="height:450px;">
+            <canvas id="modalChartRenewalConversion"></canvas>
         </div>
     </div>
 </div>
@@ -3988,6 +4369,22 @@ document.addEventListener('click', function(e) {
     if (e.target === delinquencyModal) {
         closeDelinquencyChartModal();
     }
+    const exposureModal = document.getElementById('exposure-chart-modal');
+    if (e.target === exposureModal) {
+        closeExposureChartModal();
+    }
+    const avgTurnTimeModal = document.getElementById('avg-turn-time-chart-modal');
+    if (e.target === avgTurnTimeModal) {
+        closeAvgTurnTimeChartModal();
+    }
+    const serviceRequestsModal = document.getElementById('service-requests-chart-modal');
+    if (e.target === serviceRequestsModal) {
+        closeServiceRequestsChartModal();
+    }
+    const renewalConversionModal = document.getElementById('renewal-conversion-chart-modal');
+    if (e.target === renewalConversionModal) {
+        closeRenewalConversionChartModal();
+    }
 });
 
 // ========== Delinquency Modal Functions ==========
@@ -4267,6 +4664,1164 @@ function renderDelinquencyChartInModal(customData = null) {
                     ticks: {
                         callback: function(value) {
                             return value.toFixed(3) + '%';
+                        },
+                        font: { size: 12 },
+                        color: '#64748B'
+                    },
+                    grid: {
+                        color: 'rgba(229, 231, 235, 0.6)',
+                        drawBorder: false
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Period',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 10, bottom: 0 }
+                    },
+                    ticks: {
+                        font: { size: 12 },
+                        color: '#64748B',
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ========== Exposure Modal Functions ==========
+
+let exposureModalChart = null;
+
+function openExposureChartModal() {
+    const modal = document.getElementById('exposure-chart-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        initializeExposureModalPeriodSelector();
+        renderExposureChartInModal();
+    }
+}
+
+function closeExposureChartModal() {
+    const modal = document.getElementById('exposure-chart-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function initializeExposureModalPeriodSelector() {
+    const selectedYearsFromServer = {{ selected_years|safe }};
+    const initialYear = '{{ selected_year|default:"" }}';
+    if (selectedYearsFromServer && selectedYearsFromServer.length > 0) {
+        setSelectedExposureYears(selectedYearsFromServer.map(y => String(y)));
+    } else if (initialYear) {
+        setSelectedExposureYears([initialYear]);
+    } else {
+        const firstYearChip = document.querySelector('.exposure-year-chip');
+        if (firstYearChip) setSelectedExposureYears([firstYearChip.dataset.year]);
+    }
+    
+    // Get selected months from server context if in month mode
+    try {
+        const selectedMonthsScript = document.getElementById('initialSelectedMonthsData');
+        if (selectedMonthsScript) {
+            const selectedMonths = JSON.parse(selectedMonthsScript.textContent);
+            if (selectedMonths && selectedMonths.length > 0) {
+                const monthAbbrs = selectedMonths.map(m => {
+                    const parts = m.split('-');
+                    return parts[0];
+                });
+                setSelectedExposureMonths(monthAbbrs);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to initialize exposure month selector:', e);
+    }
+}
+
+function toggleExposureYearChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '500';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function toggleExposureMonthChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '400';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function getSelectedExposureYears() {
+    const chips = document.querySelectorAll('.exposure-year-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.year);
+}
+
+function getSelectedExposureMonths() {
+    const chips = document.querySelectorAll('.exposure-month-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.month);
+}
+
+function setSelectedExposureYears(yearsArray) {
+    document.querySelectorAll('.exposure-year-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '500';
+    });
+    yearsArray.forEach(year => {
+        const chip = document.querySelector(`.exposure-year-chip[data-year="${year}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function setSelectedExposureMonths(monthsArray) {
+    document.querySelectorAll('.exposure-month-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '400';
+    });
+    monthsArray.forEach(month => {
+        const chip = document.querySelector(`.exposure-month-chip[data-month="${month}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function applyExposureModalPeriodChange() {
+    const years = getSelectedExposureYears();
+    const months = getSelectedExposureMonths();
+    if (years.length === 0) {
+        alert('Please select at least one year');
+        return;
+    }
+    const params = new URLSearchParams();
+    if (months.length === 0) {
+        params.set('period_mode', 'year');
+        years.forEach(y => params.append('period_year', y));
+        params.set('period', years.join(', '));
+    } else {
+        params.set('period_mode', 'month');
+        years.forEach(year => {
+            months.forEach(m => params.append('period_month', `${m}-${year}`));
+        });
+        params.set('period', years.join(', ') + ' ' + (months.length ? months.join(',') : ''));
+    }
+    const mainUrl = new URL(window.location.href);
+    const mainParams = new URLSearchParams(mainUrl.search);
+    const investor = mainParams.getAll('investor');
+    const regional_manager = mainParams.getAll('regional_manager');
+    const community = mainParams.getAll('community');
+    investor.forEach(inv => { if (inv) params.append('investor', inv); });
+    regional_manager.forEach(rm => { if (rm) params.append('regional_manager', rm); });
+    community.forEach(comm => { if (comm) params.append('community', comm); });
+    params.set('format', 'json');
+    const applyBtn = document.querySelector('#exposure-chart-modal button[onclick="applyExposureModalPeriodChange()"]');
+    const originalBtnText = applyBtn ? applyBtn.textContent : 'Apply';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Loading...';
+    }
+    fetch('/dashboard/?' + params.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.exposure_data) {
+            renderExposureChartInModal(data.exposure_data);
+        }
+    })
+    .catch(error => {
+        console.error('Failed to fetch exposure data:', error);
+        alert('Failed to load exposure data. Please try again.');
+    })
+    .finally(() => {
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    });
+}
+
+function renderExposureChartInModal(customData = null) {
+    const ctx = document.getElementById('modalChartExposure');
+    if (!ctx) return;
+    let chartData = customData;
+    if (!chartData) {
+        chartData = {{ exposure_chart_data|safe }};
+    }
+    if (exposureModalChart) {
+        exposureModalChart.destroy();
+    }
+    exposureModalChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels || [],
+            datasets: [{
+                label: 'Exposure %',
+                data: chartData.data || [],
+                backgroundColor: 'rgba(234, 179, 8, 0.7)',
+                borderColor: '#EAB308',
+                borderWidth: 2,
+                borderRadius: 6,
+                hoverBackgroundColor: 'rgba(234, 179, 8, 0.9)',
+                hoverBorderColor: '#CA8A04'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        font: { size: 13, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: 12
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#fff',
+                    bodyColor: '#E2E8F0',
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return 'Exposure: ' + context.parsed.y.toFixed(3) + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Exposure Rate (%)',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 0, bottom: 10 }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(3) + '%';
+                        },
+                        font: { size: 12 },
+                        color: '#64748B'
+                    },
+                    grid: {
+                        color: 'rgba(229, 231, 235, 0.6)',
+                        drawBorder: false
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Period',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 10, bottom: 0 }
+                    },
+                    ticks: {
+                        font: { size: 12 },
+                        color: '#64748B',
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ========== Avg Turn Time Modal Functions ==========
+
+let avgTurnTimeModalChart = null;
+
+function openAvgTurnTimeChartModal() {
+    const modal = document.getElementById('avg-turn-time-chart-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        initializeAvgTurnTimeModalPeriodSelector();
+        renderAvgTurnTimeChartInModal();
+    }
+}
+
+function closeAvgTurnTimeChartModal() {
+    const modal = document.getElementById('avg-turn-time-chart-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function initializeAvgTurnTimeModalPeriodSelector() {
+    const selectedYearsFromServer = {{ selected_years|safe }};
+    const initialYear = '{{ selected_year|default:"" }}';
+    if (selectedYearsFromServer && selectedYearsFromServer.length > 0) {
+        setSelectedAvgTurnTimeYears(selectedYearsFromServer.map(y => String(y)));
+    } else if (initialYear) {
+        setSelectedAvgTurnTimeYears([initialYear]);
+    } else {
+        const firstYearChip = document.querySelector('.avg-turn-time-year-chip');
+        if (firstYearChip) setSelectedAvgTurnTimeYears([firstYearChip.dataset.year]);
+    }
+    
+    // Get selected months from server context if in month mode
+    try {
+        const selectedMonthsScript = document.getElementById('initialSelectedMonthsData');
+        if (selectedMonthsScript) {
+            const selectedMonths = JSON.parse(selectedMonthsScript.textContent);
+            if (selectedMonths && selectedMonths.length > 0) {
+                const monthAbbrs = selectedMonths.map(m => {
+                    const parts = m.split('-');
+                    return parts[0];
+                });
+                setSelectedAvgTurnTimeMonths(monthAbbrs);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to initialize avg turn time month selector:', e);
+    }
+}
+
+function toggleAvgTurnTimeYearChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '500';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function toggleAvgTurnTimeMonthChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '400';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function getSelectedAvgTurnTimeYears() {
+    const chips = document.querySelectorAll('.avg-turn-time-year-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.year);
+}
+
+function getSelectedAvgTurnTimeMonths() {
+    const chips = document.querySelectorAll('.avg-turn-time-month-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.month);
+}
+
+function setSelectedAvgTurnTimeYears(yearsArray) {
+    document.querySelectorAll('.avg-turn-time-year-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '500';
+    });
+    yearsArray.forEach(year => {
+        const chip = document.querySelector(`.avg-turn-time-year-chip[data-year="${year}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function setSelectedAvgTurnTimeMonths(monthsArray) {
+    document.querySelectorAll('.avg-turn-time-month-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '400';
+    });
+    monthsArray.forEach(month => {
+        const chip = document.querySelector(`.avg-turn-time-month-chip[data-month="${month}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function applyAvgTurnTimeModalPeriodChange() {
+    const years = getSelectedAvgTurnTimeYears();
+    const months = getSelectedAvgTurnTimeMonths();
+    if (years.length === 0) {
+        alert('Please select at least one year');
+        return;
+    }
+    const params = new URLSearchParams();
+    if (months.length === 0) {
+        params.set('period_mode', 'year');
+        years.forEach(y => params.append('period_year', y));
+        params.set('period', years.join(', '));
+    } else {
+        params.set('period_mode', 'month');
+        years.forEach(year => {
+            months.forEach(m => params.append('period_month', `${m}-${year}`));
+        });
+        params.set('period', years.join(', ') + ' ' + (months.length ? months.join(',') : ''));
+    }
+    const mainUrl = new URL(window.location.href);
+    const mainParams = new URLSearchParams(mainUrl.search);
+    const investor = mainParams.getAll('investor');
+    const regional_manager = mainParams.getAll('regional_manager');
+    const community = mainParams.getAll('community');
+    investor.forEach(inv => { if (inv) params.append('investor', inv); });
+    regional_manager.forEach(rm => { if (rm) params.append('regional_manager', rm); });
+    community.forEach(comm => { if (comm) params.append('community', comm); });
+    params.set('format', 'json');
+    const applyBtn = document.querySelector('#avg-turn-time-chart-modal button[onclick="applyAvgTurnTimeModalPeriodChange()"]');
+    const originalBtnText = applyBtn ? applyBtn.textContent : 'Apply';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Loading...';
+    }
+    fetch('/dashboard/?' + params.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.avg_turn_time_data) {
+            renderAvgTurnTimeChartInModal(data.avg_turn_time_data);
+        }
+    })
+    .catch(error => {
+        console.error('Failed to fetch avg turn time data:', error);
+        alert('Failed to load avg turn time data. Please try again.');
+    })
+    .finally(() => {
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    });
+}
+
+function renderAvgTurnTimeChartInModal(customData = null) {
+    const ctx = document.getElementById('modalChartAvgTurnTime');
+    if (!ctx) return;
+    let chartData = customData;
+    if (!chartData) {
+        chartData = {{ avg_turn_time_chart_data|safe }};
+    }
+    if (avgTurnTimeModalChart) {
+        avgTurnTimeModalChart.destroy();
+    }
+    avgTurnTimeModalChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.labels || [],
+            datasets: [{
+                label: 'Avg Turn Time (days)',
+                data: chartData.data || [],
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                borderColor: '#3B82F6',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#3B82F6',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        font: { size: 13, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: 12
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#fff',
+                    bodyColor: '#E2E8F0',
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return 'Turn Time: ' + context.parsed.y.toFixed(1) + ' days';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Days',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 0, bottom: 10 }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(1);
+                        },
+                        font: { size: 12 },
+                        color: '#64748B'
+                    },
+                    grid: {
+                        color: 'rgba(229, 231, 235, 0.6)',
+                        drawBorder: false
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Period',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 10, bottom: 0 }
+                    },
+                    ticks: {
+                        font: { size: 12 },
+                        color: '#64748B',
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ========== Service Requests Modal Functions ==========
+
+let serviceRequestsModalChart = null;
+
+function openServiceRequestsChartModal() {
+    const modal = document.getElementById('service-requests-chart-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        initializeServiceRequestsModalPeriodSelector();
+        renderServiceRequestsChartInModal();
+    }
+}
+
+function closeServiceRequestsChartModal() {
+    const modal = document.getElementById('service-requests-chart-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function initializeServiceRequestsModalPeriodSelector() {
+    const selectedYearsFromServer = {{ selected_years|safe }};
+    const initialYear = '{{ selected_year|default:"" }}';
+    if (selectedYearsFromServer && selectedYearsFromServer.length > 0) {
+        setSelectedServiceRequestsYears(selectedYearsFromServer.map(y => String(y)));
+    } else if (initialYear) {
+        setSelectedServiceRequestsYears([initialYear]);
+    } else {
+        const firstYearChip = document.querySelector('.service-requests-year-chip');
+        if (firstYearChip) setSelectedServiceRequestsYears([firstYearChip.dataset.year]);
+    }
+    
+    // Get selected months from server context if in month mode
+    try {
+        const selectedMonthsScript = document.getElementById('initialSelectedMonthsData');
+        if (selectedMonthsScript) {
+            const selectedMonths = JSON.parse(selectedMonthsScript.textContent);
+            if (selectedMonths && selectedMonths.length > 0) {
+                const monthAbbrs = selectedMonths.map(m => {
+                    const parts = m.split('-');
+                    return parts[0];
+                });
+                setSelectedServiceRequestsMonths(monthAbbrs);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to initialize service requests month selector:', e);
+    }
+}
+
+function toggleServiceRequestsYearChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '500';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function toggleServiceRequestsMonthChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '400';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function getSelectedServiceRequestsYears() {
+    const chips = document.querySelectorAll('.service-requests-year-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.year);
+}
+
+function getSelectedServiceRequestsMonths() {
+    const chips = document.querySelectorAll('.service-requests-month-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.month);
+}
+
+function setSelectedServiceRequestsYears(yearsArray) {
+    document.querySelectorAll('.service-requests-year-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '500';
+    });
+    yearsArray.forEach(year => {
+        const chip = document.querySelector(`.service-requests-year-chip[data-year="${year}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function setSelectedServiceRequestsMonths(monthsArray) {
+    document.querySelectorAll('.service-requests-month-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '400';
+    });
+    monthsArray.forEach(month => {
+        const chip = document.querySelector(`.service-requests-month-chip[data-month="${month}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function applyServiceRequestsModalPeriodChange() {
+    const years = getSelectedServiceRequestsYears();
+    const months = getSelectedServiceRequestsMonths();
+    if (years.length === 0) {
+        alert('Please select at least one year');
+        return;
+    }
+    const params = new URLSearchParams();
+    if (months.length === 0) {
+        params.set('period_mode', 'year');
+        years.forEach(y => params.append('period_year', y));
+        params.set('period', years.join(', '));
+    } else {
+        params.set('period_mode', 'month');
+        years.forEach(year => {
+            months.forEach(m => params.append('period_month', `${m}-${year}`));
+        });
+        params.set('period', years.join(', ') + ' ' + (months.length ? months.join(',') : ''));
+    }
+    const mainUrl = new URL(window.location.href);
+    const mainParams = new URLSearchParams(mainUrl.search);
+    const investor = mainParams.getAll('investor');
+    const regional_manager = mainParams.getAll('regional_manager');
+    const community = mainParams.getAll('community');
+    investor.forEach(inv => { if (inv) params.append('investor', inv); });
+    regional_manager.forEach(rm => { if (rm) params.append('regional_manager', rm); });
+    community.forEach(comm => { if (comm) params.append('community', comm); });
+    params.set('format', 'json');
+    const applyBtn = document.querySelector('#service-requests-chart-modal button[onclick="applyServiceRequestsModalPeriodChange()"]');
+    const originalBtnText = applyBtn ? applyBtn.textContent : 'Apply';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Loading...';
+    }
+    fetch('/dashboard/?' + params.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.service_requests_data) {
+            renderServiceRequestsChartInModal(data.service_requests_data);
+        }
+    })
+    .catch(error => {
+        console.error('Failed to fetch service requests data:', error);
+        alert('Failed to load service requests data. Please try again.');
+    })
+    .finally(() => {
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    });
+}
+
+function renderServiceRequestsChartInModal(customData = null) {
+    const ctx = document.getElementById('modalChartServiceRequests');
+    if (!ctx) return;
+    let chartData = customData;
+    if (!chartData) {
+        chartData = {{ service_requests_chart_data|safe }};
+    }
+    if (serviceRequestsModalChart) {
+        serviceRequestsModalChart.destroy();
+    }
+    serviceRequestsModalChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels || [],
+            datasets: [{
+                label: 'Service Requests',
+                data: chartData.data || [],
+                backgroundColor: 'rgba(139, 92, 246, 0.7)',
+                borderColor: '#8B5CF6',
+                borderWidth: 2,
+                borderRadius: 6,
+                hoverBackgroundColor: 'rgba(139, 92, 246, 0.9)',
+                hoverBorderColor: '#7C3AED'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        font: { size: 13, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: 12
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#fff',
+                    bodyColor: '#E2E8F0',
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return 'Requests: ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Number of Requests',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 0, bottom: 10 }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            // Format large numbers with K suffix for thousands
+                            if (value >= 1000) {
+                                return (value / 1000).toFixed(1) + 'K';
+                            }
+                            return value.toLocaleString();
+                        },
+                        font: { size: 12 },
+                        color: '#64748B',
+                        // Suggest approximately 8-10 ticks for better readability
+                        maxTicksLimit: 10
+                    },
+                    grid: {
+                        color: 'rgba(229, 231, 235, 0.6)',
+                        drawBorder: false
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Period',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 10, bottom: 0 }
+                    },
+                    ticks: {
+                        font: { size: 12 },
+                        color: '#64748B',
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ========== Renewal Conversion Modal Functions ==========
+
+let renewalConversionModalChart = null;
+
+function openRenewalConversionChartModal() {
+    const modal = document.getElementById('renewal-conversion-chart-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        initializeRenewalConversionModalPeriodSelector();
+        renderRenewalConversionChartInModal();
+    }
+}
+
+function closeRenewalConversionChartModal() {
+    const modal = document.getElementById('renewal-conversion-chart-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function initializeRenewalConversionModalPeriodSelector() {
+    const selectedYearsFromServer = {{ selected_years|safe }};
+    const initialYear = '{{ selected_year|default:"" }}';
+    if (selectedYearsFromServer && selectedYearsFromServer.length > 0) {
+        setSelectedRenewalConversionYears(selectedYearsFromServer.map(y => String(y)));
+    } else if (initialYear) {
+        setSelectedRenewalConversionYears([initialYear]);
+    } else {
+        const firstYearChip = document.querySelector('.renewal-conversion-year-chip');
+        if (firstYearChip) setSelectedRenewalConversionYears([firstYearChip.dataset.year]);
+    }
+    
+    // Get selected months from server context if in month mode
+    try {
+        const selectedMonthsScript = document.getElementById('initialSelectedMonthsData');
+        if (selectedMonthsScript) {
+            const selectedMonths = JSON.parse(selectedMonthsScript.textContent);
+            if (selectedMonths && selectedMonths.length > 0) {
+                const monthAbbrs = selectedMonths.map(m => {
+                    const parts = m.split('-');
+                    return parts[0];
+                });
+                setSelectedRenewalConversionMonths(monthAbbrs);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to initialize renewal conversion month selector:', e);
+    }
+}
+
+function toggleRenewalConversionYearChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '500';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function toggleRenewalConversionMonthChip(chipBtn) {
+    if (chipBtn.classList.contains('selected')) {
+        chipBtn.classList.remove('selected');
+        chipBtn.style.background = '#fff';
+        chipBtn.style.color = '#0B3A3F';
+        chipBtn.style.borderColor = '#E5E7EB';
+        chipBtn.style.fontWeight = '400';
+    } else {
+        chipBtn.classList.add('selected');
+        chipBtn.style.background = '#0E555A';
+        chipBtn.style.color = '#fff';
+        chipBtn.style.borderColor = '#0E555A';
+        chipBtn.style.fontWeight = '600';
+    }
+}
+
+function getSelectedRenewalConversionYears() {
+    const chips = document.querySelectorAll('.renewal-conversion-year-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.year);
+}
+
+function getSelectedRenewalConversionMonths() {
+    const chips = document.querySelectorAll('.renewal-conversion-month-chip.selected');
+    return Array.from(chips).map(chip => chip.dataset.month);
+}
+
+function setSelectedRenewalConversionYears(yearsArray) {
+    document.querySelectorAll('.renewal-conversion-year-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '500';
+    });
+    yearsArray.forEach(year => {
+        const chip = document.querySelector(`.renewal-conversion-year-chip[data-year="${year}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function setSelectedRenewalConversionMonths(monthsArray) {
+    document.querySelectorAll('.renewal-conversion-month-chip').forEach(chip => {
+        chip.classList.remove('selected');
+        chip.style.background = '#fff';
+        chip.style.color = '#0B3A3F';
+        chip.style.borderColor = '#E5E7EB';
+        chip.style.fontWeight = '400';
+    });
+    monthsArray.forEach(month => {
+        const chip = document.querySelector(`.renewal-conversion-month-chip[data-month="${month}"]`);
+        if (chip) {
+            chip.classList.add('selected');
+            chip.style.background = '#0E555A';
+            chip.style.color = '#fff';
+            chip.style.borderColor = '#0E555A';
+            chip.style.fontWeight = '600';
+        }
+    });
+}
+
+function applyRenewalConversionModalPeriodChange() {
+    const years = getSelectedRenewalConversionYears();
+    const months = getSelectedRenewalConversionMonths();
+    if (years.length === 0) {
+        alert('Please select at least one year');
+        return;
+    }
+    const params = new URLSearchParams();
+    if (months.length === 0) {
+        params.set('period_mode', 'year');
+        years.forEach(y => params.append('period_year', y));
+        params.set('period', years.join(', '));
+    } else {
+        params.set('period_mode', 'month');
+        years.forEach(year => {
+            months.forEach(m => params.append('period_month', `${m}-${year}`));
+        });
+        params.set('period', years.join(', ') + ' ' + (months.length ? months.join(',') : ''));
+    }
+    const mainUrl = new URL(window.location.href);
+    const mainParams = new URLSearchParams(mainUrl.search);
+    const investor = mainParams.getAll('investor');
+    const regional_manager = mainParams.getAll('regional_manager');
+    const community = mainParams.getAll('community');
+    investor.forEach(inv => { if (inv) params.append('investor', inv); });
+    regional_manager.forEach(rm => { if (rm) params.append('regional_manager', rm); });
+    community.forEach(comm => { if (comm) params.append('community', comm); });
+    params.set('format', 'json');
+    const applyBtn = document.querySelector('#renewal-conversion-chart-modal button[onclick="applyRenewalConversionModalPeriodChange()"]');
+    const originalBtnText = applyBtn ? applyBtn.textContent : 'Apply';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Loading...';
+    }
+    fetch('/dashboard/?' + params.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.renewal_conversion_data) {
+            renderRenewalConversionChartInModal(data.renewal_conversion_data);
+        }
+    })
+    .catch(error => {
+        console.error('Failed to fetch renewal conversion data:', error);
+        alert('Failed to load renewal conversion data. Please try again.');
+    })
+    .finally(() => {
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = originalBtnText;
+        }
+    });
+}
+
+function renderRenewalConversionChartInModal(customData = null) {
+    const ctx = document.getElementById('modalChartRenewalConversion');
+    if (!ctx) return;
+    let chartData = customData;
+    if (!chartData) {
+        chartData = {{ renewal_conversion_chart_data|safe }};
+    }
+    if (renewalConversionModalChart) {
+        renewalConversionModalChart.destroy();
+    }
+    renewalConversionModalChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.labels || [],
+            datasets: [{
+                label: 'Renewal Conversion %',
+                data: chartData.data || [],
+                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                borderColor: '#10B981',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#10B981',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        font: { size: 13, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: 12
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#fff',
+                    bodyColor: '#E2E8F0',
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return 'Conversion: ' + context.parsed.y.toFixed(1) + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Conversion Rate (%)',
+                        font: { size: 14, weight: '600' },
+                        color: '#0B3A3F',
+                        padding: { top: 0, bottom: 10 }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(1) + '%';
                         },
                         font: { size: 12 },
                         color: '#64748B'

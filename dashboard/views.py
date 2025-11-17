@@ -1561,7 +1561,8 @@ def dashboard(request):
 		if turn_den:
 			kpi_overrides['avg_turn_time'] = round(turn_num / turn_den, 1)
 		if rc_den:
-			kpi_overrides['renewal_conversion'] = round(rc_num / rc_den, 1)
+			# Renewal conversion is stored as decimal in DB (0.85), convert to percentage (85%)
+			kpi_overrides['renewal_conversion'] = round((rc_num / rc_den) * 100, 1)
 
 		# Build delinquency trend chart
 		# For more accurate data, collect delinquency per period
@@ -1582,9 +1583,76 @@ def dashboard(request):
 			'data': delinquency_data
 		}
 
+		# Build exposure trend chart
+		exposure_data = []
+		for r in rows:
+			exp_sum = r.get('exposure_sum')
+			cnt = int(r.get('cnt') or 1)
+			if exp_sum is not None and cnt > 0:
+				# Average exposure for this period
+				# DB stores as decimal (0.132), convert to percentage (13.2%)
+				avg_exposure = (float(exp_sum) / cnt) * 100
+				exposure_data.append(round(avg_exposure, 3))
+			else:
+				exposure_data.append(0.0)
+		
+		chart_exposure = {
+			'labels': labels,
+			'data': exposure_data
+		}
+
+		# Build avg turn time trend chart
+		avg_turn_time_data = []
+		for r in rows:
+			turn_sum = r.get('avg_turn')
+			cnt = int(r.get('cnt') or 1)
+			if turn_sum is not None and cnt > 0:
+				# Average turn time for this period
+				avg_turn = float(turn_sum) * cnt / cnt  # weighted average
+				avg_turn_time_data.append(round(avg_turn, 1))
+			else:
+				avg_turn_time_data.append(0.0)
+		
+		chart_avg_turn_time = {
+			'labels': labels,
+			'data': avg_turn_time_data
+		}
+
+		# Build service requests trend chart
+		service_requests_data = []
+		for r in rows:
+			sr_sum = r.get('service_requests_sum')  # Fixed: was 'service_request_sum'
+			if sr_sum is not None:
+				service_requests_data.append(int(sr_sum))
+			else:
+				service_requests_data.append(0)
+		
+		chart_service_requests = {
+			'labels': labels,
+			'data': service_requests_data
+		}
+
+		# Build renewal conversion trend chart
+		renewal_conversion_data = []
+		for r in rows:
+			rc_sum = r.get('renewal_conv_avg')
+			cnt = int(r.get('cnt') or 1)
+			if rc_sum is not None and cnt > 0:
+				# Average renewal conversion for this period
+				# DB stores as decimal (0.85), convert to percentage (85%)
+				avg_rc = (float(rc_sum) * cnt / cnt) * 100  # weighted average
+				renewal_conversion_data.append(round(avg_rc, 1))
+			else:
+				renewal_conversion_data.append(0.0)
+		
+		chart_renewal_conversion = {
+			'labels': labels,
+			'data': renewal_conversion_data
+		}
 		# NOTE: KPI overrides and chart payloads will be applied to the template context
 		# after the primary context dict is built further below. We store them in
-		# local variables here (chart_renewals, chart_expense, chart_delinquency, kpi_overrides).
+		# local variables here (chart_renewals, chart_expense, chart_delinquency, chart_exposure,
+		# chart_avg_turn_time, chart_service_requests, chart_renewal_conversion, kpi_overrides).
 
 	except Exception as e:
 		# On any failure, provide empty chart payloads and no KPI overrides
@@ -1599,6 +1667,10 @@ def dashboard(request):
 		chart_renewals = {'labels': [], 'datasets': []}
 		chart_expense = {'labels': [], 'datasets': []}
 		chart_delinquency = {'labels': [], 'data': []}
+		chart_exposure = {'labels': [], 'data': []}
+		chart_avg_turn_time = {'labels': [], 'data': []}
+		chart_service_requests = {'labels': [], 'data': []}
+		chart_renewal_conversion = {'labels': [], 'data': []}
 		kpi_overrides = {}
 
 	# Build Move-Out Reasons chart from monthly moveout reasons table.
@@ -1869,6 +1941,10 @@ def dashboard(request):
 		'chart_expense_json': json.dumps(chart_expense),
 		'chart_moveout_json': json.dumps(chart_moveout),
 		'delinquency_chart_data': chart_delinquency,
+		'exposure_chart_data': chart_exposure,
+		'avg_turn_time_chart_data': chart_avg_turn_time,
+		'service_requests_chart_data': chart_service_requests,
+		'renewal_conversion_chart_data': chart_renewal_conversion,
 	}
 
 	# Apply KPI overrides computed by the consolidated monthly aggregation (if any)
@@ -1979,6 +2055,10 @@ def dashboard(request):
 				'chart_correlation_json': context.get('chart_correlation_json'),
 				'chart_rent_json': context.get('chart_rent_json'),
 				'delinquency_data': context.get('delinquency_chart_data'),
+				'exposure_data': context.get('exposure_chart_data'),
+				'avg_turn_time_data': context.get('avg_turn_time_chart_data'),
+				'service_requests_data': context.get('service_requests_chart_data'),
+				'renewal_conversion_data': context.get('renewal_conversion_chart_data'),
 				'selected_period': svc_ctx.get('selected_period')
 			})
 		# Default AJAX response for KPI/table updates
