@@ -76,6 +76,40 @@
     box-shadow: 0 2px 8px rgba(0,0,0,.08);
 }
     .logout-btn:hover{background:#2A474B;color:#fff}
+  
+  /* Period indicator badge */
+  .period-indicator{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    background:rgba(89,230,246,0.15);
+    border:1px solid rgba(89,230,246,0.4);
+    border-radius:6px;
+    padding:6px 12px;
+    margin-left:16px;
+    font-size:12px;
+    font-weight:600;
+    color:#59E6F6;
+    white-space:nowrap;
+  }
+  .period-indicator .icon{
+    width:16px;
+    height:16px;
+    flex-shrink:0;
+  }
+  .period-indicator .label{
+    color:rgba(255,255,255,0.7);
+    font-weight:500;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+  }
+  .period-indicator .value{
+    color:#59E6F6;
+    font-weight:700;
+    font-size:13px;
+  }
+  
   /* Overlay / drawer (hidden by default) */
   /* Drawer and overlay start below the fixed topbar */
   .overlay{position:fixed;inset:var(--topbar-h) 0 0 0;background:rgba(0,0,0,.32);display:none;z-index:60}
@@ -121,7 +155,7 @@
                 Olympus Property
             </div>
 
-            <!-- “Menu” text next to brand as requested -->
+            <!-- "Menu" text next to brand as requested -->
       
 
             <!-- topbar nav: mirror of drawer items for quick access (keeps hamburger intact) -->
@@ -135,7 +169,8 @@
                 <!-- Sign Out link removed: logout button already present in topbar -->
             </nav>
 
-            
+            <!-- Period Indicator Badge -->
+            {% block period_indicator %}{% endblock %}
 
             <!-- User profile and logout -->
             <div class="user-profile">

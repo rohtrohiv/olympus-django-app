@@ -1,6 +1,21 @@
 {% extends 'base.html' %}
 {% block title %}Property Analytics - Olympus{% endblock %}
 
+{% block period_indicator %}
+{% if period_display_label or selected_period %}
+<div class="period-indicator" title="Currently viewing data for this period">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line>
+        <line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+    </svg>
+    <span class="label">Selected Period:</span>
+    <span class="value">{{ period_display_label|default:selected_period }}</span>
+</div>
+{% endif %}
+{% endblock %}
+
 {% block extra_head %}
 <style>
 /* Dashboard-specific styles */
@@ -5181,17 +5196,22 @@ function renderAvgTurnTimeChartInModal(customData = null) {
     if (avgTurnTimeModalChart) {
         avgTurnTimeModalChart.destroy();
     }
+    
+    // Determine chart type based on number of data points
+    const dataLength = (chartData.data || []).length;
+    const chartType = dataLength === 1 ? 'bar' : 'line';
+    
     avgTurnTimeModalChart = new Chart(ctx, {
-        type: 'line',
+        type: chartType,
         data: {
             labels: chartData.labels || [],
             datasets: [{
                 label: 'Avg Turn Time (days)',
                 data: chartData.data || [],
-                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                backgroundColor: chartType === 'bar' ? '#3B82F6' : 'rgba(59, 130, 246, 0.2)',
                 borderColor: '#3B82F6',
-                borderWidth: 3,
-                fill: true,
+                borderWidth: chartType === 'bar' ? 1 : 3,
+                fill: chartType === 'line',
                 tension: 0.4,
                 pointBackgroundColor: '#3B82F6',
                 pointBorderColor: '#fff',
@@ -5763,17 +5783,22 @@ function renderRenewalConversionChartInModal(customData = null) {
     if (renewalConversionModalChart) {
         renewalConversionModalChart.destroy();
     }
+    
+    // Determine chart type based on number of data points
+    const dataLength = (chartData.data || []).length;
+    const chartType = dataLength === 1 ? 'bar' : 'line';
+    
     renewalConversionModalChart = new Chart(ctx, {
-        type: 'line',
+        type: chartType,
         data: {
             labels: chartData.labels || [],
             datasets: [{
                 label: 'Renewal Conversion %',
                 data: chartData.data || [],
-                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                backgroundColor: chartType === 'bar' ? '#10B981' : 'rgba(16, 185, 129, 0.2)',
                 borderColor: '#10B981',
-                borderWidth: 3,
-                fill: true,
+                borderWidth: chartType === 'bar' ? 1 : 3,
+                fill: chartType === 'line',
                 tension: 0.4,
                 pointBackgroundColor: '#10B981',
                 pointBorderColor: '#fff',

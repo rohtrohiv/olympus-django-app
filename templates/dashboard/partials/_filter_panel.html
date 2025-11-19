@@ -96,36 +96,27 @@
             <!-- Month custom dropdown -->
             <div id="monthDropdownContainer" class="custom-dropdown" style="display:none;margin-top:8px;">
                 <button type="button" class="dropdown-toggle" id="monthDropdownToggle">
-                    <span class="placeholder">Select months...</span>
+                    <span class="placeholder">Select month...</span>
                 </button>
                 <div class="dropdown-menu" id="monthDropdownMenu">
                     <div class="dropdown-search">
                         <input type="text" placeholder="Search months..." id="monthSearchInput">
                     </div>
                     <div id="monthDropdownItems">
-                        {% for year, data in period_options.items %}
-                            {% for quarter, months in data.quarters.items %}
-                                {% for month in months %}
-                                <div class="dropdown-menu-item">
-                                    <input type="checkbox" id="month-{{ month }}-{{ year }}" value="{{ month }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">
-                                    <label for="month-{{ month }}-{{ year }}">{{ month }} {{ year }}</label>
-                                </div>
-                                {% endfor %}
-                            {% endfor %}
+                        {% for month in month_options %}
+                        <div class="dropdown-menu-item">
+                            <input type="radio" name="period_month_radio" id="month-{{ forloop.counter }}" value="{{ month }}" {% if month == selected_month %}checked{% endif %}>
+                            <label for="month-{{ forloop.counter }}">{{ month }}</label>
+                        </div>
                         {% endfor %}
                     </div>
                     <div class="dropdown-actions">
-                        <button type="button" class="select-all-btn" data-dropdown="month">Select All</button>
-                        <button type="button" class="clear-all-btn" data-dropdown="month">Clear All</button>
+                        <button type="button" class="clear-all-btn" data-dropdown="month">Clear</button>
                     </div>
                 </div>
-                <select name="period_month" id="filterPeriodMonth" multiple style="display:none;">
-                    {% for year, data in period_options.items %}
-                        {% for quarter, months in data.quarters.items %}
-                            {% for month in months %}
-                                <option value="{{ month }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ month }} {{ year }}</option>
-                            {% endfor %}
-                        {% endfor %}
+                <select name="period_month" id="filterPeriodMonth" style="display:none;">
+                    {% for month in month_options %}
+                        <option value="{{ month }}" {% if month == selected_month %}selected{% endif %}>{{ month }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -146,19 +137,19 @@
                     <div id="investorDropdownItems">
                         {% for inv in investors %}
                         <div class="dropdown-menu-item">
-                            <input type="checkbox" id="investor-{{ forloop.counter }}" value="{{ inv }}" {% if inv in selected_investor %}checked{% endif %}>
+                            <input type="checkbox" name="investor" id="investor-{{ forloop.counter }}" value="{{ inv }}" {% if inv in selected_investors %}checked{% endif %}>
                             <label for="investor-{{ forloop.counter }}">{{ inv }}</label>
                         </div>
                         {% endfor %}
                     </div>
                     <div class="dropdown-actions">
                         <button type="button" class="select-all-btn" data-dropdown="investor">Select All</button>
-                        <button type="button" class="clear-all-btn" data-dropdown="investor">Clear All</button>
+                        <button type="button" class="clear-all-btn" data-dropdown="investor">Clear</button>
                     </div>
                 </div>
                 <select name="investor" id="filterInvestor" multiple style="display:none;">
                     {% for inv in investors %}
-                        <option value="{{ inv }}" {% if inv in selected_investor %}selected{% endif %}>{{ inv }}</option>
+                        <option value="{{ inv }}" {% if inv in selected_investors %}selected{% endif %}>{{ inv }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -179,19 +170,19 @@
                     <div id="regionalDropdownItems">
                         {% for rm in regional_managers %}
                         <div class="dropdown-menu-item">
-                            <input type="checkbox" id="regional-{{ forloop.counter }}" value="{{ rm }}" {% if rm in selected_regional_manager %}checked{% endif %}>
+                            <input type="checkbox" name="regional_manager" id="regional-{{ forloop.counter }}" value="{{ rm }}" {% if rm in selected_regional_managers %}checked{% endif %}>
                             <label for="regional-{{ forloop.counter }}">{{ rm }}</label>
                         </div>
                         {% endfor %}
                     </div>
                     <div class="dropdown-actions">
                         <button type="button" class="select-all-btn" data-dropdown="regional">Select All</button>
-                        <button type="button" class="clear-all-btn" data-dropdown="regional">Clear All</button>
+                        <button type="button" class="clear-all-btn" data-dropdown="regional">Clear</button>
                     </div>
                 </div>
                 <select name="regional_manager" id="filterRegional" multiple style="display:none;">
                     {% for rm in regional_managers %}
-                        <option value="{{ rm }}" {% if rm in selected_regional_manager %}selected{% endif %}>{{ rm }}</option>
+                        <option value="{{ rm }}" {% if rm in selected_regional_managers %}selected{% endif %}>{{ rm }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -210,45 +201,21 @@
                         <input type="text" placeholder="Search communities..." id="communitySearchInput">
                     </div>
                     <div id="communityDropdownItems">
-                        {% for c in communities %}
+                        {% for c in all_communities %}
                         <div class="dropdown-menu-item">
-                            {% if c.community_name %}
-                                <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.community_name }}" {% if c.community_name in selected_community %}checked{% endif %}>
-                                <label for="community-{{ forloop.counter }}">{{ c.community_name }}</label>
-                            {% elif c.name %}
-                                <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.name }}" {% if c.name in selected_community %}checked{% endif %}>
-                                <label for="community-{{ forloop.counter }}">{{ c.name }}</label>
-                            {% elif c.community %}
-                                <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.community }}" {% if c.community in selected_community %}checked{% endif %}>
-                                <label for="community-{{ forloop.counter }}">{{ c.community }}</label>
-                            {% elif c.property_name %}
-                                <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c.property_name }}" {% if c.property_name in selected_community %}checked{% endif %}>
-                                <label for="community-{{ forloop.counter }}">{{ c.property_name }}</label>
-                            {% else %}
-                                <input type="checkbox" id="community-{{ forloop.counter }}" value="{{ c }}" {% if c in selected_community %}checked{% endif %}>
-                                <label for="community-{{ forloop.counter }}">{{ c }}</label>
-                            {% endif %}
+                            <input type="checkbox" name="community" id="community-{{ forloop.counter }}" value="{{ c }}" {% if c in selected_communities %}checked{% endif %}>
+                            <label for="community-{{ forloop.counter }}">{{ c }}</label>
                         </div>
                         {% endfor %}
                     </div>
                     <div class="dropdown-actions">
                         <button type="button" class="select-all-btn" data-dropdown="community">Select All</button>
-                        <button type="button" class="clear-all-btn" data-dropdown="community">Clear All</button>
+                        <button type="button" class="clear-all-btn" data-dropdown="community">Clear</button>
                     </div>
                 </div>
                 <select name="community" id="filterCommunity" multiple style="display:none;">
-                    {% for c in communities %}
-                        {% if c.community_name %}
-                            <option value="{{ c.community_name }}" {% if c.community_name in selected_community %}selected{% endif %}>{{ c.community_name }}</option>
-                        {% elif c.name %}
-                            <option value="{{ c.name }}" {% if c.name in selected_community %}selected{% endif %}>{{ c.name }}</option>
-                        {% elif c.community %}
-                            <option value="{{ c.community }}" {% if c.community in selected_community %}selected{% endif %}>{{ c.community }}</option>
-                        {% elif c.property_name %}
-                            <option value="{{ c.property_name }}" {% if c.property_name in selected_community %}selected{% endif %}>{{ c.property_name }}</option>
-                        {% else %}
-                            <option value="{{ c }}" {% if c in selected_community %}selected{% endif %}>{{ c }}</option>
-                        {% endif %}
+                    {% for c in all_communities %}
+                        <option value="{{ c }}" {% if c in selected_communities %}selected{% endif %}>{{ c }}</option>
                     {% endfor %}
                 </select>
             </div>

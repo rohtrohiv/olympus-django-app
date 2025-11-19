@@ -4,6 +4,21 @@
 
 {% block title %}Financial Reporting - Olympus{% endblock %}
 
+{% block period_indicator %}
+{% if selected_month or selected_year %}
+<div class="period-indicator" title="Currently viewing financial data for this period">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line>
+        <line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+    </svg>
+    <span class="label">Period:</span>
+    <span class="value">{{ selected_month|default:selected_year }}</span>
+</div>
+{% endif %}
+{% endblock %}
+
 {% block extra_head %}
 <!-- Filter Panel CSS -->
 <link rel="stylesheet" href="{% static 'dashboard/filter_panel.css' %}">
@@ -57,6 +72,13 @@
         align-items: center;
         gap: 16px;
     }
+    
+    .page-header .subtitle {
+        color: #64748B;
+        font-size: 14px;
+        font-weight: 400;
+        margin-top: 8px;
+    }
 
     .page-header h1 svg {
         width: 36px;
@@ -74,6 +96,131 @@
 
     .filter-open .search-container {
         padding-right: 12px;
+    }
+
+    /* Active Filters Display */
+    .active-filters-bar {
+        background: white;
+        border: 1px solid #E5E7EB;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 24px;
+        display: none; /* Hidden by default, shown when filters active */
+        animation: slideDown 0.3s ease-out;
+    }
+
+    .active-filters-bar.show {
+        display: block;
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .active-filters-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+
+    .active-filters-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #64748B;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .active-filters-title svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .clear-all-filters-btn {
+        background: transparent;
+        border: 1px solid #E5E7EB;
+        color: #64748B;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .clear-all-filters-btn:hover {
+        background: #FEF2F2;
+        border-color: #FCA5A5;
+        color: #DC2626;
+    }
+
+    .active-filters-content {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .filter-chip-active {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: linear-gradient(135deg, #0E555A 0%, #0B3A3F 100%);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        box-shadow: 0 2px 4px rgba(14, 85, 90, 0.15);
+        transition: all 0.2s;
+    }
+
+    .filter-chip-active:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(14, 85, 90, 0.25);
+    }
+
+    .filter-chip-label {
+        font-size: 11px;
+        opacity: 0.8;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .filter-chip-value {
+        font-weight: 600;
+    }
+
+    .filter-chip-remove {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+
+    .filter-chip-remove:hover {
+        background: rgba(255, 255, 255, 0.4);
+        transform: scale(1.1);
     }
 
     .search-input {
@@ -131,6 +278,39 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
         border-bottom: 3px solid var(--olympus-gold);
+    }
+
+    /* Sortable column headers */
+    .financial-table thead th.sortable {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 30px;
+        transition: background 0.2s;
+    }
+
+    .financial-table thead th.sortable:hover {
+        background: linear-gradient(135deg, #0B4A4F 0%, #082E32 100%);
+    }
+
+    .financial-table thead th.sortable::after {
+        content: '⇅';
+        position: absolute;
+        right: 10px;
+        opacity: 0.5;
+        font-size: 14px;
+    }
+
+    .financial-table thead th.sortable.sort-asc::after {
+        content: '▲';
+        opacity: 1;
+        color: var(--olympus-cyan);
+    }
+
+    .financial-table thead th.sortable.sort-desc::after {
+        content: '▼';
+        opacity: 1;
+        color: var(--olympus-cyan);
     }
 
     .financial-table thead th:first-child {
@@ -235,17 +415,6 @@
         margin: 0;
     }
 
-    .breakdown-table thead th {
-        background: #E5E7EB;
-        color: var(--olympus-dark-teal);
-        padding: 12px 14px;
-        font-size: 12px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        border-bottom: 2px solid var(--olympus-teal);
-    }
-
     .breakdown-table tbody td {
         padding: 12px 14px;
         font-size: 13px;
@@ -254,6 +423,43 @@
 
     .breakdown-table tbody tr:hover {
         background: rgba(198, 154, 88, 0.08);
+    }
+
+    /* Hierarchical category rows */
+    .parent-category-row {
+        background: #F3F6F8 !important;
+        font-weight: 700 !important;
+        border-top: 2px solid #0E555A;
+    }
+
+    .parent-category-row:hover {
+        background: #E8ECEF !important;
+    }
+
+    .sub-category-row {
+        background: #FAFBFC !important;
+        font-weight: 600;
+    }
+
+    .sub-category-row:hover {
+        background: #F3F6F8 !important;
+    }
+
+    .line-item-row {
+        background: white !important;
+    }
+
+    .line-item-row:hover {
+        background: rgba(89, 230, 246, 0.08) !important;
+    }
+
+    .category-expand-btn, .sub-expand-btn {
+        transition: all 0.2s ease;
+    }
+
+    .category-expand-btn:hover, .sub-expand-btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     }
 
     .category-cell {
@@ -312,6 +518,57 @@
             </svg>
             Financial Reporting
         </h1>
+        <div class="subtitle">
+            Showing {{ communities|length }} {% if total_communities and total_communities > 100 %}of {{ total_communities }}{% endif %} communities
+        </div>
+    </div>
+
+    <!-- Active Filters Bar -->
+    <div class="active-filters-bar {% if selected_month or selected_investors or selected_regional_managers or selected_communities %}show{% endif %}" id="activeFiltersBar">
+        <div class="active-filters-header">
+            <div class="active-filters-title">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                </svg>
+                Active Filters
+            </div>
+            <button type="button" class="clear-all-filters-btn" onclick="clearAllActiveFilters()">
+                Clear All Filters
+            </button>
+        </div>
+        <div class="active-filters-content" id="activeFiltersContent">
+            {% if selected_month %}
+            <div class="filter-chip-active" data-filter-type="period_month" data-filter-value="{{ selected_month }}">
+                <span class="filter-chip-label">Period:</span>
+                <span class="filter-chip-value">{{ selected_month }}</span>
+                <button type="button" class="filter-chip-remove" onclick="removeFilter('period_month', '{{ selected_month }}')" aria-label="Remove period filter">×</button>
+            </div>
+            {% endif %}
+            
+            {% for investor in selected_investors %}
+            <div class="filter-chip-active" data-filter-type="investor" data-filter-value="{{ investor }}">
+                <span class="filter-chip-label">Investor:</span>
+                <span class="filter-chip-value">{{ investor }}</span>
+                <button type="button" class="filter-chip-remove" onclick="removeFilter('investor', '{{ investor }}')" aria-label="Remove {{ investor }} filter">×</button>
+            </div>
+            {% endfor %}
+            
+            {% for rm in selected_regional_managers %}
+            <div class="filter-chip-active" data-filter-type="regional_manager" data-filter-value="{{ rm }}">
+                <span class="filter-chip-label">Regional Manager:</span>
+                <span class="filter-chip-value">{{ rm }}</span>
+                <button type="button" class="filter-chip-remove" onclick="removeFilter('regional_manager', '{{ rm }}')" aria-label="Remove {{ rm }} filter">×</button>
+            </div>
+            {% endfor %}
+            
+            {% for community in selected_communities %}
+            <div class="filter-chip-active" data-filter-type="community" data-filter-value="{{ community }}">
+                <span class="filter-chip-label">Community:</span>
+                <span class="filter-chip-value">{{ community }}</span>
+                <button type="button" class="filter-chip-remove" onclick="removeFilter('community', '{{ community }}')" aria-label="Remove {{ community }} filter">×</button>
+            </div>
+            {% endfor %}
+        </div>
     </div>
 
     <!-- Search Bar -->
@@ -332,15 +589,19 @@
                 <tr>
                     <th>Select</th>
                     <th></th>
-                    <th>Community</th>
-                    <th>Actual</th>
-                    <th>Period % Var</th>
-                    <th>Per Unit</th>
+                    <th class="sortable" data-sort="community" onclick="sortTable('community')">Community</th>
+                    <th class="sortable" data-sort="actual" onclick="sortTable('actual')">Actual</th>
+                    <th class="sortable" data-sort="variance" onclick="sortTable('variance')">Period % Var</th>
+                    <th class="sortable" data-sort="perunit" onclick="sortTable('perunit')">Per Unit</th>
                 </tr>
             </thead>
             <tbody id="propertyTable">
                 {% for community in communities %}
-                <tr class="main-row" data-community="{{ community.name }}">
+                <tr class="main-row" 
+                    data-community="{{ community.name }}"
+                    data-actual="{{ community.actual }}"
+                    data-variance="{{ community.variance }}"
+                    data-perunit="{{ community.per_unit }}">
                     <td style="text-align: center;">
                         <input type="checkbox" class="compare-checkbox">
                     </td>
@@ -358,29 +619,48 @@
                     <td colspan="6" class="nested-content">
                         <div class="nested-header">Financial Breakdown - {{ community.name }}</div>
                         <table class="breakdown-table">
-                            <thead>
-                                <tr>
-                                    <th>Category</th>
-                                    <th>Sub Category</th>
-                                    <th>Sub Sub Category</th>
-                                    <th>Actual</th>
-                                    <th>% Var</th>
-                                    <th>Per Unit</th>
-                                </tr>
-                            </thead>
                             <tbody>
                                 {% if community.breakdown %}
-                                    {% for item in community.breakdown %}
-                                    <tr>
-                                        <td class="category-cell">{{ item.category }}</td>
-                                        <td>{{ item.sub_category }}</td>
-                                        <td>{{ item.sub_sub_category }}</td>
-                                        <td class="actual-amount">${{ item.actual|floatformat:0|intcomma }}</td>
-                                        <td class="{% if item.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                                    {% for parent in community.breakdown %}
+                                    <!-- Parent Category Row -->
+                                    <tr class="parent-category-row" style="background: #F3F6F8; font-weight: 700;">
+                                        <td colspan="3" style="padding-left: 12px;">
+                                            <button class="category-expand-btn" onclick="toggleCategoryRows(this, 'cat-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #0E555A; color: white; border: none; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; margin-right: 8px;">+</button>
+                                            {{ parent.parent }}
+                                        </td>
+                                        <td class="actual-amount">${{ parent.actual|floatformat:0|intcomma }}</td>
+                                        <td class="{% if parent.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                                            {{ parent.variance }}%
+                                        </td>
+                                        <td class="per-unit">${{ parent.per_unit|floatformat:0|intcomma }}</td>
+                                    </tr>
+                                    {% for sub in parent.sub_categories %}
+                                    <!-- Sub Category Row -->
+                                    <tr class="sub-category-row category-detail-cat-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none; background: #FAFBFC;">
+                                        <td colspan="3" style="padding-left: 40px;">
+                                            <button class="sub-expand-btn" onclick="toggleSubItems(this, 'sub-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #C69A58; color: white; border: none; width: 20px; height: 20px; border-radius: 3px; cursor: pointer; margin-right: 8px; font-size: 12px;">+</button>
+                                            {{ sub.name }}
+                                        </td>
+                                        <td class="actual-amount">${{ sub.actual|floatformat:0|intcomma }}</td>
+                                        <td class="{% if sub.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                                            {{ sub.variance }}%
+                                        </td>
+                                        <td class="per-unit">${{ sub.per_unit|floatformat:0|intcomma }}</td>
+                                    </tr>
+                                    {% for item in sub.items %}
+                                    <!-- Line Item Row -->
+                                    <tr class="line-item-row sub-detail-sub-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none;">
+                                        <td colspan="3" style="padding-left: 68px; color: #64748B; font-size: 13px;">
+                                            {{ item.name }}
+                                        </td>
+                                        <td class="actual-amount" style="font-size: 13px;">${{ item.actual|floatformat:0|intcomma }}</td>
+                                        <td class="{% if item.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}" style="font-size: 13px;">
                                             {{ item.variance }}%
                                         </td>
-                                        <td class="per-unit">${{ item.per_unit|floatformat:0|intcomma }}</td>
+                                        <td class="per-unit" style="font-size: 13px;">${{ item.per_unit|floatformat:0|intcomma }}</td>
                                     </tr>
+                                    {% endfor %}
+                                    {% endfor %}
                                     {% endfor %}
                                 {% else %}
                                     <tr>
@@ -406,15 +686,96 @@ function toggleRow(btn) {
     const nestedRow = mainRow.nextElementSibling;
     
     if (nestedRow && nestedRow.classList.contains('nested-row')) {
-        nestedRow.classList.toggle('show');
-        btn.textContent = btn.textContent === '+' ? '−' : '+';
+        const isShowing = nestedRow.classList.contains('show');
         
-        if (nestedRow.classList.contains('show')) {
-            btn.style.background = '#C69A58';
-        } else {
+        if (isShowing) {
+            // Collapsing - hide nested content and reset all inner buttons
+            nestedRow.classList.remove('show');
+            nestedRow.style.display = 'none';
+            btn.textContent = '+';
             btn.style.background = '#0E555A';
+            
+            // Reset all category and sub-category buttons within this nested row
+            const allCategoryBtns = nestedRow.querySelectorAll('.category-expand-btn');
+            allCategoryBtns.forEach(catBtn => {
+                catBtn.textContent = '+';
+                catBtn.style.background = '#0E555A';
+            });
+            
+            const allSubBtns = nestedRow.querySelectorAll('.sub-expand-btn');
+            allSubBtns.forEach(subBtn => {
+                subBtn.textContent = '+';
+                subBtn.style.background = '#C69A58';
+            });
+            
+            // Hide all sub-category and line-item rows
+            const allSubCatRows = nestedRow.querySelectorAll('.sub-category-row');
+            allSubCatRows.forEach(row => row.style.display = 'none');
+            
+            const allLineItemRows = nestedRow.querySelectorAll('.line-item-row');
+            allLineItemRows.forEach(row => row.style.display = 'none');
+        } else {
+            // Expanding
+            nestedRow.classList.add('show');
+            nestedRow.style.display = 'table-row';
+            btn.textContent = '−';
+            btn.style.background = '#C69A58';
         }
     }
+}
+
+// Toggle parent category rows (Income, Operating Revenue, etc.)
+function toggleCategoryRows(btn, categoryId) {
+    const rows = document.querySelectorAll(`.category-detail-${categoryId}`);
+    
+    if (rows.length === 0) {
+        console.warn('No rows found for category:', categoryId);
+        return;
+    }
+    
+    const isHidden = rows[0].style.display === 'none' || rows[0].style.display === '';
+    
+    rows.forEach(row => {
+        row.style.display = isHidden ? 'table-row' : 'none';
+        
+        // Also hide all sub-items when collapsing parent
+        if (!isHidden) {
+            // Find all sub-detail rows related to this category
+            const parentIdParts = categoryId.split('-');
+            const subPrefix = `sub-detail-sub-${parentIdParts[1]}-${parentIdParts[2]}`;
+            const subRows = document.querySelectorAll(`[class*="${subPrefix}"]`);
+            subRows.forEach(subRow => subRow.style.display = 'none');
+            
+            // Reset sub-category buttons
+            const subBtns = row.querySelectorAll('.sub-expand-btn');
+            subBtns.forEach(subBtn => {
+                subBtn.textContent = '+';
+                subBtn.style.background = '#C69A58';
+            });
+        }
+    });
+    
+    btn.textContent = isHidden ? '−' : '+';
+    btn.style.background = isHidden ? '#C69A58' : '#0E555A';
+}
+
+// Toggle sub-category line items
+function toggleSubItems(btn, subId) {
+    const rows = document.querySelectorAll(`.sub-detail-${subId}`);
+    
+    if (rows.length === 0) {
+        console.warn('No rows found for sub-category:', subId);
+        return;
+    }
+    
+    const isHidden = rows[0].style.display === 'none' || rows[0].style.display === '';
+    
+    rows.forEach(row => {
+        row.style.display = isHidden ? 'table-row' : 'none';
+    });
+    
+    btn.textContent = isHidden ? '−' : '+';
+    btn.style.background = isHidden ? '#59E6F6' : '#C69A58';
 }
 
 // Toggle period dropdown
@@ -441,16 +802,21 @@ document.getElementById('searchInput').addEventListener('keyup', function() {
         const nestedRow = row.nextElementSibling;
         
         if (community.includes(filter)) {
-            row.style.display = '';
+            // Show matching row
+            row.style.display = 'table-row';
+            
+            // Handle nested row visibility
             if (nestedRow && nestedRow.classList.contains('nested-row')) {
-                // Keep nested row hidden unless it was expanded
-                if (!nestedRow.classList.contains('show')) {
-                    nestedRow.style.display = 'none';
+                // If it was expanded (has 'show' class), keep it expanded
+                if (nestedRow.classList.contains('show')) {
+                    nestedRow.style.display = 'table-row';
                 } else {
-                    nestedRow.style.display = '';
+                    // If it wasn't expanded, keep it hidden
+                    nestedRow.style.display = 'none';
                 }
             }
         } else {
+            // Hide non-matching row and its nested content
             row.style.display = 'none';
             if (nestedRow && nestedRow.classList.contains('nested-row')) {
                 nestedRow.style.display = 'none';
@@ -458,6 +824,105 @@ document.getElementById('searchInput').addEventListener('keyup', function() {
         }
     });
 });
+
+// Sorting functionality
+let currentSortColumn = null;
+let currentSortDirection = 'asc';
+
+function sortTable(column) {
+    const table = document.getElementById('propertyTable');
+    const rows = Array.from(table.querySelectorAll('tr.main-row'));
+    const headerCell = document.querySelector(`th[data-sort="${column}"]`);
+    
+    // Remove sort classes from all headers
+    document.querySelectorAll('th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+    });
+    
+    // Determine sort direction
+    if (currentSortColumn === column) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortDirection = 'asc';
+    }
+    currentSortColumn = column;
+    
+    // Add appropriate class to current header
+    headerCell.classList.add(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+    
+    // Sort rows
+    rows.sort((rowA, rowB) => {
+        let valueA, valueB;
+        
+        if (column === 'community') {
+            valueA = rowA.getAttribute('data-community').toLowerCase();
+            valueB = rowB.getAttribute('data-community').toLowerCase();
+            
+            if (currentSortDirection === 'asc') {
+                return valueA.localeCompare(valueB);
+            } else {
+                return valueB.localeCompare(valueA);
+            }
+        } else {
+            // For numeric columns
+            valueA = parseFloat(rowA.getAttribute(`data-${column}`)) || 0;
+            valueB = parseFloat(rowB.getAttribute(`data-${column}`)) || 0;
+            
+            if (currentSortDirection === 'asc') {
+                return valueA - valueB;
+            } else {
+                return valueB - valueA;
+            }
+        }
+    });
+    
+    // Re-append rows in sorted order (with their nested rows)
+    rows.forEach(row => {
+        const nestedRow = row.nextElementSibling;
+        table.appendChild(row);
+        if (nestedRow && nestedRow.classList.contains('nested-row')) {
+            table.appendChild(nestedRow);
+        }
+    });
+}
+
+
+// Remove individual filter
+function removeFilter(filterType, filterValue) {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.setAttribute('aria-hidden', 'false');
+    }
+    
+    const params = new URLSearchParams(window.location.search);
+    
+    // Get all values for this filter type
+    const currentValues = params.getAll(filterType);
+    
+    // Remove all instances of this filter type first
+    params.delete(filterType);
+    
+    // Re-add all values except the one we're removing
+    currentValues.forEach(value => {
+        if (value !== filterValue) {
+            params.append(filterType, value);
+        }
+    });
+    
+    // Navigate to updated URL
+    window.location.href = '/financial-reporting/' + (params.toString() ? '?' + params.toString() : '');
+}
+
+// Clear all active filters
+function clearAllActiveFilters() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.setAttribute('aria-hidden', 'false');
+    }
+    
+    // Navigate to base URL without any filters
+    window.location.href = '/financial-reporting/';
+}
 </script>
 {% endblock %}
 
@@ -466,6 +931,31 @@ document.getElementById('searchInput').addEventListener('keyup', function() {
 <script>
     // Set the filter action URL for this page
     window.filterActionUrl = '/financial-reporting/';
+    
+    // Override period mode to default to month for financial reporting
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait for filter_panel.js to initialize
+        setTimeout(function() {
+            // Set month mode as default
+            if (window.OlympusFilterPanel && window.OlympusFilterPanel.setMode) {
+                window.OlympusFilterPanel.setMode('month');
+            }
+            
+            // Initialize default selections for first visit (Olympus investor)
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasFilters = urlParams.has('investor') || urlParams.has('regional_manager') || urlParams.has('community') || urlParams.has('period_month');
+            
+            if (!hasFilters) {
+                // Check "Olympus" investor by default
+                const olympusCheckbox = document.querySelector('input[name="investor"][value="Olympus"]');
+                if (olympusCheckbox && !olympusCheckbox.checked) {
+                    olympusCheckbox.checked = true;
+                    // Trigger change event to update the dropdown
+                    olympusCheckbox.dispatchEvent(new Event('change'));
+                }
+            }
+        }, 200);
+    });
 </script>
 <script src="{% static 'dashboard/filter_panel.js' %}"></script>
 {% endblock %}

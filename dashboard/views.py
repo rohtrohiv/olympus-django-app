@@ -28,45 +28,260 @@ def financial_reporting(request):
 	
 	Displays financial data by community with period comparison,
 	expandable categories, and filtering capabilities.
+	Fetches data from web_ai.card_drillthrough materialized view.
 	"""
-	# Mock data for demo - will be replaced with real data from database
+	from django.db.models import Sum, Count, Q, Max
+	from dashboard.models import CardDrillthrough
+	from datetime import datetime, timedelta
+	from decimal import Decimal
+	from dateutil.relativedelta import relativedelta
+	
+	# Get filter parameters from request (support multi-select)
+	investor_filter = request.GET.getlist('investor') if request.GET.getlist('investor') else None
+	regional_manager_filter = request.GET.getlist('regional_manager') if request.GET.getlist('regional_manager') else None
+	community_filter = request.GET.getlist('community') if request.GET.getlist('community') else None
+	
+	# Default to Olympus investor if no filters applied and first visit
+	if not investor_filter and not regional_manager_filter and not community_filter and not request.GET.get('period_month'):
+		investor_filter = ['Olympus']
+	
+	# Period filtering - default to one month before current month
+	period_mode = request.GET.get('period_mode', 'month')
+	selected_month = request.GET.get('period_month')
+	selected_year = request.GET.get('period_year')
+	
+	# Get latest available date from database (needed for month options)
+	latest_date = CardDrillthrough.objects.aggregate(Max('month_end_date'))['month_end_date__max']
+	
+	# Determine target date for filtering
+	target_year = None
+	target_month = None
+	
+	if selected_month:
+		# Parse month string like "Oct-2025"
+		try:
+			import re
+			match = re.match(r'([A-Za-z]{3})-(\d{4})', selected_month)
+			if match:
+				month_abbr, year = match.groups()
+				target_month = datetime.strptime(month_abbr, '%b').month
+				target_year = int(year)
+		except Exception:
+			pass
+	elif selected_year:
+		target_year = int(selected_year)
+	
+	# If no period specified, default to one month before current
+	if target_year is None and target_month is None:
+		if latest_date:
+			# Use one month before the CURRENT date (not the latest date in DB)
+			current_date = datetime.now()
+			default_date = current_date - relativedelta(months=1)
+			target_year = default_date.year
+			target_month = default_date.month
+			# Set selected_month for display
+			selected_month = default_date.strftime('%b-%Y')
+	
+	# Build optimized query with select_related and prefetch
+	queryset = CardDrillthrough.objects.select_related().only(
+		'community', 'property_name', 'total_units',
+		'category_name', 'parent_category_name', 'sub_category_name', 'sub_sub_category_name',
+		'income_values', 'income_values_per_unit_all',
+		'investor', 'regional_area_manager'
+	)
+	
+	# Apply period filter first (most selective)
+	if target_month and target_year:
+		queryset = queryset.filter(
+			month_end_date__year=target_year,
+			month_end_date__month=target_month
+		)
+	elif target_year:
+		queryset = queryset.filter(month_end_date__year=target_year)
+	
+	# Apply other filters
+	if investor_filter:
+		queryset = queryset.filter(investor__in=investor_filter)
+	if regional_manager_filter:
+		queryset = queryset.filter(regional_area_manager__in=regional_manager_filter)
+	if community_filter:
+		queryset = queryset.filter(property_name__in=community_filter)
+	
+	# Fetch all data in one query and process in memory (faster than multiple queries)
+	all_records = list(queryset.values(
+		'community', 'property_name', 'total_units',
+		'category_name', 'parent_category_name', 'sub_category_name', 'sub_sub_category_name',
+		'income_values', 'income_values_per_unit_all'
+	))
+	
+	# Group by community in Python (faster than multiple DB queries)
+	community_map = {}
+	
+	for record in all_records:
+		community_key = record['community']
+		if not community_key:
+			continue
+		
+		# Initialize community if not exists
+		if community_key not in community_map:
+			community_map[community_key] = {
+				'name': record['property_name'] or community_key,
+				'units': record['total_units'] or 1,
+				'total_actual': Decimal('0'),
+				'breakdown': {}  # Will store hierarchical structure
+			}
+		
+		# Parse income values
+		income_val = record['income_values']
+		if income_val is not None:
+			if isinstance(income_val, str):
+				income_val = Decimal(income_val.replace('$', '').replace(',', '').replace('(', '-').replace(')', ''))
+			else:
+				income_val = Decimal(str(income_val))
+		else:
+			income_val = Decimal('0')
+		
+		per_unit_val = record['income_values_per_unit_all']
+		if per_unit_val is not None:
+			if isinstance(per_unit_val, str):
+				per_unit_val = Decimal(per_unit_val.replace('$', '').replace(',', '').replace('(', '-').replace(')', ''))
+			else:
+				per_unit_val = Decimal(str(per_unit_val))
+		else:
+			per_unit_val = Decimal('0')
+		
+		# Add to community total
+		community_map[community_key]['total_actual'] += income_val
+		
+		# Build hierarchical structure: Parent > Sub > SubSub
+		parent = record['parent_category_name'] or 'Other'
+		sub = record['sub_category_name'] or 'Uncategorized'
+		sub_sub = record['sub_sub_category_name'] or record['category_name'] or 'Other'
+		
+		# Skip Capital Expenditures and certain categories
+		if parent in ['Capital Expenditures', 'Net Income', 'Net Operating Income']:
+			continue
+		
+		# Initialize parent category if not exists
+		if parent not in community_map[community_key]['breakdown']:
+			community_map[community_key]['breakdown'][parent] = {
+				'actual': Decimal('0'),
+				'sub_categories': {}
+			}
+		
+		# Add to parent total
+		community_map[community_key]['breakdown'][parent]['actual'] += income_val
+		
+		# Initialize sub category if not exists
+		if sub not in community_map[community_key]['breakdown'][parent]['sub_categories']:
+			community_map[community_key]['breakdown'][parent]['sub_categories'][sub] = {
+				'actual': Decimal('0'),
+				'items': []
+			}
+		
+		# Add to sub category total
+		community_map[community_key]['breakdown'][parent]['sub_categories'][sub]['actual'] += income_val
+		
+		# Add line item
+		community_map[community_key]['breakdown'][parent]['sub_categories'][sub]['items'].append({
+			'name': sub_sub,
+			'actual': float(income_val),
+			'variance': 0.0,
+			'per_unit': float(per_unit_val) if per_unit_val else (float(income_val) / community_map[community_key]['units'] if community_map[community_key]['units'] else 0)
+		})
+	
+	# Convert to list and calculate per unit totals
+	community_data = []
+	for comm_key, comm_data in community_map.items():
+		per_unit_total = float(comm_data['total_actual']) / comm_data['units'] if comm_data['units'] else 0
+		
+		# Convert breakdown from dict to sorted list
+		breakdown_list = []
+		for parent_name, parent_data in sorted(comm_data['breakdown'].items()):
+			parent_total = float(parent_data['actual'])
+			parent_per_unit = parent_total / comm_data['units'] if comm_data['units'] else 0
+			
+			# Build sub-categories
+			sub_categories_list = []
+			for sub_name, sub_data in sorted(parent_data['sub_categories'].items()):
+				sub_total = float(sub_data['actual'])
+				sub_per_unit = sub_total / comm_data['units'] if comm_data['units'] else 0
+				
+				sub_categories_list.append({
+					'name': sub_name,
+					'actual': sub_total,
+					'per_unit': sub_per_unit,
+					'variance': 0.0,
+					'items': sorted(sub_data['items'], key=lambda x: abs(x['actual']), reverse=True)[:20]  # Top 20 items per sub-category
+				})
+			
+			breakdown_list.append({
+				'parent': parent_name,
+				'actual': parent_total,
+				'per_unit': parent_per_unit,
+				'variance': 0.0,
+				'sub_categories': sub_categories_list
+			})
+		
+		community_data.append({
+			'name': comm_data['name'],
+			'actual': float(comm_data['total_actual']),
+			'variance': 0.0,
+			'per_unit': per_unit_total,
+			'units': comm_data['units'],
+			'breakdown': breakdown_list
+		})
+	
+	# Sort by actual amount descending
+	community_data.sort(key=lambda x: abs(x['actual']), reverse=True)
+	
+	# Get filter options - Always fetch from database for dropdown population
+	# Fetch all available options regardless of current filters
+	filter_base = CardDrillthrough.objects.filter(
+		month_end_date__year=target_year,
+		month_end_date__month=target_month
+	) if target_month and target_year else CardDrillthrough.objects.filter(
+		month_end_date__year=target_year
+	) if target_year else CardDrillthrough.objects.all()
+	
+	investors = list(filter_base.values_list('investor', flat=True).distinct().order_by('investor')[:100])
+	investors = [inv for inv in investors if inv]
+	
+	managers = list(filter_base.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')[:100])
+	managers = [mgr for mgr in managers if mgr]
+	
+	communities_list = list(filter_base.values_list('property_name', flat=True).distinct().order_by('property_name')[:200])
+	communities_list = [comm for comm in communities_list if comm]
+	
+	# Get available years for period selection (limit to last 5 years)
+	current_year = datetime.now().year
+	years_list = [str(year) for year in range(current_year, current_year - 5, -1)]
+	
+	# Build month options for dropdown
+	month_options = []
+	if latest_date:
+		# Generate last 12 months from latest date
+		for i in range(12):
+			date = latest_date - relativedelta(months=i)
+			month_options.append(date.strftime('%b-%Y'))
+	
 	context = {
 		'page_title': 'Financial Reporting',
-		'communities': [
-			{
-				'name': 'Olympus Waterford',
-				'actual': 1852299,
-				'variance': -2.52,
-				'per_unit': 9905,
-				'units': 187,
-				'breakdown': [
-					{'category': 'Income', 'sub_category': 'Operating Revenue', 'sub_sub_category': '4010 - Gross Potential Rent', 'actual': 354860, 'variance': 2.21, 'per_unit': 1898},
-					{'category': 'Income', 'sub_category': 'Operating Revenue', 'sub_sub_category': '4020 - Vacancy Loss', 'actual': -15420, 'variance': -1.35, 'per_unit': -82},
-					{'category': 'Operating Expense', 'sub_category': 'Insurance & Taxes', 'sub_sub_category': '6710 - Insurance - Expense', 'actual': 6004, 'variance': -0.02, 'per_unit': 32},
-					{'category': 'Operating Expense', 'sub_category': 'Payroll', 'sub_sub_category': '6200 - Payroll', 'actual': 45280, 'variance': 1.15, 'per_unit': 242},
-					{'category': 'Net Operating Income', 'sub_category': 'Total', 'sub_sub_category': '', 'actual': 194992, 'variance': -6.57, 'per_unit': 1043},
-				]
-			},
-			{
-				'name': 'Olympus Grandview',
-				'actual': 2156780,
-				'variance': 3.42,
-				'per_unit': 11245,
-				'units': 192,
-				'breakdown': []
-			},
-			{
-				'name': 'Olympus Riverside',
-				'actual': 1645920,
-				'variance': -1.28,
-				'per_unit': 8876,
-				'units': 185,
-				'breakdown': []
-			}
-		],
-		'years': ['2025', '2024', '2023'],
+		'communities': community_data[:100],  # Limit to first 100 for initial load
+		'years': years_list,
 		'quarters': ['Q1', 'Q2', 'Q3', 'Q4'],
-		'months': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+		'months': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+		'month_options': month_options,  # Pre-formatted month options
+		'investors': investors,
+		'regional_managers': managers,
+		'all_communities': communities_list,
+		'selected_investors': investor_filter or [],  # Multi-select
+		'selected_regional_managers': regional_manager_filter or [],  # Multi-select
+		'selected_communities': community_filter or [],  # Multi-select
+		'selected_month': selected_month,
+		'selected_year': selected_year,
+		'period_mode': period_mode,
+		'total_communities': len(community_data),
 	}
 	
 	return render(request, 'dashboard/financial_reporting.html', context)

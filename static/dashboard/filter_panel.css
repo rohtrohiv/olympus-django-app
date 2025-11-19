@@ -1,3 +1,5 @@
+@charset "UTF-8";
+
 /* ===== FILTER PANE (LEFT) ===== */
 .filter-toggle-btn{
     width:44px;height:44px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:transparent;
@@ -89,10 +91,11 @@
     box-shadow: 0 0 0 3px rgba(89, 230, 246, 0.1);
 }
 .dropdown-toggle::after {
-    content: '▼';
+    content: '\25BC';  /* Unicode for down-pointing triangle */
     font-size: 10px;
     color: #64748B;
     transition: transform 0.2s;
+    margin-left: 8px;
 }
 .dropdown-toggle.open::after {
     transform: rotate(180deg);

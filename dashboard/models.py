@@ -142,3 +142,47 @@ class OlympusLeaseMoveoutReasonsTrendMonthly(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."olympus_lease_moveout_reasons_trend_monthly"'
+
+
+class CardDrillthrough(models.Model):
+	"""Unmanaged model for web_ai.card_drillthrough materialized view.
+	
+	This view contains financial income/budget drill-through data with 
+	category hierarchies and property-level metrics. Used for detailed
+	financial reporting and analysis.
+	
+	Total rows: ~7.8M records
+	
+	Note: This is a materialized view without a primary key. 
+	Use .values() or .values_list() queries for best results.
+	Direct model instance access may have limitations.
+	"""
+	# Use ctid (PostgreSQL's physical row identifier) as a pseudo-primary key
+	# This allows Django to work with the model but doesn't represent a real constraint
+	ctid = models.TextField(primary_key=True, db_column='ctid')
+	
+	property_id = models.IntegerField(blank=True, null=True)
+	category_id = models.IntegerField(blank=True, null=True)
+	entity_id = models.IntegerField(blank=True, null=True)
+	property_name = models.CharField(max_length=70, blank=True, null=True)
+	category_name = models.CharField(max_length=255, blank=True, null=True)
+	investor = models.CharField(max_length=100, blank=True, null=True)
+	regional_area_manager = models.CharField(max_length=100, blank=True, null=True)
+	# Column name contains special characters; use db_column to map it
+	regional_vp_sr_vp = models.CharField(max_length=100, blank=True, null=True, db_column='Regional VP  | Sr. VP')
+	community = models.TextField(blank=True, null=True)
+	parent_category_name = models.TextField(blank=True, null=True)
+	sub_category_name = models.CharField(max_length=255, blank=True, null=True)
+	sub_sub_category_name = models.CharField(max_length=255, blank=True, null=True)
+	month_end_date = models.DateTimeField(blank=True, null=True)
+	# Income values are PostgreSQL 'money' type - Django will handle as decimal/string
+	income_values = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	total_units = models.IntegerField(blank=True, null=True)
+	income_values_all = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	income_values_per_unit_all = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	solddate_modified = models.DateTimeField(blank=True, null=True)
+	acquisition_date = models.DateField(blank=True, null=True)
+
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."card_drillthrough"'
