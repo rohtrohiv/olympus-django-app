@@ -1,20 +1,21 @@
 {% extends 'base.html' %}
 {% load humanize %}
 {% load static %}
+{% load custom_filters %}
 
 {% block title %}Financial Reporting - Olympus{% endblock %}
 
 {% block period_indicator %}
-{% if selected_month or selected_year %}
-<div class="period-indicator" title="Currently viewing financial data for this period">
+{% if period_labels %}
+<div class="period-indicator" title="Currently viewing financial data for these periods">
     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
         <line x1="16" y1="2" x2="16" y2="6"></line>
         <line x1="8" y1="2" x2="8" y2="6"></line>
         <line x1="3" y1="10" x2="21" y2="10"></line>
     </svg>
-    <span class="label">Period:</span>
-    <span class="value">{{ selected_month|default:selected_year }}</span>
+    <span class="label">Periods:</span>
+    <span class="value">{{ period_labels|join:", " }}</span>
 </div>
 {% endif %}
 {% endblock %}
@@ -587,21 +588,25 @@
         <table class="financial-table">
             <thead>
                 <tr>
-                    <th>Select</th>
-                    <th></th>
-                    <th class="sortable" data-sort="community" onclick="sortTable('community')">Community</th>
-                    <th class="sortable" data-sort="actual" onclick="sortTable('actual')">Actual</th>
-                    <th class="sortable" data-sort="variance" onclick="sortTable('variance')">Period % Var</th>
-                    <th class="sortable" data-sort="perunit" onclick="sortTable('perunit')">Per Unit</th>
+                    <th rowspan="2">Select</th>
+                    <th rowspan="2"></th>
+                    <th rowspan="2" class="sortable" data-sort="community" onclick="sortTable('community')">Community</th>
+                    {% for period in period_labels %}
+                    <th colspan="3" style="text-align: center; background: #0E555A; color: white;">{{ period }}</th>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    {% for period in period_labels %}
+                    <th class="sortable" data-sort="actual-{{ forloop.counter }}" onclick="sortTable('actual-{{ forloop.counter }}')">Actual</th>
+                    <th class="sortable" data-sort="variance-{{ forloop.counter }}" onclick="sortTable('variance-{{ forloop.counter }}')">period % var</th>
+                    <th class="sortable" data-sort="perunit-{{ forloop.counter }}" onclick="sortTable('perunit-{{ forloop.counter }}')">Per Unit</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody id="propertyTable">
                 {% for community in communities %}
                 <tr class="main-row" 
-                    data-community="{{ community.name }}"
-                    data-actual="{{ community.actual }}"
-                    data-variance="{{ community.variance }}"
-                    data-perunit="{{ community.per_unit }}">
+                    data-community="{{ community.name }}">
                     <td style="text-align: center;">
                         <input type="checkbox" class="compare-checkbox">
                     </td>
@@ -609,23 +614,28 @@
                         <button class="expand-btn" onclick="toggleRow(this)">+</button>
                     </td>
                     <td class="community-name">{{ community.name }}</td>
-                    <td class="actual-amount">${{ community.actual|floatformat:0|intcomma }}</td>
-                    <td class="{% if community.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
-                        {{ community.variance }}%
+                    {% for period in period_labels %}
+                    <td class="actual-amount">${{ community.periods|get_item:period|get_item:"actual"|floatformat:0|intcomma }}</td>
+                    <td class="{% if community.periods|get_item:period|get_item:"variance" >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                        {{ community.periods|get_item:period|get_item:"variance" }}%
                     </td>
-                    <td class="per-unit">${{ community.per_unit|floatformat:0|intcomma }}</td>
+                    <td class="per-unit">${{ community.periods|get_item:period|get_item:"per_unit"|floatformat:0|intcomma }}</td>
+                    {% endfor %}
                 </tr>
                 <tr class="nested-row">
-                    <td colspan="6" class="nested-content">
+                    <td colspan="{{ period_labels|length|mul:3|add:3 }}" class="nested-content">
                         <div class="nested-header">Financial Breakdown - {{ community.name }}</div>
                         <table class="breakdown-table">
                             <tbody>
-                                {% if community.breakdown %}
-                                    {% for parent in community.breakdown %}
+                                {% for period in period_labels %}
+                                {% with period_data=community.periods|get_item:period %}
+                                {% if period_data.breakdown %}
+                                    <tr><td colspan="20" style="background: #0E555A; color: white; font-weight: bold; padding: 8px;">{{ period }}</td></tr>
+                                    {% for parent in period_data.breakdown %}
                                     <!-- Parent Category Row -->
                                     <tr class="parent-category-row" style="background: #F3F6F8; font-weight: 700;">
                                         <td colspan="3" style="padding-left: 12px;">
-                                            <button class="category-expand-btn" onclick="toggleCategoryRows(this, 'cat-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #0E555A; color: white; border: none; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; margin-right: 8px;">+</button>
+                                            <button class="category-expand-btn" onclick="toggleCategoryRows(this, 'cat-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #0E555A; color: white; border: none; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; margin-right: 8px;">+</button>
                                             {{ parent.parent }}
                                         </td>
                                         <td class="actual-amount">${{ parent.actual|floatformat:0|intcomma }}</td>
@@ -636,9 +646,9 @@
                                     </tr>
                                     {% for sub in parent.sub_categories %}
                                     <!-- Sub Category Row -->
-                                    <tr class="sub-category-row category-detail-cat-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none; background: #FAFBFC;">
+                                    <tr class="sub-category-row category-detail-cat-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none; background: #FAFBFC;">
                                         <td colspan="3" style="padding-left: 40px;">
-                                            <button class="sub-expand-btn" onclick="toggleSubItems(this, 'sub-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #C69A58; color: white; border: none; width: 20px; height: 20px; border-radius: 3px; cursor: pointer; margin-right: 8px; font-size: 12px;">+</button>
+                                            <button class="sub-expand-btn" onclick="toggleSubItems(this, 'sub-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #C69A58; color: white; border: none; width: 20px; height: 20px; border-radius: 3px; cursor: pointer; margin-right: 8px; font-size: 12px;">+</button>
                                             {{ sub.name }}
                                         </td>
                                         <td class="actual-amount">${{ sub.actual|floatformat:0|intcomma }}</td>
@@ -649,7 +659,7 @@
                                     </tr>
                                     {% for item in sub.items %}
                                     <!-- Line Item Row -->
-                                    <tr class="line-item-row sub-detail-sub-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none;">
+                                    <tr class="line-item-row sub-detail-sub-{{ forloop.parentloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none;">
                                         <td colspan="3" style="padding-left: 68px; color: #64748B; font-size: 13px;">
                                             {{ item.name }}
                                         </td>
@@ -662,13 +672,9 @@
                                     {% endfor %}
                                     {% endfor %}
                                     {% endfor %}
-                                {% else %}
-                                    <tr>
-                                        <td colspan="6" style="text-align: center; padding: 24px; color: #94A3B8;">
-                                            No detailed breakdown available
-                                        </td>
-                                    </tr>
                                 {% endif %}
+                                {% endwith %}
+                                {% endfor %}
                             </tbody>
                         </table>
                     </td>
@@ -834,6 +840,8 @@ function sortTable(column) {
     const rows = Array.from(table.querySelectorAll('tr.main-row'));
     const headerCell = document.querySelector(`th[data-sort="${column}"]`);
     
+    if (!headerCell) return; // Header not found
+    
     // Remove sort classes from all headers
     document.querySelectorAll('th.sortable').forEach(th => {
         th.classList.remove('sort-asc', 'sort-desc');
@@ -864,9 +872,21 @@ function sortTable(column) {
                 return valueB.localeCompare(valueA);
             }
         } else {
-            // For numeric columns
-            valueA = parseFloat(rowA.getAttribute(`data-${column}`)) || 0;
-            valueB = parseFloat(rowB.getAttribute(`data-${column}`)) || 0;
+            // For period-specific columns (e.g., actual-1, variance-2)
+            const colMatch = column.match(/^(actual|variance|perunit)-(\d+)$/);
+            if (colMatch) {
+                const [, type, periodIndex] = colMatch;
+                const colIndex = 3 + (parseInt(periodIndex) - 1) * 3 + (type === 'actual' ? 0 : type === 'variance' ? 1 : 2);
+                
+                const cellA = rowA.querySelectorAll('td')[colIndex];
+                const cellB = rowB.querySelectorAll('td')[colIndex];
+                
+                valueA = parseFloat(cellA ? cellA.textContent.replace(/[$,()%]/g, '').replace(/\s+/g, '') : '0') || 0;
+                valueB = parseFloat(cellB ? cellB.textContent.replace(/[$,()%]/g, '').replace(/\s+/g, '') : '0') || 0;
+            } else {
+                valueA = 0;
+                valueB = 0;
+            }
             
             if (currentSortDirection === 'asc') {
                 return valueA - valueB;

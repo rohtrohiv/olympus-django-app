@@ -34,13 +34,9 @@
                         <input type="text" placeholder="Search years..." id="yearSearchInput">
                     </div>
                     <div id="yearDropdownItems">
-                        <div class="dropdown-menu-item">
-                            <input type="checkbox" id="year-all" value="all" {% if selected_year == 'all' %}checked{% endif %}>
-                            <label for="year-all">All Years</label>
-                        </div>
                         {% for year, data in period_options.items %}
                         <div class="dropdown-menu-item">
-                            <input type="checkbox" id="year-{{ year }}" value="{{ year }}" {% if year == selected_year %}checked{% endif %}>
+                            <input type="checkbox" id="year-{{ year }}" name="period_year_checkbox" value="{{ year }}" {% if year in selected_years %}checked{% endif %}>
                             <label for="year-{{ year }}">{{ year }}</label>
                         </div>
                         {% endfor %}
@@ -51,9 +47,8 @@
                     </div>
                 </div>
                 <select name="period_year" id="filterPeriodYear" multiple style="display:none;">
-                    <option value="all" {% if selected_year == 'all' %}selected{% endif %}>All Years</option>
                     {% for year, data in period_options.items %}
-                        <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                        <option value="{{ year }}" {% if year in selected_years %}selected{% endif %}>{{ year }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -72,7 +67,7 @@
                         {% for year, data in period_options.items %}
                             {% for quarter, months in data.quarters.items %}
                             <div class="dropdown-menu-item">
-                                <input type="checkbox" id="quarter-{{ quarter }}-{{ year }}" value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">
+                                <input type="checkbox" id="quarter-{{ quarter }}-{{ year }}" name="period_quarter_checkbox" value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}" {% if quarter|add:'-'|add:year in selected_quarters %}checked{% endif %}>
                                 <label for="quarter-{{ quarter }}-{{ year }}">{{ quarter }} {{ year }}</label>
                             </div>
                             {% endfor %}
@@ -86,7 +81,7 @@
                 <select name="period_quarter" id="filterPeriodQuarter" multiple style="display:none;">
                     {% for year, data in period_options.items %}
                         {% for quarter, months in data.quarters.items %}
-                            <option value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}">{{ quarter }} {{ year }}</option>
+                            <option value="{{ quarter }}-{{ year }}" data-year="{{ year }}" data-quarter="{{ quarter }}" {% if quarter|add:'-'|add:year in selected_quarters %}selected{% endif %}>{{ quarter }} {{ year }}</option>
                         {% endfor %}
                     {% endfor %}
                 </select>
@@ -96,7 +91,7 @@
             <!-- Month custom dropdown -->
             <div id="monthDropdownContainer" class="custom-dropdown" style="display:none;margin-top:8px;">
                 <button type="button" class="dropdown-toggle" id="monthDropdownToggle">
-                    <span class="placeholder">Select month...</span>
+                    <span class="placeholder">Select months...</span>
                 </button>
                 <div class="dropdown-menu" id="monthDropdownMenu">
                     <div class="dropdown-search">
@@ -105,18 +100,19 @@
                     <div id="monthDropdownItems">
                         {% for month in month_options %}
                         <div class="dropdown-menu-item">
-                            <input type="radio" name="period_month_radio" id="month-{{ forloop.counter }}" value="{{ month }}" {% if month == selected_month %}checked{% endif %}>
+                            <input type="checkbox" name="period_month_checkbox" id="month-{{ forloop.counter }}" value="{{ month }}" {% if month in selected_months %}checked{% endif %}>
                             <label for="month-{{ forloop.counter }}">{{ month }}</label>
                         </div>
                         {% endfor %}
                     </div>
                     <div class="dropdown-actions">
-                        <button type="button" class="clear-all-btn" data-dropdown="month">Clear</button>
+                        <button type="button" class="select-all-btn" data-dropdown="month">Select All</button>
+                        <button type="button" class="clear-all-btn" data-dropdown="month">Clear All</button>
                     </div>
                 </div>
-                <select name="period_month" id="filterPeriodMonth" style="display:none;">
+                <select name="period_month" id="filterPeriodMonth" multiple style="display:none;">
                     {% for month in month_options %}
-                        <option value="{{ month }}" {% if month == selected_month %}selected{% endif %}>{{ month }}</option>
+                        <option value="{{ month }}" {% if month in selected_months %}selected{% endif %}>{{ month }}</option>
                     {% endfor %}
                 </select>
             </div>

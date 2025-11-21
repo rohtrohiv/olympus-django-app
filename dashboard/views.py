@@ -45,59 +45,93 @@ def financial_reporting(request):
 	if not investor_filter and not regional_manager_filter and not community_filter and not request.GET.get('period_month'):
 		investor_filter = ['Olympus']
 	
-	# Period filtering - default to one month before current month
+	# Period filtering - support multi-select for comparison
 	period_mode = request.GET.get('period_mode', 'month')
-	selected_month = request.GET.get('period_month')
-	selected_year = request.GET.get('period_year')
+	selected_months = request.GET.getlist('period_month') if request.GET.getlist('period_month') else []
+	selected_years = request.GET.getlist('period_year') if request.GET.getlist('period_year') else []
+	selected_quarters = request.GET.getlist('period_quarter') if request.GET.getlist('period_quarter') else []
 	
 	# Get latest available date from database (needed for month options)
 	latest_date = CardDrillthrough.objects.aggregate(Max('month_end_date'))['month_end_date__max']
 	
-	# Determine target date for filtering
-	target_year = None
-	target_month = None
-	
-	if selected_month:
-		# Parse month string like "Oct-2025"
-		try:
-			import re
-			match = re.match(r'([A-Za-z]{3})-(\d{4})', selected_month)
-			if match:
-				month_abbr, year = match.groups()
-				target_month = datetime.strptime(month_abbr, '%b').month
-				target_year = int(year)
-		except Exception:
-			pass
-	elif selected_year:
-		target_year = int(selected_year)
-	
-	# If no period specified, default to one month before current
-	if target_year is None and target_month is None:
+	# If no periods specified, default to one month before current
+	if not selected_months and not selected_years and not selected_quarters:
 		if latest_date:
 			# Use one month before the CURRENT date (not the latest date in DB)
 			current_date = datetime.now()
 			default_date = current_date - relativedelta(months=1)
-			target_year = default_date.year
-			target_month = default_date.month
-			# Set selected_month for display
-			selected_month = default_date.strftime('%b-%Y')
+			selected_months = [default_date.strftime('%b-%Y')]
 	
-	# Build optimized query with select_related and prefetch
+	# Parse selected periods into target dates for multi-period comparison
+	target_dates = []
+	period_labels = []
+	
+	if selected_quarters:
+		# Quarters: e.g., "Q1-2025" -> expand to all months in Q1
+		for quarter_str in selected_quarters:
+			try:
+				match = re.match(r'Q(\d)-(\d{4})', quarter_str)
+				if match:
+					quarter_num, year = match.groups()
+					target_year = int(year)
+					quarter_months = {
+						'1': [1, 2, 3],
+						'2': [4, 5, 6],
+						'3': [7, 8, 9],
+						'4': [10, 11, 12]
+					}
+					for month in quarter_months[quarter_num]:
+						target_dates.append({
+							'year': target_year,
+							'month': month,
+							'label': quarter_str,
+							'is_aggregate': True
+						})
+					if quarter_str not in period_labels:
+						period_labels.append(quarter_str)
+			except Exception:
+				pass
+	elif selected_months:
+		# Individual months
+		for month_str in selected_months:
+			try:
+				match = re.match(r'([A-Za-z]{3})-(\d{4})', month_str)
+				if match:
+					month_abbr, year = match.groups()
+					target_month = datetime.strptime(month_abbr, '%b').month
+					target_year = int(year)
+					target_dates.append({
+						'year': target_year,
+						'month': target_month,
+						'label': month_str,
+						'is_aggregate': False
+					})
+					if month_str not in period_labels:
+						period_labels.append(month_str)
+			except Exception:
+				pass
+	
+	# Build optimized query
 	queryset = CardDrillthrough.objects.select_related().only(
-		'community', 'property_name', 'total_units',
+		'community', 'property_name', 'total_units', 'month_end_date',
 		'category_name', 'parent_category_name', 'sub_category_name', 'sub_sub_category_name',
 		'income_values', 'income_values_per_unit_all',
 		'investor', 'regional_area_manager'
 	)
 	
-	# Apply period filter first (most selective)
-	if target_month and target_year:
-		queryset = queryset.filter(
-			month_end_date__year=target_year,
-			month_end_date__month=target_month
-		)
-	elif target_year:
-		queryset = queryset.filter(month_end_date__year=target_year)
+	# Apply period filter (support multiple periods with OR)
+	if target_dates:
+		period_queries = []
+		for target_date in target_dates:
+			period_queries.append(
+				Q(month_end_date__year=target_date['year'], month_end_date__month=target_date['month'])
+			)
+		# Combine with OR
+		if period_queries:
+			period_q = period_queries[0]
+			for pq in period_queries[1:]:
+				period_q |= pq
+			queryset = queryset.filter(period_q)
 	
 	# Apply other filters
 	if investor_filter:
@@ -107,14 +141,14 @@ def financial_reporting(request):
 	if community_filter:
 		queryset = queryset.filter(property_name__in=community_filter)
 	
-	# Fetch all data in one query and process in memory (faster than multiple queries)
+	# Fetch all data in one query and process in memory
 	all_records = list(queryset.values(
-		'community', 'property_name', 'total_units',
+		'community', 'property_name', 'total_units', 'month_end_date',
 		'category_name', 'parent_category_name', 'sub_category_name', 'sub_sub_category_name',
 		'income_values', 'income_values_per_unit_all'
 	))
 	
-	# Group by community in Python (faster than multiple DB queries)
+	# Group by community and period in Python
 	community_map = {}
 	
 	for record in all_records:
@@ -122,13 +156,30 @@ def financial_reporting(request):
 		if not community_key:
 			continue
 		
+		# Determine period label for this record
+		record_date = record['month_end_date']
+		record_period = None
+		for target_date in target_dates:
+			if record_date.year == target_date['year'] and record_date.month == target_date['month']:
+				record_period = target_date['label']
+				break
+		
+		if not record_period:
+			continue
+		
 		# Initialize community if not exists
 		if community_key not in community_map:
 			community_map[community_key] = {
 				'name': record['property_name'] or community_key,
 				'units': record['total_units'] or 1,
+				'periods': {}
+			}
+		
+		# Initialize period if not exists
+		if record_period not in community_map[community_key]['periods']:
+			community_map[community_key]['periods'][record_period] = {
 				'total_actual': Decimal('0'),
-				'breakdown': {}  # Will store hierarchical structure
+				'breakdown': {}
 			}
 		
 		# Parse income values
@@ -150,8 +201,8 @@ def financial_reporting(request):
 		else:
 			per_unit_val = Decimal('0')
 		
-		# Add to community total
-		community_map[community_key]['total_actual'] += income_val
+		# Add to period total
+		community_map[community_key]['periods'][record_period]['total_actual'] += income_val
 		
 		# Build hierarchical structure: Parent > Sub > SubSub
 		parent = record['parent_category_name'] or 'Other'
@@ -163,99 +214,105 @@ def financial_reporting(request):
 			continue
 		
 		# Initialize parent category if not exists
-		if parent not in community_map[community_key]['breakdown']:
-			community_map[community_key]['breakdown'][parent] = {
+		if parent not in community_map[community_key]['periods'][record_period]['breakdown']:
+			community_map[community_key]['periods'][record_period]['breakdown'][parent] = {
 				'actual': Decimal('0'),
 				'sub_categories': {}
 			}
 		
 		# Add to parent total
-		community_map[community_key]['breakdown'][parent]['actual'] += income_val
+		community_map[community_key]['periods'][record_period]['breakdown'][parent]['actual'] += income_val
 		
 		# Initialize sub category if not exists
-		if sub not in community_map[community_key]['breakdown'][parent]['sub_categories']:
-			community_map[community_key]['breakdown'][parent]['sub_categories'][sub] = {
+		if sub not in community_map[community_key]['periods'][record_period]['breakdown'][parent]['sub_categories']:
+			community_map[community_key]['periods'][record_period]['breakdown'][parent]['sub_categories'][sub] = {
 				'actual': Decimal('0'),
 				'items': []
 			}
 		
 		# Add to sub category total
-		community_map[community_key]['breakdown'][parent]['sub_categories'][sub]['actual'] += income_val
+		community_map[community_key]['periods'][record_period]['breakdown'][parent]['sub_categories'][sub]['actual'] += income_val
 		
 		# Add line item
-		community_map[community_key]['breakdown'][parent]['sub_categories'][sub]['items'].append({
+		community_map[community_key]['periods'][record_period]['breakdown'][parent]['sub_categories'][sub]['items'].append({
 			'name': sub_sub,
 			'actual': float(income_val),
 			'variance': 0.0,
 			'per_unit': float(per_unit_val) if per_unit_val else (float(income_val) / community_map[community_key]['units'] if community_map[community_key]['units'] else 0)
 		})
 	
-	# Convert to list and calculate per unit totals
+	# Convert to list with multi-period structure
 	community_data = []
 	for comm_key, comm_data in community_map.items():
-		per_unit_total = float(comm_data['total_actual']) / comm_data['units'] if comm_data['units'] else 0
-		
-		# Convert breakdown from dict to sorted list
-		breakdown_list = []
-		for parent_name, parent_data in sorted(comm_data['breakdown'].items()):
-			parent_total = float(parent_data['actual'])
-			parent_per_unit = parent_total / comm_data['units'] if comm_data['units'] else 0
-			
-			# Build sub-categories
-			sub_categories_list = []
-			for sub_name, sub_data in sorted(parent_data['sub_categories'].items()):
-				sub_total = float(sub_data['actual'])
-				sub_per_unit = sub_total / comm_data['units'] if comm_data['units'] else 0
+		# Build periods data
+		periods_data = {}
+		for period_label in period_labels:
+			if period_label in comm_data['periods']:
+				period_info = comm_data['periods'][period_label]
+				per_unit_total = float(period_info['total_actual']) / comm_data['units'] if comm_data['units'] else 0
 				
-				sub_categories_list.append({
-					'name': sub_name,
-					'actual': sub_total,
-					'per_unit': sub_per_unit,
+				# Convert breakdown from dict to sorted list
+				breakdown_list = []
+				for parent_name, parent_data in sorted(period_info['breakdown'].items()):
+					parent_total = float(parent_data['actual'])
+					parent_per_unit = parent_total / comm_data['units'] if comm_data['units'] else 0
+					
+					# Build sub-categories
+					sub_categories_list = []
+					for sub_name, sub_data in sorted(parent_data['sub_categories'].items()):
+						sub_total = float(sub_data['actual'])
+						sub_per_unit = sub_total / comm_data['units'] if comm_data['units'] else 0
+						
+						sub_categories_list.append({
+							'name': sub_name,
+							'actual': sub_total,
+							'per_unit': sub_per_unit,
+							'variance': 0.0,
+							'items': sorted(sub_data['items'], key=lambda x: abs(x['actual']), reverse=True)[:20]
+						})
+					
+					breakdown_list.append({
+						'parent': parent_name,
+						'actual': parent_total,
+						'per_unit': parent_per_unit,
+						'variance': 0.0,
+						'sub_categories': sub_categories_list
+					})
+				
+				periods_data[period_label] = {
+					'actual': float(period_info['total_actual']),
 					'variance': 0.0,
-					'items': sorted(sub_data['items'], key=lambda x: abs(x['actual']), reverse=True)[:20]  # Top 20 items per sub-category
-				})
-			
-			breakdown_list.append({
-				'parent': parent_name,
-				'actual': parent_total,
-				'per_unit': parent_per_unit,
-				'variance': 0.0,
-				'sub_categories': sub_categories_list
-			})
+					'per_unit': per_unit_total,
+					'breakdown': breakdown_list
+				}
+			else:
+				# No data for this period
+				periods_data[period_label] = {
+					'actual': 0.0,
+					'variance': 0.0,
+					'per_unit': 0.0,
+					'breakdown': []
+				}
 		
 		community_data.append({
 			'name': comm_data['name'],
-			'actual': float(comm_data['total_actual']),
-			'variance': 0.0,
-			'per_unit': per_unit_total,
 			'units': comm_data['units'],
-			'breakdown': breakdown_list
+			'periods': periods_data
 		})
 	
-	# Sort by actual amount descending
-	community_data.sort(key=lambda x: abs(x['actual']), reverse=True)
+	# Sort by first period's actual amount descending
+	if period_labels:
+		community_data.sort(key=lambda x: abs(x['periods'][period_labels[0]]['actual']), reverse=True)
 	
 	# Get filter options - Always fetch from database for dropdown population
-	# Fetch all available options regardless of current filters
-	filter_base = CardDrillthrough.objects.filter(
-		month_end_date__year=target_year,
-		month_end_date__month=target_month
-	) if target_month and target_year else CardDrillthrough.objects.filter(
-		month_end_date__year=target_year
-	) if target_year else CardDrillthrough.objects.all()
-	
-	investors = list(filter_base.values_list('investor', flat=True).distinct().order_by('investor')[:100])
+	investors = list(CardDrillthrough.objects.values_list('investor', flat=True).distinct().order_by('investor')[:100])
 	investors = [inv for inv in investors if inv]
 	
-	managers = list(filter_base.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')[:100])
+	managers = list(CardDrillthrough.objects.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')[:100])
 	managers = [mgr for mgr in managers if mgr]
 	
-	communities_list = list(filter_base.values_list('property_name', flat=True).distinct().order_by('property_name')[:200])
+	communities_list = list(CardDrillthrough.objects.values_list('property_name', flat=True).distinct().order_by('property_name')[:200])
 	communities_list = [comm for comm in communities_list if comm]
-	
-	# Get available years for period selection (limit to last 5 years)
-	current_year = datetime.now().year
-	years_list = [str(year) for year in range(current_year, current_year - 5, -1)]
 	
 	# Build month options for dropdown
 	month_options = []
@@ -265,12 +322,23 @@ def financial_reporting(request):
 			date = latest_date - relativedelta(months=i)
 			month_options.append(date.strftime('%b-%Y'))
 	
+	# Build period_options structure for year/quarter dropdowns
+	current_year = datetime.now().year
+	period_options = {}
+	for year in range(current_year, current_year - 5, -1):
+		period_options[str(year)] = {
+			'quarters': {
+				'Q1': ['Jan', 'Feb', 'Mar'],
+				'Q2': ['Apr', 'May', 'Jun'],
+				'Q3': ['Jul', 'Aug', 'Sep'],
+				'Q4': ['Oct', 'Nov', 'Dec']
+			}
+		}
+	
 	context = {
 		'page_title': 'Financial Reporting',
 		'communities': community_data[:100],  # Limit to first 100 for initial load
-		'years': years_list,
-		'quarters': ['Q1', 'Q2', 'Q3', 'Q4'],
-		'months': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+		'period_options': period_options,  # For year/quarter dropdowns
 		'month_options': month_options,  # Pre-formatted month options
 		'investors': investors,
 		'regional_managers': managers,
@@ -278,10 +346,12 @@ def financial_reporting(request):
 		'selected_investors': investor_filter or [],  # Multi-select
 		'selected_regional_managers': regional_manager_filter or [],  # Multi-select
 		'selected_communities': community_filter or [],  # Multi-select
-		'selected_month': selected_month,
-		'selected_year': selected_year,
+		'selected_months': selected_months,  # Multi-select months
+		'selected_years': selected_years,  # Multi-select years
+		'selected_quarters': selected_quarters,  # Multi-select quarters
 		'period_mode': period_mode,
 		'total_communities': len(community_data),
+		'period_labels': period_labels,  # List of period labels for table headers (e.g., ['Q1-2025', 'Q2-2025'])
 	}
 	
 	return render(request, 'dashboard/financial_reporting.html', context)
