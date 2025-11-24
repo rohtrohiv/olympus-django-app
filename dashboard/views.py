@@ -66,7 +66,23 @@ def financial_reporting(request):
 	target_dates = []
 	period_labels = []
 	
-	if selected_quarters:
+	if selected_years:
+		# Years: e.g., "2025" -> expand to all 12 months
+		for year_str in selected_years:
+			try:
+				target_year = int(year_str)
+				for month in range(1, 13):
+					target_dates.append({
+						'year': target_year,
+						'month': month,
+						'label': year_str,
+						'is_aggregate': True
+					})
+				if year_str not in period_labels:
+					period_labels.append(year_str)
+			except Exception:
+				pass
+	elif selected_quarters:
 		# Quarters: e.g., "Q1-2025" -> expand to all months in Q1
 		for quarter_str in selected_quarters:
 			try:
@@ -111,6 +127,28 @@ def financial_reporting(request):
 			except Exception:
 				pass
 	
+	# Reverse period_labels to show chronologically (earliest first)
+	# This way Oct-2024 comes before Nov-2024 before Dec-2024
+	period_labels.reverse()
+	target_dates.reverse()
+	
+	# Calculate previous period for first period variance comparison
+	# Only fetch if it's not already in the selected periods
+	previous_period_info = None
+	if target_dates and period_labels:
+		first_target = target_dates[0]
+		first_date = datetime(first_target['year'], first_target['month'], 1)
+		prev_date = first_date - relativedelta(months=1)
+		prev_label = prev_date.strftime('%b-%Y')
+		
+		# Only fetch previous period if it's not already selected
+		if prev_label not in period_labels:
+			previous_period_info = {
+				'year': prev_date.year,
+				'month': prev_date.month,
+				'label': f"_prev_{prev_label}"  # Internal label
+			}
+	
 	# Build optimized query
 	queryset = CardDrillthrough.objects.select_related().only(
 		'community', 'property_name', 'total_units', 'month_end_date',
@@ -119,12 +157,17 @@ def financial_reporting(request):
 		'investor', 'regional_area_manager'
 	)
 	
-	# Apply period filter (support multiple periods with OR)
+	# Apply period filter (support multiple periods with OR, plus previous period for variance)
 	if target_dates:
 		period_queries = []
 		for target_date in target_dates:
 			period_queries.append(
 				Q(month_end_date__year=target_date['year'], month_end_date__month=target_date['month'])
+			)
+		# Add previous period for variance calculation
+		if previous_period_info:
+			period_queries.append(
+				Q(month_end_date__year=previous_period_info['year'], month_end_date__month=previous_period_info['month'])
 			)
 		# Combine with OR
 		if period_queries:
@@ -159,10 +202,17 @@ def financial_reporting(request):
 		# Determine period label for this record
 		record_date = record['month_end_date']
 		record_period = None
+		
+		# Check if this is one of the target dates
 		for target_date in target_dates:
 			if record_date.year == target_date['year'] and record_date.month == target_date['month']:
 				record_period = target_date['label']
 				break
+		
+		# Check if this is the previous period for variance calculation
+		if not record_period and previous_period_info:
+			if record_date.year == previous_period_info['year'] and record_date.month == previous_period_info['month']:
+				record_period = previous_period_info['label']
 		
 		if not record_period:
 			continue
@@ -244,7 +294,7 @@ def financial_reporting(request):
 	# Convert to list with multi-period structure
 	community_data = []
 	for comm_key, comm_data in community_map.items():
-		# Build periods data
+		# Build periods data first without variance
 		periods_data = {}
 		for period_label in period_labels:
 			if period_label in comm_data['periods']:
@@ -263,12 +313,22 @@ def financial_reporting(request):
 						sub_total = float(sub_data['actual'])
 						sub_per_unit = sub_total / comm_data['units'] if comm_data['units'] else 0
 						
+						# Build items with initial variance 0
+						items_list = []
+						for item in sub_data['items']:
+							items_list.append({
+								'name': item['name'],
+								'actual': item['actual'],
+								'per_unit': item['per_unit'],
+								'variance': 0.0
+							})
+						
 						sub_categories_list.append({
 							'name': sub_name,
 							'actual': sub_total,
 							'per_unit': sub_per_unit,
 							'variance': 0.0,
-							'items': sorted(sub_data['items'], key=lambda x: abs(x['actual']), reverse=True)[:20]
+							'items': sorted(items_list, key=lambda x: abs(x['actual']), reverse=True)[:20]
 						})
 					
 					breakdown_list.append({
@@ -294,6 +354,117 @@ def financial_reporting(request):
 					'breakdown': []
 				}
 		
+		# Calculate variance for each period (compare to previous period in the list or DB previous)
+		for i in range(len(period_labels)):
+			current_period = period_labels[i]
+			previous_period = None
+			use_raw_prev_data = False
+			
+			if i > 0:
+				# Use previous period in the selected list
+				previous_period = period_labels[i - 1]
+			elif i == 0 and previous_period_info:
+				# For first period, use the period immediately before it from DB
+				previous_period = previous_period_info['label']
+				use_raw_prev_data = True
+			
+			if previous_period:
+				# Calculate top-level variance
+				current_actual = periods_data[current_period]['actual']
+				previous_actual = 0
+				
+				# Get previous period data
+				if use_raw_prev_data and previous_period in comm_data['periods']:
+					# Use raw data from community_map for DB-fetched previous period
+					prev_period_info = comm_data['periods'][previous_period]
+					previous_actual = float(prev_period_info['total_actual'])
+				elif previous_period in periods_data:
+					# Use data from periods_data for selected periods
+					previous_actual = periods_data[previous_period]['actual']
+				
+				if previous_actual != 0:
+					periods_data[current_period]['variance'] = round(((current_actual - previous_actual) / abs(previous_actual)) * 100, 1)
+				else:
+					periods_data[current_period]['variance'] = 0.0
+				
+				# Calculate breakdown variances
+				current_breakdown = {item['parent']: item for item in periods_data[current_period]['breakdown']}
+				previous_breakdown = {}
+				
+				# Get previous breakdown
+				if use_raw_prev_data and previous_period in comm_data['periods']:
+					# Build previous breakdown from raw data for DB-fetched previous period
+					prev_period_raw = comm_data['periods'][previous_period]
+					for parent_name, parent_data in prev_period_raw['breakdown'].items():
+						parent_total = float(parent_data['actual'])
+						parent_per_unit = parent_total / comm_data['units'] if comm_data['units'] else 0
+						
+						sub_categories_dict = {}
+						for sub_name, sub_data in parent_data['sub_categories'].items():
+							sub_total = float(sub_data['actual'])
+							sub_per_unit = sub_total / comm_data['units'] if comm_data['units'] else 0
+							
+							items_dict = {}
+							for item in sub_data['items']:
+								items_dict[item['name']] = {
+									'actual': item['actual'],
+									'per_unit': item['per_unit']
+								}
+							
+							sub_categories_dict[sub_name] = {
+								'actual': sub_total,
+								'per_unit': sub_per_unit,
+								'items': items_dict
+							}
+						
+						previous_breakdown[parent_name] = {
+							'actual': parent_total,
+							'per_unit': parent_per_unit,
+							'sub_categories': sub_categories_dict
+						}
+				elif previous_period in periods_data:
+					# Use data from periods_data for selected periods
+					previous_breakdown = {item['parent']: item for item in periods_data[previous_period]['breakdown']}
+				
+				for parent_name, parent_data in current_breakdown.items():
+					if parent_name in previous_breakdown:
+						prev_parent = previous_breakdown[parent_name]
+						if prev_parent['actual'] != 0:
+							parent_data['variance'] = round(((parent_data['actual'] - prev_parent['actual']) / abs(prev_parent['actual'])) * 100, 1)
+						
+						# Calculate sub-category variances
+						current_subs = {sub['name']: sub for sub in parent_data['sub_categories']}
+						
+						# Handle previous_subs as either dict or list
+						if isinstance(prev_parent['sub_categories'], dict):
+							previous_subs = prev_parent['sub_categories']
+						else:
+							previous_subs = {sub['name']: sub for sub in prev_parent['sub_categories']}
+						
+						for sub_name, sub_data in current_subs.items():
+							if sub_name in previous_subs:
+								prev_sub = previous_subs[sub_name]
+								if prev_sub['actual'] != 0:
+									sub_data['variance'] = round(((sub_data['actual'] - prev_sub['actual']) / abs(prev_sub['actual'])) * 100, 1)
+								
+								# Calculate item variances
+								current_items = {item['name']: item for item in sub_data['items']}
+								
+								# Handle previous items as either dict or list
+								if isinstance(prev_sub.get('items', {}), dict):
+									previous_items = prev_sub['items']
+								else:
+									previous_items = {item['name']: item for item in prev_sub.get('items', [])}
+								
+								for item_name, item_data in current_items.items():
+									if item_name in previous_items:
+										prev_item = previous_items[item_name]
+										prev_item_actual = prev_item.get('actual', prev_item) if isinstance(prev_item, dict) else prev_item
+										if isinstance(prev_item_actual, dict):
+											prev_item_actual = prev_item_actual.get('actual', 0)
+										if prev_item_actual != 0:
+											item_data['variance'] = round(((item_data['actual'] - prev_item_actual) / abs(prev_item_actual)) * 100, 1)
+		
 		community_data.append({
 			'name': comm_data['name'],
 			'units': comm_data['units'],
@@ -314,18 +485,15 @@ def financial_reporting(request):
 	communities_list = list(CardDrillthrough.objects.values_list('property_name', flat=True).distinct().order_by('property_name')[:200])
 	communities_list = [comm for comm in communities_list if comm]
 	
-	# Build month options for dropdown
-	month_options = []
-	if latest_date:
-		# Generate last 12 months from latest date
-		for i in range(12):
-			date = latest_date - relativedelta(months=i)
-			month_options.append(date.strftime('%b-%Y'))
+	# Build month options for dropdown - fetch actual dates from database
+	distinct_dates = CardDrillthrough.objects.dates('month_end_date', 'month', order='DESC')
+	month_options = [date.strftime('%b-%Y') for date in distinct_dates]
 	
-	# Build period_options structure for year/quarter dropdowns
-	current_year = datetime.now().year
+	# Build period_options structure for year/quarter dropdowns - fetch actual years from database
+	distinct_years = CardDrillthrough.objects.dates('month_end_date', 'year', order='DESC')
 	period_options = {}
-	for year in range(current_year, current_year - 5, -1):
+	for year_date in distinct_years:
+		year = year_date.year
 		period_options[str(year)] = {
 			'quarters': {
 				'Q1': ['Jan', 'Feb', 'Mar'],

@@ -338,6 +338,40 @@
         color: #1F2937;
         font-size: 14px;
     }
+    
+    /* Column group visual distinction */
+    .financial-table thead th:nth-child(3n+4) {
+        border-left: 3px solid #C69A58;
+    }
+    
+    .financial-table tbody td:nth-child(3n+4) {
+        border-left: 3px solid #E5E7EB;
+        background: rgba(14, 85, 90, 0.02);
+    }
+    
+    .financial-table tbody td:nth-child(3n+5) {
+        background: rgba(14, 85, 90, 0.02);
+    }
+    
+    .financial-table tbody td:nth-child(3n+6) {
+        background: rgba(14, 85, 90, 0.02);
+        border-right: 2px solid #E5E7EB;
+    }
+    
+    /* Breakdown table column groups */
+    .breakdown-table tbody td:nth-child(3n+2) {
+        border-left: 3px solid #E5E7EB;
+        background: rgba(198, 154, 88, 0.03);
+    }
+    
+    .breakdown-table tbody td:nth-child(3n+3) {
+        background: rgba(198, 154, 88, 0.03);
+    }
+    
+    .breakdown-table tbody td:nth-child(3n+4) {
+        background: rgba(198, 154, 88, 0.03);
+        border-right: 2px solid #E5E7EB;
+    }
 
     .expand-btn {
         width: 32px;
@@ -370,21 +404,29 @@
         font-weight: 700;
         color: #059669;
         font-family: 'Segoe UI', monospace;
+        text-align: right !important;
+        padding-right: 18px !important;
     }
 
     .variance-positive {
         color: #059669;
         font-weight: 600;
+        text-align: center !important;
+        background: rgba(5, 150, 105, 0.08) !important;
     }
 
     .variance-negative {
         color: #DC2626;
         font-weight: 600;
+        text-align: center !important;
+        background: rgba(220, 38, 38, 0.08) !important;
     }
 
     .per-unit {
         color: var(--olympus-teal);
         font-weight: 600;
+        text-align: right !important;
+        padding-right: 18px !important;
     }
 
     /* Nested Table */
@@ -420,6 +462,20 @@
         padding: 12px 14px;
         font-size: 13px;
         border-bottom: 1px solid #E5E7EB;
+        text-align: right;
+    }
+    
+    .breakdown-table tbody td.actual-amount,
+    .breakdown-table tbody td.per-unit {
+        padding-right: 18px;
+    }
+    
+    .breakdown-table tbody td:first-child {
+        text-align: left;
+        position: sticky;
+        left: 0;
+        background: inherit;
+        z-index: 1;
     }
 
     .breakdown-table tbody tr:hover {
@@ -525,7 +581,7 @@
     </div>
 
     <!-- Active Filters Bar -->
-    <div class="active-filters-bar {% if selected_month or selected_investors or selected_regional_managers or selected_communities %}show{% endif %}" id="activeFiltersBar">
+    <div class="active-filters-bar {% if selected_years or selected_quarters or selected_months or selected_investors or selected_regional_managers or selected_communities %}show{% endif %}" id="activeFiltersBar">
         <div class="active-filters-header">
             <div class="active-filters-title">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -538,13 +594,29 @@
             </button>
         </div>
         <div class="active-filters-content" id="activeFiltersContent">
-            {% if selected_month %}
-            <div class="filter-chip-active" data-filter-type="period_month" data-filter-value="{{ selected_month }}">
-                <span class="filter-chip-label">Period:</span>
-                <span class="filter-chip-value">{{ selected_month }}</span>
-                <button type="button" class="filter-chip-remove" onclick="removeFilter('period_month', '{{ selected_month }}')" aria-label="Remove period filter">×</button>
+            {% for year in selected_years %}
+            <div class="filter-chip-active" data-filter-type="period_year" data-filter-value="{{ year }}">
+                <span class="filter-chip-label">Year:</span>
+                <span class="filter-chip-value">{{ year }}</span>
+                <button type="button" class="filter-chip-remove" onclick="removeFilter('period_year', '{{ year }}')" aria-label="Remove year filter">×</button>
             </div>
-            {% endif %}
+            {% endfor %}
+            
+            {% for quarter in selected_quarters %}
+            <div class="filter-chip-active" data-filter-type="period_quarter" data-filter-value="{{ quarter }}">
+                <span class="filter-chip-label">Quarter:</span>
+                <span class="filter-chip-value">{{ quarter }}</span>
+                <button type="button" class="filter-chip-remove" onclick="removeFilter('period_quarter', '{{ quarter }}')" aria-label="Remove quarter filter">×</button>
+            </div>
+            {% endfor %}
+            
+            {% for month in selected_months %}
+            <div class="filter-chip-active" data-filter-type="period_month" data-filter-value="{{ month }}">
+                <span class="filter-chip-label">Month:</span>
+                <span class="filter-chip-value">{{ month }}</span>
+                <button type="button" class="filter-chip-remove" onclick="removeFilter('period_month', '{{ month }}')" aria-label="Remove month filter">×</button>
+            </div>
+            {% endfor %}
             
             {% for investor in selected_investors %}
             <div class="filter-chip-active" data-filter-type="investor" data-filter-value="{{ investor }}">
@@ -597,9 +669,9 @@
                 </tr>
                 <tr>
                     {% for period in period_labels %}
-                    <th class="sortable" data-sort="actual-{{ forloop.counter }}" onclick="sortTable('actual-{{ forloop.counter }}')">Actual</th>
-                    <th class="sortable" data-sort="variance-{{ forloop.counter }}" onclick="sortTable('variance-{{ forloop.counter }}')">period % var</th>
-                    <th class="sortable" data-sort="perunit-{{ forloop.counter }}" onclick="sortTable('perunit-{{ forloop.counter }}')">Per Unit</th>
+                    <th class="sortable" data-sort="actual-{{ forloop.counter }}" onclick="sortTable('actual-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px;">Actual</th>
+                    <th class="sortable" data-sort="variance-{{ forloop.counter }}" onclick="sortTable('variance-{{ forloop.counter }}')" style="text-align: center;">period % var</th>
+                    <th class="sortable" data-sort="perunit-{{ forloop.counter }}" onclick="sortTable('perunit-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px;">Per Unit</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -627,54 +699,89 @@
                         <div class="nested-header">Financial Breakdown - {{ community.name }}</div>
                         <table class="breakdown-table">
                             <tbody>
-                                {% for period in period_labels %}
-                                {% with period_data=community.periods|get_item:period %}
-                                {% if period_data.breakdown %}
-                                    <tr><td colspan="20" style="background: #0E555A; color: white; font-weight: bold; padding: 8px;">{{ period }}</td></tr>
-                                    {% for parent in period_data.breakdown %}
-                                    <!-- Parent Category Row -->
+                                {% comment %} Build a unified list of all category names across all periods {% endcomment %}
+                                {% comment %} Get all unique parent categories from first period {% endcomment %}
+                                {% with first_period=period_labels|first %}
+                                {% with first_period_data=community.periods|get_item:first_period %}
+                                {% if first_period_data.breakdown %}
+                                    {% for parent in first_period_data.breakdown %}
+                                    <!-- Parent Category Row - Horizontal across all periods -->
                                     <tr class="parent-category-row" style="background: #F3F6F8; font-weight: 700;">
-                                        <td colspan="3" style="padding-left: 12px;">
-                                            <button class="category-expand-btn" onclick="toggleCategoryRows(this, 'cat-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #0E555A; color: white; border: none; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; margin-right: 8px;">+</button>
+                                        <td style="padding-left: 12px; min-width: 250px;">
+                                            <button class="category-expand-btn" onclick="toggleCategoryRows(this, 'cat-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #0E555A; color: white; border: none; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; margin-right: 8px;">+</button>
                                             {{ parent.parent }}
                                         </td>
-                                        <td class="actual-amount">${{ parent.actual|floatformat:0|intcomma }}</td>
-                                        <td class="{% if parent.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
-                                            {{ parent.variance }}%
-                                        </td>
-                                        <td class="per-unit">${{ parent.per_unit|floatformat:0|intcomma }}</td>
+                                        {% for period in period_labels %}
+                                        {% with period_data=community.periods|get_item:period %}
+                                        {% with parent_data=None %}
+                                        {% for p in period_data.breakdown %}
+                                            {% if p.parent == parent.parent %}
+                                                <td class="actual-amount">${{ p.actual|floatformat:0|intcomma }}</td>
+                                                <td class="{% if p.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">{{ p.variance }}%</td>
+                                                <td class="per-unit">${{ p.per_unit|floatformat:0|intcomma }}</td>
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% endwith %}
+                                        {% endwith %}
+                                        {% endfor %}
                                     </tr>
+                                    
+                                    {% comment %} Sub-categories for this parent {% endcomment %}
                                     {% for sub in parent.sub_categories %}
-                                    <!-- Sub Category Row -->
-                                    <tr class="sub-category-row category-detail-cat-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none; background: #FAFBFC;">
-                                        <td colspan="3" style="padding-left: 40px;">
-                                            <button class="sub-expand-btn" onclick="toggleSubItems(this, 'sub-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #C69A58; color: white; border: none; width: 20px; height: 20px; border-radius: 3px; cursor: pointer; margin-right: 8px; font-size: 12px;">+</button>
+                                    <tr class="sub-category-row category-detail-cat-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none; background: #FAFBFC;">
+                                        <td style="padding-left: 40px; min-width: 250px;">
+                                            <button class="sub-expand-btn" onclick="toggleSubItems(this, 'sub-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}-{{ forloop.counter }}')" style="background: #C69A58; color: white; border: none; width: 20px; height: 20px; border-radius: 3px; cursor: pointer; margin-right: 8px; font-size: 12px;">+</button>
                                             {{ sub.name }}
                                         </td>
-                                        <td class="actual-amount">${{ sub.actual|floatformat:0|intcomma }}</td>
-                                        <td class="{% if sub.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
-                                            {{ sub.variance }}%
-                                        </td>
-                                        <td class="per-unit">${{ sub.per_unit|floatformat:0|intcomma }}</td>
+                                        {% for period in period_labels %}
+                                        {% with period_data=community.periods|get_item:period %}
+                                        {% for p in period_data.breakdown %}
+                                            {% if p.parent == parent.parent %}
+                                                {% for s in p.sub_categories %}
+                                                    {% if s.name == sub.name %}
+                                                        <td class="actual-amount">${{ s.actual|floatformat:0|intcomma }}</td>
+                                                        <td class="{% if s.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">{{ s.variance }}%</td>
+                                                        <td class="per-unit">${{ s.per_unit|floatformat:0|intcomma }}</td>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% endwith %}
+                                        {% endfor %}
                                     </tr>
+                                    
+                                    {% comment %} Line items for this sub-category {% endcomment %}
                                     {% for item in sub.items %}
-                                    <!-- Line Item Row -->
-                                    <tr class="line-item-row sub-detail-sub-{{ forloop.parentloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none;">
-                                        <td colspan="3" style="padding-left: 68px; color: #64748B; font-size: 13px;">
+                                    <tr class="line-item-row sub-detail-sub-{{ forloop.parentloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.parentloop.counter }}-{{ forloop.parentloop.counter }}" style="display: none;">
+                                        <td style="padding-left: 68px; color: #64748B; font-size: 13px; min-width: 250px;">
                                             {{ item.name }}
                                         </td>
-                                        <td class="actual-amount" style="font-size: 13px;">${{ item.actual|floatformat:0|intcomma }}</td>
-                                        <td class="{% if item.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}" style="font-size: 13px;">
-                                            {{ item.variance }}%
-                                        </td>
-                                        <td class="per-unit" style="font-size: 13px;">${{ item.per_unit|floatformat:0|intcomma }}</td>
+                                        {% for period in period_labels %}
+                                        {% with period_data=community.periods|get_item:period %}
+                                        {% for p in period_data.breakdown %}
+                                            {% if p.parent == parent.parent %}
+                                                {% for s in p.sub_categories %}
+                                                    {% if s.name == sub.name %}
+                                                        {% for itm in s.items %}
+                                                            {% if itm.name == item.name %}
+                                                                <td class="actual-amount" style="font-size: 13px;">${{ itm.actual|floatformat:0|intcomma }}</td>
+                                                                <td class="{% if itm.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}" style="font-size: 13px;">{{ itm.variance }}%</td>
+                                                                <td class="per-unit" style="font-size: 13px;">${{ itm.per_unit|floatformat:0|intcomma }}</td>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    {% endif %}
+                                                {% endfor %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% endwith %}
+                                        {% endfor %}
                                     </tr>
                                     {% endfor %}
                                     {% endfor %}
                                     {% endfor %}
                                 {% endif %}
                                 {% endwith %}
-                                {% endfor %}
+                                {% endwith %}
                             </tbody>
                         </table>
                     </td>
