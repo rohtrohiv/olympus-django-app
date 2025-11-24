@@ -328,7 +328,7 @@ def financial_reporting(request):
 							'actual': sub_total,
 							'per_unit': sub_per_unit,
 							'variance': 0.0,
-							'items': sorted(items_list, key=lambda x: abs(x['actual']), reverse=True)[:20]
+							'items': sorted(items_list, key=lambda x: abs(x['actual']), reverse=True)[:10]
 						})
 					
 					breakdown_list.append({
@@ -475,15 +475,25 @@ def financial_reporting(request):
 	if period_labels:
 		community_data.sort(key=lambda x: abs(x['periods'][period_labels[0]]['actual']), reverse=True)
 	
-	# Get filter options - Always fetch from database for dropdown population
-	investors = list(CardDrillthrough.objects.values_list('investor', flat=True).distinct().order_by('investor')[:100])
-	investors = [inv for inv in investors if inv]
+	# Get filter options - Optimize with caching and limits
+	# Only fetch filter options if not already filtered (to reduce queries)
+	if not investor_filter:
+		investors = list(CardDrillthrough.objects.values_list('investor', flat=True).distinct().order_by('investor')[:50])
+		investors = [inv for inv in investors if inv]
+	else:
+		investors = investor_filter
 	
-	managers = list(CardDrillthrough.objects.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')[:100])
-	managers = [mgr for mgr in managers if mgr]
+	if not regional_manager_filter:
+		managers = list(CardDrillthrough.objects.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')[:50])
+		managers = [mgr for mgr in managers if mgr]
+	else:
+		managers = regional_manager_filter
 	
-	communities_list = list(CardDrillthrough.objects.values_list('property_name', flat=True).distinct().order_by('property_name')[:200])
-	communities_list = [comm for comm in communities_list if comm]
+	if not community_filter:
+		communities_list = list(CardDrillthrough.objects.values_list('property_name', flat=True).distinct().order_by('property_name')[:100])
+		communities_list = [comm for comm in communities_list if comm]
+	else:
+		communities_list = community_filter
 	
 	# Build month options for dropdown - fetch actual dates from database
 	distinct_dates = CardDrillthrough.objects.dates('month_end_date', 'month', order='DESC')
@@ -505,7 +515,8 @@ def financial_reporting(request):
 	
 	context = {
 		'page_title': 'Financial Reporting',
-		'communities': community_data[:100],  # Limit to first 100 for initial load
+		'communities': community_data,  # Show all communities
+		'total_communities': len(community_data),  # Total count for display
 		'period_options': period_options,  # For year/quarter dropdowns
 		'month_options': month_options,  # Pre-formatted month options
 		'investors': investors,

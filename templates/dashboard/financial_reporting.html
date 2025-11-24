@@ -262,11 +262,14 @@
         box-shadow: 0 4px 16px rgba(0,0,0,0.08);
         border: 1px solid #E5E7EB;
         overflow: hidden;
+        will-change: scroll-position;
+        transform: translateZ(0);
     }
 
     .financial-table {
         width: 100%;
         border-collapse: collapse;
+        table-layout: fixed;
     }
 
     .financial-table thead th {
@@ -297,7 +300,7 @@
     .financial-table thead th.sortable::after {
         content: '⇅';
         position: absolute;
-        right: 10px;
+        right: 3px;
         opacity: 0.5;
         font-size: 14px;
     }
@@ -427,6 +430,7 @@
         font-weight: 600;
         text-align: right !important;
         padding-right: 18px !important;
+        min-width: 90px;
     }
 
     /* Nested Table */
@@ -669,9 +673,9 @@
                 </tr>
                 <tr>
                     {% for period in period_labels %}
-                    <th class="sortable" data-sort="actual-{{ forloop.counter }}" onclick="sortTable('actual-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px;">Actual</th>
-                    <th class="sortable" data-sort="variance-{{ forloop.counter }}" onclick="sortTable('variance-{{ forloop.counter }}')" style="text-align: center;">period % var</th>
-                    <th class="sortable" data-sort="perunit-{{ forloop.counter }}" onclick="sortTable('perunit-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px;">Per Unit</th>
+                    <th class="sortable" data-sort="actual-{{ forloop.counter }}" onclick="sortTable('actual-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px; min-width: 120px;">Actual</th>
+                    <th class="sortable" data-sort="variance-{{ forloop.counter }}" onclick="sortTable('variance-{{ forloop.counter }}')" style="text-align: center; min-width: 100px;">period % var</th>
+                    <th class="sortable" data-sort="perunit-{{ forloop.counter }}" onclick="sortTable('perunit-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px; min-width: 90px;">Per Unit</th>
                     {% endfor %}
                 </tr>
             </thead>
