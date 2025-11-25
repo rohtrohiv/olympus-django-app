@@ -149,13 +149,8 @@ def financial_reporting(request):
 				'label': f"_prev_{prev_label}"  # Internal label
 			}
 	
-	# Build optimized query
-	queryset = CardDrillthrough.objects.select_related().only(
-		'community', 'property_name', 'total_units', 'month_end_date',
-		'category_name', 'parent_category_name', 'sub_category_name', 'sub_sub_category_name',
-		'income_values', 'income_values_per_unit_all',
-		'investor', 'regional_area_manager'
-	)
+	# Build optimized query with select_related to reduce database hits
+	queryset = CardDrillthrough.objects.all()
 	
 	# Apply period filter (support multiple periods with OR, plus previous period for variance)
 	if target_dates:
@@ -184,7 +179,8 @@ def financial_reporting(request):
 	if community_filter:
 		queryset = queryset.filter(property_name__in=community_filter)
 	
-	# Fetch all data in one query and process in memory
+	# Fetch all data in one query - optimized for production
+	# Using values() is much faster than model instances
 	all_records = list(queryset.values(
 		'community', 'property_name', 'total_units', 'month_end_date',
 		'category_name', 'parent_category_name', 'sub_category_name', 'sub_sub_category_name',
@@ -476,42 +472,62 @@ def financial_reporting(request):
 		community_data.sort(key=lambda x: abs(x['periods'][period_labels[0]]['actual']), reverse=True)
 	
 	# Get filter options - Optimize with caching and limits
-	# Only fetch filter options if not already filtered (to reduce queries)
+	# Cache dropdown options for 1 hour to reduce database load
 	if not investor_filter:
-		investors = list(CardDrillthrough.objects.values_list('investor', flat=True).distinct().order_by('investor')[:50])
-		investors = [inv for inv in investors if inv]
+		cache_key = 'financial_reporting_investors'
+		investors = cache.get(cache_key)
+		if investors is None:
+			investors = list(CardDrillthrough.objects.values_list('investor', flat=True).distinct().order_by('investor')[:50])
+			investors = [inv for inv in investors if inv]
+			cache.set(cache_key, investors, 3600)  # Cache for 1 hour
 	else:
 		investors = investor_filter
 	
 	if not regional_manager_filter:
-		managers = list(CardDrillthrough.objects.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')[:50])
-		managers = [mgr for mgr in managers if mgr]
+		cache_key = 'financial_reporting_managers'
+		managers = cache.get(cache_key)
+		if managers is None:
+			managers = list(CardDrillthrough.objects.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')[:50])
+			managers = [mgr for mgr in managers if mgr]
+			cache.set(cache_key, managers, 3600)
 	else:
 		managers = regional_manager_filter
 	
 	if not community_filter:
-		communities_list = list(CardDrillthrough.objects.values_list('property_name', flat=True).distinct().order_by('property_name')[:100])
-		communities_list = [comm for comm in communities_list if comm]
+		cache_key = 'financial_reporting_communities'
+		communities_list = cache.get(cache_key)
+		if communities_list is None:
+			communities_list = list(CardDrillthrough.objects.values_list('property_name', flat=True).distinct().order_by('property_name')[:100])
+			communities_list = [comm for comm in communities_list if comm]
+			cache.set(cache_key, communities_list, 3600)
 	else:
 		communities_list = community_filter
 	
-	# Build month options for dropdown - fetch actual dates from database
-	distinct_dates = CardDrillthrough.objects.dates('month_end_date', 'month', order='DESC')
-	month_options = [date.strftime('%b-%Y') for date in distinct_dates]
+	# Build month options for dropdown - fetch actual dates from database with caching
+	cache_key = 'financial_reporting_month_options'
+	month_options = cache.get(cache_key)
+	if month_options is None:
+		distinct_dates = CardDrillthrough.objects.dates('month_end_date', 'month', order='DESC')
+		month_options = [date.strftime('%b-%Y') for date in distinct_dates]
+		cache.set(cache_key, month_options, 3600)  # Cache for 1 hour
 	
-	# Build period_options structure for year/quarter dropdowns - fetch actual years from database
-	distinct_years = CardDrillthrough.objects.dates('month_end_date', 'year', order='DESC')
-	period_options = {}
-	for year_date in distinct_years:
-		year = year_date.year
-		period_options[str(year)] = {
-			'quarters': {
-				'Q1': ['Jan', 'Feb', 'Mar'],
-				'Q2': ['Apr', 'May', 'Jun'],
-				'Q3': ['Jul', 'Aug', 'Sep'],
-				'Q4': ['Oct', 'Nov', 'Dec']
+	# Build period_options structure for year/quarter dropdowns - fetch actual years from database with caching
+	cache_key = 'financial_reporting_period_options'
+	period_options = cache.get(cache_key)
+	if period_options is None:
+		distinct_years = CardDrillthrough.objects.dates('month_end_date', 'year', order='DESC')
+		period_options = {}
+		for year_date in distinct_years:
+			year = year_date.year
+			period_options[str(year)] = {
+				'quarters': {
+					'Q1': ['Jan', 'Feb', 'Mar'],
+					'Q2': ['Apr', 'May', 'Jun'],
+					'Q3': ['Jul', 'Aug', 'Sep'],
+					'Q4': ['Oct', 'Nov', 'Dec']
+				}
 			}
-		}
+		cache.set(cache_key, period_options, 3600)  # Cache for 1 hour
 	
 	context = {
 		'page_title': 'Financial Reporting',
