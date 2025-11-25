@@ -38,23 +38,35 @@
     }
 
     .financial-container {
-        max-width: 1600px;
-        margin: 0 auto;
-        padding: 24px 16px;
         width: 100%;
+        padding: 24px;
         box-sizing: border-box;
         transition: padding-left .28s;
     }
 
     /* Adjust container when filter panel is open */
     .filter-open .financial-container {
-        padding-left: 260px;
+        padding-left: 280px;
     }
 
     /* Responsive adjustments */
     @media (max-width: 1200px) {
         .filter-open .financial-container {
-            padding-left: 260px;
+            padding-left: 280px;
+        }
+        
+        .financial-container {
+            padding: 16px;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .financial-container {
+            padding: 12px;
+        }
+        
+        .filter-open .financial-container {
+            padding-left: 12px;
         }
     }
 
@@ -224,6 +236,13 @@
         transform: scale(1.1);
     }
 
+    .search-container {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 24px;
+    }
+
     .search-input {
         width: 320px;
         padding: 12px 16px 12px 44px;
@@ -237,6 +256,37 @@
 
     .search-wrapper {
         position: relative;
+        flex: 0 0 auto;
+    }
+
+    .export-csv-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: var(--olympus-teal);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+    }
+
+    .export-csv-btn:hover {
+        background: var(--olympus-dark-teal);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(14, 85, 90, 0.3);
+    }
+
+    .export-csv-btn:active {
+        transform: translateY(0);
+    }
+
+    .export-csv-btn svg {
+        flex-shrink: 0;
     }
 
     .search-icon {
@@ -407,8 +457,8 @@
         font-weight: 700;
         color: #059669;
         font-family: 'Segoe UI', monospace;
-        text-align: right !important;
-        padding-right: 18px !important;
+        text-align: center !important;
+        padding-right: 0 !important;
     }
 
     .variance-positive {
@@ -428,8 +478,8 @@
     .per-unit {
         color: var(--olympus-teal);
         font-weight: 600;
-        text-align: right !important;
-        padding-right: 18px !important;
+        text-align: center !important;
+        padding-right: 0 !important;
         min-width: 90px;
     }
 
@@ -466,7 +516,11 @@
         padding: 12px 14px;
         font-size: 13px;
         border-bottom: 1px solid #E5E7EB;
-        text-align: right;
+        text-align: center;
+    }
+
+    .breakdown-table tbody td:first-child {
+        text-align: left;
     }
     
     .breakdown-table tbody td.actual-amount,
@@ -657,6 +711,12 @@
             </svg>
             <input type="text" class="search-input" id="searchInput" placeholder="Search community...">
         </div>
+        <button type="button" class="export-csv-btn" onclick="exportToCSV(event)" title="Export data to CSV">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            Export CSV
+        </button>
     </div>
 
     <!-- Financial Table -->
@@ -673,9 +733,9 @@
                 </tr>
                 <tr>
                     {% for period in period_labels %}
-                    <th class="sortable" data-sort="actual-{{ forloop.counter }}" onclick="sortTable('actual-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px; min-width: 120px;">Actual</th>
+                    <th class="sortable" data-sort="actual-{{ forloop.counter }}" onclick="sortTable('actual-{{ forloop.counter }}')" style="text-align: center; min-width: 120px;">Actual</th>
                     <th class="sortable" data-sort="variance-{{ forloop.counter }}" onclick="sortTable('variance-{{ forloop.counter }}')" style="text-align: center; min-width: 100px;">period % var</th>
-                    <th class="sortable" data-sort="perunit-{{ forloop.counter }}" onclick="sortTable('perunit-{{ forloop.counter }}')" style="text-align: right; padding-right: 18px; min-width: 90px;">Per Unit</th>
+                    <th class="sortable" data-sort="perunit-{{ forloop.counter }}" onclick="sortTable('perunit-{{ forloop.counter }}')" style="text-align: center; min-width: 90px;">Per Unit</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -764,14 +824,14 @@ function loadBreakdownData(nestedRow) {
             const periodData = community.periods[periodLabel];
             const parentPeriodData = periodData.breakdown[parentIndex] || {};
             
-            html += `<td style="text-align: right; padding: 8px; border-right: 1px solid #dee2e6; min-width: 120px;">
+                html += `<td style="text-align: center; padding: 8px; border-right: 1px solid #dee2e6; min-width: 120px;">
                         $${(parentPeriodData.actual || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                      </td>`;
-            html += `<td style="text-align: right; padding: 8px; border-right: 1px solid #dee2e6; min-width: 100px; 
+                html += `<td style="text-align: center; padding: 8px; border-right: 1px solid #dee2e6; min-width: 100px; 
                         color: ${(parentPeriodData.variance || 0) >= 0 ? '#28a745' : '#dc3545'};">
                         ${(parentPeriodData.variance || 0).toFixed(1)}%
                      </td>`;
-            html += `<td style="text-align: right; padding: 8px; border-right: 2px solid #dee2e6; min-width: 90px;">
+                html += `<td style="text-align: center; padding: 8px; border-right: 2px solid #dee2e6; min-width: 90px;">
                         $${(parentPeriodData.per_unit || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                      </td>`;
         });
@@ -798,14 +858,14 @@ function loadBreakdownData(nestedRow) {
                     const parentPeriodData = periodData.breakdown[parentIndex] || {};
                     const subPeriodData = (parentPeriodData.sub_categories && parentPeriodData.sub_categories[subIndex]) || {};
                     
-                    html += `<td style="text-align: right; padding: 8px; border-right: 1px solid #dee2e6;">
+                          html += `<td style="text-align: center; padding: 8px; border-right: 1px solid #dee2e6;">
                                 $${(subPeriodData.actual || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                              </td>`;
-                    html += `<td style="text-align: right; padding: 8px; border-right: 1px solid #dee2e6; 
+                          html += `<td style="text-align: center; padding: 8px; border-right: 1px solid #dee2e6; 
                                 color: ${(subPeriodData.variance || 0) >= 0 ? '#28a745' : '#dc3545'};">
                                 ${(subPeriodData.variance || 0).toFixed(1)}%
                              </td>`;
-                    html += `<td style="text-align: right; padding: 8px; border-right: 2px solid #dee2e6;">
+                          html += `<td style="text-align: center; padding: 8px; border-right: 2px solid #dee2e6;">
                                 $${(subPeriodData.per_unit || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                              </td>`;
                 });
@@ -824,14 +884,14 @@ function loadBreakdownData(nestedRow) {
                             const subPeriodData = (parentPeriodData.sub_categories && parentPeriodData.sub_categories[subIndex]) || {};
                             const lineItem = (subPeriodData.items && subPeriodData.items.find(i => i.name === item.name)) || {};
                             
-                            html += `<td style="text-align: right; padding: 8px; color: #6c757d; border-right: 1px solid #dee2e6;">
+                                     html += `<td style="text-align: center; padding: 8px; color: #6c757d; border-right: 1px solid #dee2e6;">
                                         $${(lineItem.actual || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                                      </td>`;
-                            html += `<td style="text-align: right; padding: 8px; border-right: 1px solid #dee2e6; 
+                                     html += `<td style="text-align: center; padding: 8px; border-right: 1px solid #dee2e6; 
                                         color: ${(lineItem.variance || 0) >= 0 ? '#28a745' : '#dc3545'};">
                                         ${(lineItem.variance || 0).toFixed(1)}%
                                      </td>`;
-                            html += `<td style="text-align: right; padding: 8px; color: #6c757d; border-right: 2px solid #dee2e6;">
+                                     html += `<td style="text-align: center; padding: 8px; color: #6c757d; border-right: 2px solid #dee2e6;">
                                         $${(lineItem.per_unit || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                                      </td>`;
                         });
@@ -1092,6 +1152,162 @@ function clearAllActiveFilters() {
     
     // Navigate to base URL without any filters
     window.location.href = '/financial-reporting/';
+}
+
+// Export to CSV
+function exportToCSV(event) {
+    // Prevent any loading overlays from showing
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+    }
+    
+    // Hide global loading overlay immediately if it exists
+    const loadingOverlay = document.getElementById('globalLoadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+        loadingOverlay.setAttribute('aria-hidden', 'true');
+    }
+    
+    // Small delay to ensure overlay stays hidden, then generate CSV
+    setTimeout(() => {
+        // Double-check overlay is still hidden
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'none';
+        }
+        
+        // Generate filename from selected periods
+        const periodString = periodLabels.join('_').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+        const filename = `financial_reporting_${periodString}.csv`;
+    
+    // Build CSV content
+    let csvContent = '';
+    
+    // Add header rows
+    const periods = periodLabels;
+    
+    // First header row - period labels
+    csvContent += 'Community,';
+    periods.forEach(period => {
+        csvContent += `${period},${period},${period},`;
+    });
+    csvContent += '\n';
+    
+    // Second header row - column names
+    csvContent += ',';
+    periods.forEach(() => {
+        csvContent += 'Actual,Period % Var,Per Unit,';
+    });
+    csvContent += '\n';
+    
+    // Add data rows for each community
+    communityBreakdownData.forEach(community => {
+        // Main community row
+        const communityName = community.name.replace(/,/g, '');
+        csvContent += `"${communityName}",`;
+        
+        periods.forEach(periodLabel => {
+            const periodData = community.periods[periodLabel] || {};
+            const actual = (periodData.actual || 0).toFixed(2);
+            const variance = (periodData.variance || 0).toFixed(1);
+            const perUnit = (periodData.per_unit || 0).toFixed(2);
+            
+            csvContent += `${actual},${variance}%,${perUnit},`;
+        });
+        csvContent += '\n';
+        
+        // Add breakdown data if available
+        const firstPeriod = periods[0];
+        const firstPeriodData = community.periods[firstPeriod];
+        
+        if (firstPeriodData && firstPeriodData.breakdown && firstPeriodData.breakdown.length > 0) {
+            // Iterate through breakdown structure
+            firstPeriodData.breakdown.forEach(parentItem => {
+                const parentName = parentItem.parent.replace(/,/g, '');
+                
+                // Parent category row
+                csvContent += `"  ${parentName}",`;
+                periods.forEach((periodLabel, idx) => {
+                    const periodData = community.periods[periodLabel];
+                    const parentData = periodData.breakdown[firstPeriodData.breakdown.indexOf(parentItem)] || {};
+                    const actual = (parentData.actual || 0).toFixed(2);
+                    const variance = (parentData.variance || 0).toFixed(1);
+                    const perUnit = (parentData.per_unit || 0).toFixed(2);
+                    
+                    csvContent += `${actual},${variance}%,${perUnit},`;
+                });
+                csvContent += '\n';
+                
+                // Sub-categories
+                if (parentItem.sub_categories && parentItem.sub_categories.length > 0) {
+                    parentItem.sub_categories.forEach(subItem => {
+                        const subName = subItem.name.replace(/,/g, '');
+                        
+                        csvContent += `"    ${subName}",`;
+                        periods.forEach((periodLabel, idx) => {
+                            const periodData = community.periods[periodLabel];
+                            const parentData = periodData.breakdown[firstPeriodData.breakdown.indexOf(parentItem)] || {};
+                            const subData = (parentData.sub_categories && parentData.sub_categories[parentItem.sub_categories.indexOf(subItem)]) || {};
+                            const actual = (subData.actual || 0).toFixed(2);
+                            const variance = (subData.variance || 0).toFixed(1);
+                            const perUnit = (subData.per_unit || 0).toFixed(2);
+                            
+                            csvContent += `${actual},${variance}%,${perUnit},`;
+                        });
+                        csvContent += '\n';
+                        
+                        // Line items
+                        if (subItem.items && subItem.items.length > 0) {
+                            subItem.items.forEach(item => {
+                                const itemName = item.name.replace(/,/g, '');
+                                
+                                csvContent += `"      ${itemName}",`;
+                                periods.forEach((periodLabel, idx) => {
+                                    const periodData = community.periods[periodLabel];
+                                    const parentData = periodData.breakdown[firstPeriodData.breakdown.indexOf(parentItem)] || {};
+                                    const subData = (parentData.sub_categories && parentData.sub_categories[parentItem.sub_categories.indexOf(subItem)]) || {};
+                                    const lineItem = (subData.items && subData.items.find(i => i.name === item.name)) || {};
+                                    const actual = (lineItem.actual || 0).toFixed(2);
+                                    const variance = (lineItem.variance || 0).toFixed(1);
+                                    const perUnit = (lineItem.per_unit || 0).toFixed(2);
+                                    
+                                    csvContent += `${actual},${variance}%,${perUnit},`;
+                                });
+                                csvContent += '\n';
+                            });
+                        }
+                    });
+                }
+            });
+            
+            // Add blank line between communities
+            csvContent += '\n';
+        }
+    });
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (navigator.msSaveBlob) { // IE 10+
+        navigator.msSaveBlob(blob, filename);
+    } else {
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    
+    // Ensure overlay stays hidden after download
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+        loadingOverlay.setAttribute('aria-hidden', 'true');
+    }
+    
+    }, 50); // End of setTimeout - small delay to prevent race condition
 }
 </script>
 {% endblock %}
