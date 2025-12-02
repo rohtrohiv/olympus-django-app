@@ -1,7 +1,8 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
+from django.db import connection
 from django.db.models import Max, Sum, Avg, Count, Q, F
-from .models import OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly
+from .models import OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly, FinanceKpiScorecard
 from datetime import datetime, date, timedelta
 from django.db.models.functions import ExtractYear, ExtractMonth
 from .services import DashboardService
@@ -1593,6 +1594,420 @@ def parse_period(period):
 		return y, [m]
 	return None, None
 
+
+def _extract_filter_list(request, params, key):
+	"""Return list of values for a multi-select filter key from request/params."""
+	values = []
+	if request is not None and hasattr(request, 'GET') and hasattr(request.GET, 'getlist'):
+		values = request.GET.getlist(key)
+	if not values:
+		if hasattr(params, 'getlist'):
+			values = params.getlist(key)
+		else:
+			param_val = params.get(key) if hasattr(params, 'get') else None
+			if isinstance(param_val, (list, tuple)):
+				values = list(param_val)
+			elif param_val:
+				values = [param_val]
+	return [v for v in values if v]
+
+
+def _month_label_to_date(label):
+	if not label:
+		return None
+	for fmt in ('%b-%Y', '%Y-%m'):
+		try:
+			dt = datetime.strptime(label, fmt)
+			return date(dt.year, dt.month, 1)
+		except Exception:
+			continue
+	return None
+
+
+def _quarter_label_to_months(label):
+	if not label:
+		return []
+	label_norm = label.replace(' ', '').upper()
+	match = re.match(r'Q([1-4])-(\d{4})', label_norm)
+	if not match:
+		match = re.match(r'(\d{4})-Q([1-4])', label_norm)
+	if not match:
+		return []
+	if label_norm.startswith('Q'):
+		q = int(match.group(1))
+		year = int(match.group(2))
+	else:
+		year = int(match.group(1))
+		q = int(match.group(2))
+	start_month = (q - 1) * 3 + 1
+	return [date(year, start_month + offset, 1) for offset in range(3)]
+
+
+def _resolve_selected_month_starts(request, params, svc_ctx):
+	"""Return list of month-start dates matching the current period selection."""
+	sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
+	months = []
+	if sel_mode == 'month':
+		labels = _extract_filter_list(request, params, 'period_month')
+		if not labels:
+			fallback = svc_ctx.get('selected_period') or svc_ctx.get('period_month')
+			if fallback:
+				labels = [fallback]
+		for lbl in labels:
+			dt = _month_label_to_date(lbl)
+			if dt:
+				months.append(dt)
+	elif sel_mode == 'quarter':
+		labels = _extract_filter_list(request, params, 'period_quarter')
+		if not labels:
+			fallback = svc_ctx.get('period_quarter') or svc_ctx.get('selected_period')
+			if fallback:
+				labels = [fallback]
+		for lbl in labels:
+			months.extend(_quarter_label_to_months(lbl))
+	elif sel_mode == 'year':
+		labels = _extract_filter_list(request, params, 'period_year')
+		if not labels:
+			fallback = svc_ctx.get('period_year') or svc_ctx.get('selected_period')
+			if fallback:
+				labels = [fallback]
+		normalized = [l for l in labels if l]
+		if normalized and not any(str(l).lower() == 'all' for l in normalized):
+			for lbl in normalized:
+				try:
+					yr = int(lbl)
+					for m in range(1, 13):
+						months.append(date(yr, m, 1))
+				except Exception:
+					continue
+	else:
+		fallback = svc_ctx.get('selected_period')
+		dt = _month_label_to_date(fallback)
+		if dt:
+			months.append(dt)
+	return sorted({m for m in months})
+
+
+def _quote_ident(identifier):
+	ident = identifier.replace('"', '""').replace('%', '%%')
+	return '"' + ident + '"'
+
+
+def _get_finance_scorecard_columns():
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'finance_kpi_scorecard']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Finance KPI scorecard column introspection failed:', exc)
+
+	if columns:
+		return columns
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.finance_kpi_scorecard'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Finance KPI scorecard pg_attribute introspection failed:', exc)
+	return columns
+
+
+_KEYWORD_SYNONYMS = {
+	'operating': ['operating', 'oper', 'op'],
+	'revenue': ['revenue', 'rev'],
+	'expense': ['expense', 'exp'],
+	'yoy': ['yoy', 'yo_y', 'yy', 'yearover', 'year_over_year', 'year-over-year'],
+	'executed': ['executed', 'exec'],
+	'rent': ['rent'],
+	'noi': ['noi'],
+	'place': ['place', 'inplace', 'in_place'],
+	'sq': ['sq', 'sqft', 'psf', 'per_sq', 'per_sqft'],
+}
+
+
+def _keyword_matches_column(name, keyword):
+	options = _KEYWORD_SYNONYMS.get(keyword, [keyword])
+	return any(opt in name for opt in options)
+
+
+def _find_column_by_keywords(columns, keywords):
+	for col in columns:
+		name = (col or '').lower()
+		if all(_keyword_matches_column(name, keyword) for keyword in keywords):
+			return col
+	return None
+
+
+def _find_exact_column(columns, target):
+	for col in columns:
+		if col and col.lower() == target.lower():
+			return col
+	return None
+
+
+
+def _fetch_finance_scorecard_metrics_orm(request, params, svc_ctx):
+	"""Try fetching finance KPIs via the Django ORM."""
+	# Django's ORM struggles with identifiers that contain percent signs (e.g., "noi_as_%_of_revenue").
+	# When such columns exist, skip the ORM path altogether to avoid noisy errors and rely on SQL fallback.
+	columns = _get_finance_scorecard_columns()
+	if any('%' in (col or '') for col in columns):
+		return {}
+	try:
+		qs = FinanceKpiScorecard.objects.all()
+	except Exception as exc:
+		print('Finance KPI ORM base query failed:', exc)
+		return {}
+
+	inv_values = _extract_filter_list(request, params, 'investor')
+	if inv_values:
+		qs = qs.filter(investor__in=inv_values)
+
+	manager_values = _extract_filter_list(request, params, 'regional_manager')
+	if manager_values:
+		qs = qs.filter(regional_area_manager__in=manager_values)
+
+	community_values = _extract_filter_list(request, params, 'community')
+	if community_values:
+		qs = qs.filter(community__in=community_values)
+
+	month_starts = _resolve_selected_month_starts(request, params, svc_ctx)
+	if month_starts:
+		month_ends = []
+		for dt in month_starts:
+			if not dt:
+				continue
+			last_day = calendar.monthrange(dt.year, dt.month)[1]
+			month_ends.append(date(dt.year, dt.month, last_day))
+		qs = qs.filter(month_end_date__in=month_ends)
+	else:
+		latest_period = qs.order_by('-month_end_date').values_list('month_end_date', flat=True).first()
+		if latest_period:
+			qs = qs.filter(month_end_date=latest_period)
+
+	try:
+		field_map = [
+			('yoy_change_operating_revenue', 'yoy_operating_revenue'),
+			('yoy_change_expense', 'yoy_operating_expense'),
+			('noi_percent_revenue', 'noi_percent_revenue'),
+			('executed_rent_yoy', 'executed_rent_yoy'),
+			('in_place_rent_per_sqft', 'in_place_rent_per_sqft'),
+		]
+		rows = list(qs.values_list(*[field for _, field in field_map]))
+		if not rows:
+			return {}
+		metrics = {}
+		for idx, (alias, _) in enumerate(field_map):
+			values = [row[idx] for row in rows if row[idx] is not None]
+			metrics[alias] = (sum(values) / len(values)) if values else None
+		return metrics
+	except Exception as exc:
+		print('Finance KPI ORM aggregation failed:', exc)
+		return {}
+
+
+def _fetch_finance_scorecard_metrics_sql(request, params, svc_ctx):
+	"""Fetch aggregated finance KPI metrics from the scorecard view via raw SQL."""
+	columns = _get_finance_scorecard_columns()
+	if not columns:
+		return {}
+
+	metric_specs = [
+		('yoy_change_operating_revenue', ['operating', 'revenue', 'yoy']),
+		('yoy_change_expense', ['expense', 'yoy']),
+		('noi_percent_revenue', ['noi', 'revenue']),
+		('executed_rent_yoy', ['executed', 'rent', 'yoy']),
+		('in_place_rent_per_sqft', ['place', 'rent', 'sq'])
+	]
+	selected_metrics = []
+	for alias, keywords in metric_specs:
+		col = _find_column_by_keywords(columns, keywords)
+		if col:
+			selected_metrics.append((alias, col))
+
+	if not selected_metrics:
+		return {}
+
+	select_clause = ', '.join([f"AVG({_quote_ident(col)}) AS {alias}" for alias, col in selected_metrics])
+	sql = f"SELECT {select_clause} FROM web_ai.finance_kpi_scorecard"
+	filter_clauses = []
+	filter_params = []
+
+	investor_col = _find_exact_column(columns, 'investor') or _find_column_by_keywords(columns, ['investor'])
+	manager_col = _find_exact_column(columns, 'regional_area_manager') or _find_column_by_keywords(columns, ['regional', 'manager'])
+	community_col = (
+		_find_exact_column(columns, 'community')
+		or _find_exact_column(columns, 'property_name')
+		or _find_column_by_keywords(columns, ['community'])
+		or _find_column_by_keywords(columns, ['property', 'name'])
+	)
+	date_col = None
+	for patterns in (['month', 'end', 'date'], ['enddateofmonth'], ['snapshot', 'date'], ['period', 'date']):
+		candidate = _find_column_by_keywords(columns, patterns)
+		if candidate:
+			date_col = candidate
+			break
+
+	def _build_in_clause(col_name, values):
+		if not values:
+			return None, []
+		placeholders = ','.join(['%s'] * len(values))
+		return f"{_quote_ident(col_name)} IN ({placeholders})", list(values)
+
+	inv_values = _extract_filter_list(request, params, 'investor')
+	if investor_col and inv_values:
+		investor_clauses = []
+		investor_params = []
+		for val in inv_values:
+			text = (val or '').strip()
+			if not text or text.lower() == 'all':
+				continue
+			investor_clauses.append(f"{_quote_ident(investor_col)} ILIKE %s")
+			investor_params.append(f"%{text}%")
+		if investor_clauses:
+			filter_clauses.append('(' + ' OR '.join(investor_clauses) + ')')
+			filter_params.extend(investor_params)
+		else:
+			inv_values = []
+
+	manager_values = _extract_filter_list(request, params, 'regional_manager')
+	if manager_col and manager_values:
+		clause, vals = _build_in_clause(manager_col, manager_values)
+		if clause:
+			filter_clauses.append(clause)
+			filter_params.extend(vals)
+
+	community_values = _extract_filter_list(request, params, 'community')
+	if community_col and community_values:
+		community_clauses = []
+		community_params = []
+		for val in community_values:
+			text = (val or '').strip()
+			if not text:
+				continue
+			community_clauses.append(f"{_quote_ident(community_col)} ILIKE %s")
+			community_params.append(f"%{text}%")
+		if community_clauses:
+			filter_clauses.append('(' + ' OR '.join(community_clauses) + ')')
+			filter_params.extend(community_params)
+
+	where_clauses = list(filter_clauses)
+	sql_params = list(filter_params)
+
+	def _latest_month_for_filters():
+		if not date_col:
+			return None
+			
+		base_sql = f"SELECT DATE_TRUNC('month', MAX({_quote_ident(date_col)}))::date FROM web_ai.finance_kpi_scorecard"
+		if filter_clauses:
+			base_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(base_sql, filter_params)
+				row = cur.fetchone()
+		except Exception as exc:
+			print('Finance KPI scorecard latest month lookup failed:', exc)
+			return None
+		return row[0] if row and row[0] else None
+
+	month_starts = _resolve_selected_month_starts(request, params, svc_ctx)
+	date_params = []
+	if date_col and month_starts:
+		placeholders = ','.join(['%s'] * len(month_starts))
+		where_clauses.append(f"DATE_TRUNC('month', {_quote_ident(date_col)})::date IN ({placeholders})")
+		date_params.extend([dt.strftime('%Y-%m-01') for dt in month_starts])
+	elif date_col:
+		latest_month = _latest_month_for_filters()
+		if latest_month:
+			where_clauses.append(f"DATE_TRUNC('month', {_quote_ident(date_col)})::date = %s")
+			date_params.append(latest_month.strftime('%Y-%m-%d'))
+
+	if date_params:
+		sql_params.extend(date_params)
+
+	if where_clauses:
+		sql += ' WHERE ' + ' AND '.join(where_clauses)
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(sql, sql_params)
+			row = cur.fetchone()
+	except Exception as exc:
+		print('Finance KPI scorecard query failed:', exc)
+		return {}
+
+	if not row:
+		return {}
+
+	metrics = {}
+	for idx, (alias, _) in enumerate(selected_metrics):
+		value = row[idx] if idx < len(row) else None
+		if value is not None:
+			try:
+				metrics[alias] = float(value)
+			except Exception:
+				metrics[alias] = value
+		else:
+			metrics[alias] = None
+	return metrics
+
+
+def fetch_finance_scorecard_metrics(request, params, svc_ctx):
+	metrics = _fetch_finance_scorecard_metrics_orm(request, params, svc_ctx)
+	if metrics and any(value is not None for value in metrics.values()):
+		return metrics
+	return _fetch_finance_scorecard_metrics_sql(request, params, svc_ctx)
+
+
+def format_finance_kpi_values(raw_values):
+	"""Return display-ready strings for finance KPIs."""
+	def fmt_percent(val):
+		if val is None:
+			return '--'
+		try:
+			val = float(val)
+		except Exception:
+			return '--'
+		if abs(val) <= 1:
+			val *= 100
+		return f"{val:.2f}%"
+
+	def fmt_currency(val):
+		if val is None:
+			return '--'
+		try:
+			val = float(val)
+		except Exception:
+			return '--'
+		return f"${val:,.2f}"
+
+	return {
+		'in_place_rent_per_sqft': fmt_currency(raw_values.get('in_place_rent_per_sqft')),
+		'yoy_change_operating_revenue': fmt_percent(raw_values.get('yoy_change_operating_revenue')),
+		'yoy_change_expense': fmt_percent(raw_values.get('yoy_change_expense')),
+		'noi_percent_revenue': fmt_percent(raw_values.get('noi_percent_revenue')),
+		'executed_rent_yoy': fmt_percent(raw_values.get('executed_rent_yoy')),
+	}
+
 @login_required
 def dashboard(request):
 	user = request.user
@@ -1682,6 +2097,9 @@ def dashboard(request):
 
 	svc = DashboardPageService(params)
 	svc_ctx = svc.get_context()
+
+	finance_kpi_raw = fetch_finance_scorecard_metrics(request, params, svc_ctx)
+	finance_kpi_display = format_finance_kpi_values(finance_kpi_raw) if finance_kpi_raw else format_finance_kpi_values({})
 
 	# Option B: keep KPIs/charts filtered by user selection but present an unfiltered
 	# properties list for the table/modals so the client-managed table doesn't get
@@ -2387,6 +2805,7 @@ def dashboard(request):
 		'user': user,
 		'properties': svc_ctx.get('properties_page'),
 		'kpi': svc_ctx.get('kpi'),
+		'finance_kpi': finance_kpi_display,
 	'period_options': svc_ctx.get('periods'),
 	# Ensure templates see a concrete selected_period so client UI (filter pane)
 	# can initialize correctly. Prefer svc_ctx.selected_period, otherwise

@@ -186,3 +186,28 @@ class CardDrillthrough(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."card_drillthrough"'
+
+
+class FinanceKpiScorecard(models.Model):
+	"""Unmanaged materialized view for finance KPI scorecard metrics."""
+	property_id = models.IntegerField(primary_key=True)
+	community = models.TextField(blank=True, null=True)
+	regional_vp_sr_vp = models.CharField(max_length=255, blank=True, null=True, db_column='Regional VP  | Sr. VP')
+	regional_area_manager = models.CharField(max_length=255, blank=True, null=True)
+	investor = models.CharField(max_length=255, blank=True, null=True)
+	month_end_date = models.DateField(blank=True, null=True)
+	current_month = models.CharField(max_length=32, blank=True, null=True)
+	actual = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	period_pct_month = models.FloatField(blank=True, null=True)
+	period_pct_quarter = models.FloatField(blank=True, null=True)
+	period_pct_year = models.FloatField(blank=True, null=True)
+	sum_income_value_per_unit = models.FloatField(blank=True, null=True)
+	yoy_operating_revenue = models.FloatField(blank=True, null=True)
+	yoy_operating_expense = models.FloatField(blank=True, null=True)
+	noi_percent_revenue = models.FloatField(blank=True, null=True, db_column='noi_as_%_of_revenue')
+	executed_rent_yoy = models.FloatField(blank=True, null=True, db_column='executed_rent_yoy_percent')
+	in_place_rent_per_sqft = models.FloatField(blank=True, null=True)
+
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."finance_kpi_scorecard"'

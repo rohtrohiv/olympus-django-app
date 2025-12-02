@@ -6,10 +6,30 @@
     </div>
     <div class="card kpi" id="total-units-card" style="cursor:pointer;"><div class="label">Total Units</div><div class="value">{{ kpi.total_units }}</div><a href="#" onclick="openUnitsChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
     <div class="card kpi" id="occupancy-card" style="cursor:pointer;"><div class="label">Occupancy</div><div class="value">{{ kpi.occupancy }}</div><a href="#" onclick="openOccupancyChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
-    <div class="card kpi" id="exposure-card" style="cursor:pointer;"><div class="label">Exposure (8 wks)</div><div class="value">{{ kpi.exposure|floatformat:3 }}%</div><a href="#" onclick="openExposureChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
-    <div class="card kpi" id="delinquency-card" style="cursor:pointer;"><div class="label">Delinquency</div><div class="value">{{ kpi.delinquency|floatformat:3 }}%</div><a href="#" onclick="openDelinquencyChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
+    <div class="card kpi" id="exposure-card" style="cursor:pointer;"><div class="label">Exposure (8 wks)</div><div class="value">{{ kpi.exposure|floatformat:2 }}%</div><a href="#" onclick="openExposureChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
+    <div class="card kpi" id="delinquency-card" style="cursor:pointer;"><div class="label">Delinquency</div><div class="value">{{ kpi.delinquency|floatformat:2 }}%</div><a href="#" onclick="openDelinquencyChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
     <div class="card kpi" id="avg-turn-time-card" style="cursor:pointer;"><div class="label">Avg Turn Time</div><div class="value">{{ kpi.avg_turn_time }}</div><a href="#" onclick="openAvgTurnTimeChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
     <div class="card kpi" id="service-requests-card" style="cursor:pointer;"><div class="label">Service Requests</div><div class="value">{{ kpi.service_requests }}</div><a href="#" onclick="openServiceRequestsChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
     <!-- <div class="card kpi"><div class="label">Google Stars</div><div class="value">{{ kpi.google_stars }}</div></div> -->
     <div class="card kpi" id="renewal-conversion-card" style="cursor:pointer;"><div class="label">Renewal Conversion</div><div class="value">{{ kpi.renewal_conversion }}%</div><a href="#" onclick="openRenewalConversionChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
+    <div class="card kpi" id="operating-revenue-yoy-card">
+        <div class="label">YoY Operating Revenue</div>
+        <div class="value">{{ finance_kpi.yoy_change_operating_revenue }}</div>
+    </div>
+    <div class="card kpi" id="expense-yoy-card">
+        <div class="label">YoY Expense</div>
+        <div class="value">{{ finance_kpi.yoy_change_expense }}</div>
+    </div>
+    <div class="card kpi" id="noi-percent-card">
+        <div class="label">NOI as % of Revenue</div>
+        <div class="value">{{ finance_kpi.noi_percent_revenue }}</div>
+    </div>
+    <div class="card kpi" id="executed-rent-yoy-card">
+        <div class="label">Executed Rent YoY</div>
+        <div class="value">{{ finance_kpi.executed_rent_yoy }}</div>
+    </div>
+    <div class="card kpi" id="in-place-rent-card">
+        <div class="label">In-Place Rent / Sq.Ft.</div>
+        <div class="value">{{ finance_kpi.in_place_rent_per_sqft }}</div>
+    </div>
 </div>
