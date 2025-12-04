@@ -16,6 +16,7 @@ from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.template.loader import render_to_string
 import re
+from decimal import Decimal
 
 
 def sample_page(request):
@@ -1764,6 +1765,425 @@ def _find_exact_column(columns, target):
 	return None
 
 
+TOTAL_UNIT_DRILL_VIEW = 'web_ai.total_unit_occupancy_drill_through'
+TOTAL_UNIT_DRILL_LIMIT = 1200
+
+TOTAL_UNIT_FILTER_FIELDS = [
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'keywords': ['regional', 'vp']},
+	{'key': 'regional_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+	{'key': 'unit', 'label': 'Unit', 'keywords': ['unit']},
+]
+
+TOTAL_UNIT_TABLE_FIELDS = [
+	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
+	{'key': 'unit_identifier', 'label': 'Unit', 'keywords': ['unit']},
+	{'key': 'floor_plan', 'label': 'Floor Plan', 'keywords': ['floor', 'plan']},
+	{'key': 'beds_baths', 'label': 'Beds / Baths', 'keywords': ['bed', 'bath']},
+	{'key': 'amenity_value', 'label': 'Amenity Value', 'keywords': ['amenity', 'value']},
+	{'key': 'move_in_date', 'label': 'Move In', 'keywords': ['move', 'in']},
+	{'key': 'lease_start', 'label': 'Lease Start', 'keywords': ['lease', 'start']},
+	{'key': 'lease_end', 'label': 'Lease End', 'keywords': ['lease', 'end']},
+	{'key': 'lease_term', 'label': 'Lease Term', 'keywords': ['lease', 'term']},
+	{'key': 'resident_name', 'label': 'Resident Name', 'keywords': ['resident', 'name']},
+	{'key': 'effective_rent', 'label': 'Effective Rent', 'keywords': ['effective', 'rent']},
+	{'key': 'market_rent', 'label': 'Market Rent', 'keywords': ['market', 'rent']},
+	{'key': 'site_unit_id', 'label': 'Site / Unit Id', 'keywords': ['site', 'unit', 'id']},
+]
+
+TOTAL_UNIT_METRIC_HINTS = {
+	'resident_name': ['resident', 'name'],
+	'ntv_flag': ['ntv'],
+	'exposure_8_weeks': ['exposure', '8'],
+	'unit_type': ['type'],
+	'move_out_date': ['move', 'out'],
+	'scheduled_move_in': ['move', 'in'],
+}
+
+VACANT_NOT_LEASED_STATUSES = (
+	'Vacant Not Leased Not Ready',
+	'Vacant Not Leased Ready',
+)
+VACANT_LEASED_STATUSES = (
+	'Vacant Leased Ready',
+	'Vacant Leased Not Ready',
+)
+NTV_NOT_LEASED_STATUS = 'NTV Not Leased'
+NTV_LEASED_STATUS = 'NTV Leased'
+VACANT_NOT_LEASED_TYPES = (
+	'Vacant Not Leased Not Ready',
+	'Vacant Not Leased Ready',
+)
+VACANT_LEASED_TYPES = (
+	'Vacant Leased Ready',
+	'Vacant Leased Not Ready',
+)
+NTV_TYPES = (
+	NTV_LEASED_STATUS,
+	NTV_NOT_LEASED_STATUS,
+)
+
+TOTAL_UNIT_CURRENCY_FIELDS = {'amenity_value', 'effective_rent', 'market_rent'}
+TOTAL_UNIT_DATE_FIELDS = {'move_in_date', 'lease_start', 'lease_end'}
+
+
+def _clean_numeric_expr(column_name):
+	ident = _quote_ident(column_name)
+	return f"NULLIF(REGEXP_REPLACE({ident}::text, '[^0-9.-]', '', 'g'), '')::numeric"
+
+
+def _get_total_unit_drill_columns():
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'total_unit_occupancy_drill_through']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Total unit drill-through column introspection failed:', exc)
+
+	if columns:
+		return columns
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.total_unit_occupancy_drill_through'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Total unit drill-through pg_attribute introspection failed:', exc)
+	return columns
+
+
+def _format_total_unit_value(alias, value):
+	if value is None:
+		return '--'
+	if isinstance(value, (datetime, date)):
+		return value.strftime('%b %d, %Y')
+	if isinstance(value, Decimal):
+		value = float(value)
+	if alias in TOTAL_UNIT_CURRENCY_FIELDS:
+		try:
+			return f"${float(value):,.2f}"
+		except Exception:
+			return f"${value}"
+	if alias in TOTAL_UNIT_DATE_FIELDS:
+		try:
+			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
+			return parsed.strftime('%b %d, %Y')
+		except Exception:
+			return str(value)
+	text = str(value).strip()
+	return text or '--'
+
+
+def _fetch_total_unit_filter_options(columns):
+	options = {}
+	for field in TOTAL_UNIT_FILTER_FIELDS:
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			options[field['key']] = []
+			continue
+		ident = _quote_ident(col)
+		sql = (
+			f"SELECT DISTINCT {ident} FROM {TOTAL_UNIT_DRILL_VIEW} "
+			f"WHERE {ident} IS NOT NULL AND TRIM({ident}::text) <> '' "
+			f"ORDER BY {ident} ASC LIMIT 400"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql)
+				vals = [row[0] for row in cur.fetchall()]
+		except Exception as exc:
+			print(f"Total unit drill filter options failed for {field['key']}:", exc)
+			vals = []
+		options[field['key']] = [str(v).strip() for v in vals if v]
+	return options
+
+
+def _fetch_total_unit_summary(filter_clauses, filter_params, metric_columns):
+	summary = {
+		'unit_count': 0,
+		'occupancy_pct': None,
+		'exposure_8_weeks': None,
+		'vacant_units': None,
+		'ntv_units': None,
+		'exposure_units': None,
+	}
+
+	sql_parts = ["COUNT(*) AS total_units"]
+	resident_col = metric_columns.get('resident_name')
+	if resident_col:
+		ident = _quote_ident(resident_col)
+		sql_parts.append(
+			f"COUNT(*) FILTER (WHERE COALESCE(NULLIF({ident}::text, ''), NULL) IS NOT NULL) AS occupied_units"
+		)
+		sql_parts.append(
+			f"COUNT(*) FILTER (WHERE COALESCE(NULLIF({ident}::text, ''), NULL) IS NULL) AS vacant_units"
+		)
+	ntv_col = metric_columns.get('ntv_flag')
+	if ntv_col:
+		ntv_ident = _quote_ident(ntv_col)
+		sql_parts.append(
+			f"COUNT(*) FILTER (WHERE COALESCE(NULLIF({ntv_ident}::text, ''), NULL) IS NOT NULL) AS ntv_units"
+		)
+	exposure_col = metric_columns.get('exposure_8_weeks')
+	if exposure_col:
+		sql_parts.append(f"AVG({_clean_numeric_expr(exposure_col)}) AS exposure_8_weeks")
+
+	sql = f"SELECT {', '.join(sql_parts)} FROM {TOTAL_UNIT_DRILL_VIEW}"
+	if filter_clauses:
+		sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(sql, filter_params)
+			row = cur.fetchone()
+			col_names = [desc[0] for desc in cur.description]
+			data = dict(zip(col_names, row if row else []))
+	except Exception as exc:
+		print('Total unit drill summary query failed:', exc)
+		return summary
+
+	total_units = data.get('total_units') or 0
+	summary['unit_count'] = total_units
+	occupied_units = data.get('occupied_units')
+	vacant_units = data.get('vacant_units')
+	if vacant_units is not None:
+		summary['vacant_units'] = int(vacant_units)
+	if data.get('ntv_units') is not None:
+		summary['ntv_units'] = int(data['ntv_units'])
+	if total_units and occupied_units is not None:
+		summary['occupancy_pct'] = round((occupied_units / total_units) * 100, 2)
+	elif total_units and vacant_units is not None:
+		occupied = total_units - vacant_units
+		summary['occupancy_pct'] = round((occupied / total_units) * 100, 2)
+	if data.get('exposure_8_weeks') is not None:
+		try:
+			summary['exposure_8_weeks'] = float(data['exposure_8_weeks'])
+		except Exception:
+			summary['exposure_8_weeks'] = data['exposure_8_weeks']
+	exposure_units, exposure_ratio = _compute_exposure_8_weeks(filter_clauses, filter_params, metric_columns, total_units)
+	if exposure_units is not None:
+		summary['exposure_units'] = exposure_units
+		if exposure_ratio is not None:
+			summary['exposure_8_weeks'] = round(exposure_ratio * 100, 2)
+	vacancy_metrics = _compute_vacancy_ntv_metrics(filter_clauses, filter_params, metric_columns, total_units)
+	if vacancy_metrics:
+		vacant_count = vacancy_metrics.get('vacant_total')
+		if vacant_count is None:
+			vacant_count = (vacancy_metrics.get('vacant_not_leased') or 0) + (vacancy_metrics.get('vacant_leased') or 0)
+		ntv_count = vacancy_metrics.get('ntv_total') or 0
+		summary['vacant_units'] = vacant_count
+		summary['ntv_units'] = ntv_count
+		if total_units:
+			summary['occupancy_pct'] = round(((total_units - vacant_count) / total_units) * 100, 2)
+	return summary
+
+
+def _compute_exposure_8_weeks(filter_clauses, filter_params, metric_columns, total_units):
+	if not total_units:
+		return None, None
+	unit_type_col = metric_columns.get('unit_type')
+	move_out_col = metric_columns.get('move_out_date')
+	if not unit_type_col or not move_out_col:
+		return None, None
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	cutoff = (date.today() + timedelta(days=56)).strftime('%Y-%m-%d')
+	sql = f"""
+		SELECT
+			COUNT(*) FILTER (
+				WHERE {_quote_ident(unit_type_col)} IN (%s, %s)
+				  AND {_quote_ident(move_out_col)}::date <= %s
+			) AS vacant_not_leased,
+			COUNT(*) FILTER (
+				WHERE {_quote_ident(unit_type_col)} = %s
+				  AND {_quote_ident(move_out_col)}::date <= %s
+			) AS ntv_not_leased
+		FROM {TOTAL_UNIT_DRILL_VIEW}
+	{where_sql}
+	"""
+	params = [
+		VACANT_NOT_LEASED_STATUSES[0],
+		VACANT_NOT_LEASED_STATUSES[1],
+		cutoff,
+		NTV_NOT_LEASED_STATUS,
+		cutoff,
+	] + list(filter_params)
+	try:
+		with connection.cursor() as cur:
+			cur.execute(sql, params)
+			row = cur.fetchone()
+	except Exception as exc:
+		print('Total unit drill exposure calculation failed:', exc)
+		row = None
+	if not row:
+		return None, None
+	vacant_count = row[0] or 0
+	ntv_count = row[1] or 0
+	exposure_units = vacant_count + ntv_count
+	if exposure_units and total_units:
+		ratio = exposure_units / total_units
+	else:
+		ratio = 0 if total_units else None
+	return exposure_units, ratio
+
+
+
+def _compute_vacancy_ntv_metrics(filter_clauses, filter_params, metric_columns, total_units):
+	unit_type_col = metric_columns.get('unit_type')
+	if not unit_type_col:
+		return {}
+	type_ident = _quote_ident(unit_type_col)
+	scheduled_move_in_col = metric_columns.get('scheduled_move_in')
+	schedule_ident = _quote_ident(scheduled_move_in_col) if scheduled_move_in_col else None
+	vacant_not_placeholders = ', '.join(['%s'] * len(VACANT_NOT_LEASED_TYPES))
+	vacant_leased_placeholders = ', '.join(['%s'] * len(VACANT_LEASED_TYPES))
+	ntv_placeholders = ', '.join(['%s'] * len(NTV_TYPES))
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	leased_condition = f"{type_ident} IN ({vacant_leased_placeholders})"
+	params = list(VACANT_NOT_LEASED_TYPES) + list(VACANT_LEASED_TYPES)
+	if schedule_ident:
+		leased_condition += f" AND {schedule_ident}::date >= %s"
+		params.append(date.today().strftime('%Y-%m-%d'))
+	params += list(NTV_TYPES) + list(filter_params)
+	sql = f"""
+		SELECT
+			COUNT(*) FILTER (WHERE {type_ident} IN ({vacant_not_placeholders})) AS vacant_not_leased,
+			COUNT(*) FILTER (WHERE {leased_condition}) AS vacant_leased,
+			COUNT(*) FILTER (WHERE {type_ident} IN ({ntv_placeholders})) AS ntv_total
+		FROM {TOTAL_UNIT_DRILL_VIEW}
+	{where_sql}
+	"""
+	try:
+		with connection.cursor() as cur:
+			cur.execute(sql, params)
+			row = cur.fetchone()
+	except Exception as exc:
+		print('Total unit drill vacancy metrics failed:', exc)
+		return {}
+	if not row:
+		return {}
+	return {
+		'vacant_not_leased': row[0] or 0,
+		'vacant_leased': row[1] or 0,
+		'vacant_total': (row[0] or 0) + (row[1] or 0),
+		'ntv_total': row[2] or 0,
+	}
+
+
+def _build_total_unit_drill_context(request):
+	columns = _get_total_unit_drill_columns()
+	if not columns:
+		return {
+			'table_columns': [],
+			'table_rows': [],
+			'metrics': {'unit_count': 0},
+			'filter_options': {},
+			'filters': {},
+			'error': 'The total unit drill-through view is currently unavailable.',
+		}
+
+	select_parts = []
+	display_columns = []
+	alias_order = []
+	alias_to_source = {}
+	for field in TOTAL_UNIT_TABLE_FIELDS:
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		alias = field['key']
+		alias_to_source[alias] = col
+		alias_order.append(alias)
+		display_columns.append({'key': alias, 'label': field['label']})
+		select_parts.append(f"{_quote_ident(col)} AS {alias}")
+
+	if not select_parts:
+		return {
+			'table_columns': [],
+			'table_rows': [],
+			'metrics': {'unit_count': 0},
+			'filter_options': _fetch_total_unit_filter_options(columns),
+			'filters': {},
+			'error': 'No recognizable columns were found for the total unit drill-through dataset.',
+		}
+
+	filter_clauses = []
+	filter_params = []
+	active_filters = {}
+	for field in TOTAL_UNIT_FILTER_FIELDS:
+		values = _extract_filter_list(request, request.GET, field['key'])
+		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
+		active_filters[field['key']] = values[0] if values else ''
+		if not clean:
+			continue
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		clause_parts = []
+		for val in clean:
+			clause_parts.append(f"{_quote_ident(col)} ILIKE %s")
+			filter_params.append(f"%{val}%")
+		if clause_parts:
+			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {TOTAL_UNIT_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+	data_sql += " LIMIT %s"
+	data_params = list(filter_params) + [TOTAL_UNIT_DRILL_LIMIT]
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, data_params)
+			result = cur.fetchall()
+	except Exception as exc:
+		print('Total unit drill-through data query failed:', exc)
+		result = []
+	for raw in result:
+		row_dict = dict(zip(alias_order, raw))
+		ordered_values = [_format_total_unit_value(alias, row_dict.get(alias)) for alias in alias_order]
+		rows.append(ordered_values)
+
+	metric_columns = {}
+	for key, keywords in TOTAL_UNIT_METRIC_HINTS.items():
+		if key in alias_to_source:
+			metric_columns[key] = alias_to_source[key]
+		else:
+			metric_columns[key] = _find_column_by_keywords(columns, keywords)
+
+	summary = _fetch_total_unit_summary(filter_clauses, filter_params, metric_columns)
+	filter_options = _fetch_total_unit_filter_options(columns)
+	return {
+		'table_columns': display_columns,
+		'table_rows': rows,
+		'metrics': summary,
+		'filter_options': filter_options,
+		'filters': active_filters,
+		'limit_reached': bool(summary['unit_count'] and summary['unit_count'] > len(rows)),
+		'row_count': len(rows),
+	}
+
+
 
 def _fetch_finance_scorecard_metrics_orm(request, params, svc_ctx):
 	"""Try fetching finance KPIs via the Django ORM."""
@@ -2007,6 +2427,28 @@ def format_finance_kpi_values(raw_values):
 		'noi_percent_revenue': fmt_percent(raw_values.get('noi_percent_revenue')),
 		'executed_rent_yoy': fmt_percent(raw_values.get('executed_rent_yoy')),
 	}
+
+
+@login_required
+def total_units_drillthrough(request):
+	context = _build_total_unit_drill_context(request)
+	context['filter_fields'] = [{'key': field['key'], 'label': field['label']} for field in TOTAL_UNIT_FILTER_FIELDS]
+	context['page_title'] = 'Total Unit Drill-Through'
+	context['row_limit'] = TOTAL_UNIT_DRILL_LIMIT
+	context.setdefault('error', '')
+	filters = context.get('filters') or {}
+	filter_options = context.get('filter_options') or {}
+	filter_blocks = []
+	for field in context['filter_fields']:
+		key = field['key']
+		filter_blocks.append({
+			'key': key,
+			'label': field['label'],
+			'options': filter_options.get(key, []),
+			'selected': filters.get(key, ''),
+		})
+	context['filter_blocks'] = filter_blocks
+	return render(request, 'dashboard/total_units_drillthrough.html', context)
 
 @login_required
 def dashboard(request):

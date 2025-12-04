@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Total Unit Drill-Through · Olympus{% endblock %}
+{% block extra_head %}
+<style>
+.drill-page{display:flex;flex-direction:column;gap:24px;padding-bottom:48px}
+.page-hero{display:none}
+.filter-panel{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;padding:18px 24px;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+.filter-panel label{flex:1 1 160px}
+.filter-panel label{display:flex;flex-direction:column;font-size:12px;font-weight:600;color:#425466;text-transform:uppercase;letter-spacing:.05em}
+.filter-panel select{margin-top:6px;border:1px solid #d7dde5;border-radius:10px;padding:10px 12px;font-size:14px;background:#fdfefe}
+.filter-actions{display:flex;align-items:flex-end;gap:12px}
+.filter-actions .btn{border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center}
+.filter-actions .btn.primary{background:#127c8a;color:#fff;box-shadow:0 6px 20px rgba(18,124,138,.3)}
+.filter-actions .btn.ghost{background:transparent;color:#127c8a;border:1px solid rgba(18,124,138,.25)}
+.filter-actions .btn.auto-submit-hint{display:none}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.metric-card{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 10px 26px rgba(15,23,42,.07);display:flex;flex-direction:column;gap:6px}
+.metric-card span{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#7b8794}
+.metric-card strong{font-size:28px;font-weight:600;color:#0f172a}
+.metric-card small{color:#6b7280}
+.table-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);overflow:hidden}
+.table-card header{padding:20px 24px;border-bottom:1px solid #e5e9f0;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;font-weight:600;color:#0f172a}
+.table-card header span{font-size:13px;color:#6b7280}
+.table-scroll{width:100%;overflow:auto}
+.table-scroll table{width:100%;border-collapse:collapse;font-size:13px}
+.table-scroll th{background:#f8fafc;color:#41506b;text-align:left;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e2e8f0}
+.table-scroll td{padding:12px 16px;border-bottom:1px solid #f0f4f8;color:#0f172a;white-space:nowrap}
+.table-scroll tr:nth-child(even) td{background:#fcfeff}
+.empty-state{padding:18px 24px;border-radius:12px;background:#fff4f1;color:#b45309;font-weight:600}
+@media (max-width:768px){.filter-panel,.table-card header{padding:16px}.filter-panel{flex-direction:column}.filter-actions{flex-direction:column;width:100%}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="drill-page">
+  {% if error %}
+    <div class="empty-state">{{ error }}</div>
+  {% endif %}
+
+  <form method="get" class="filter-panel" id="unitFilterForm">
+    {% for field in filter_blocks %}
+      <label>
+        <span>{{ field.label }}</span>
+        <select name="{{ field.key }}">
+          <option value="">All</option>
+          {% for option in field.options %}
+            <option value="{{ option }}" {% if field.selected == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endfor %}
+    <div class="filter-actions">
+      <button type="submit" class="btn primary auto-submit-hint">Apply Filters</button>
+      <a class="btn ghost" href="{% url 'total_units_drillthrough' %}">Reset</a>
+    </div>
+  </form>
+
+  <section class="metrics-grid" style="margin-top:8px;">
+    <article class="metric-card">
+      <span>Unit Count</span>
+      <strong>{{ metrics.unit_count|default:'--' }}</strong>
+      <small>
+        {% if limit_reached %}
+          Showing first {{ row_count }} units of {{ metrics.unit_count }}
+        {% else %}
+          Full result set
+        {% endif %}
+      </small>
+    </article>
+    <article class="metric-card">
+      <span>Occupancy</span>
+      <strong>
+        {% if metrics.occupancy_pct %}
+          {{ metrics.occupancy_pct }}%
+        {% else %}
+          --
+        {% endif %}
+      </strong>
+      <small>Derived from resident presence</small>
+    </article>
+    <article class="metric-card">
+      <span>Exposure · 8 Weeks</span>
+      <strong>
+        {% if metrics.exposure_8_weeks is not None %}
+          {{ metrics.exposure_8_weeks|floatformat:2 }}%
+        {% else %}
+          --
+        {% endif %}
+      </strong>
+      <small>
+        {% if metrics.exposure_units is not None %}
+          {{ metrics.exposure_units }} units scheduled inside 8 weeks
+        {% else %}
+          Vacant & NTV units within 8 weeks
+        {% endif %}
+      </small>
+    </article>
+    <article class="metric-card">
+      <span>Vacant Units</span>
+      <strong>{{ metrics.vacant_units|default:'--' }}</strong>
+      <small>Count of units without an active resident</small>
+    </article>
+    <article class="metric-card">
+      <span>NTV</span>
+      <strong>{{ metrics.ntv_units|default:'--' }}</strong>
+      <small>Notice-to-vacate records detected</small>
+    </article>
+  </section>
+
+  <section class="table-card">
+    <header>
+      <div>All Unit Details</div>
+      <span>
+        {% if metrics.unit_count %}
+          {{ metrics.unit_count }} total units{% if limit_reached %} · showing first {{ row_count }} (max {{ row_limit }}){% endif %}
+        {% else %}
+          No units found
+        {% endif %}
+      </span>
+    </header>
+    <div class="table-scroll">
+      {% if table_rows %}
+        <table>
+          <thead>
+            <tr>
+              {% for col in table_columns %}
+                <th scope="col">{{ col.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in table_rows %}
+              <tr>
+                {% for value in row %}
+                  <td>{{ value }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-state" style="margin:16px;">No unit-level records were returned for the selected filters.</div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var form = document.getElementById('unitFilterForm');
+  if(!form) return;
+  var selects = form.querySelectorAll('select');
+  selects.forEach(function(sel){
+    sel.addEventListener('change', function(){
+      if(typeof form.requestSubmit === 'function'){
+        form.requestSubmit();
+      }else{
+        form.submit();
+      }
+    });
+  });
+});
+</script>
+{% endblock %}
+{% endblock %}
