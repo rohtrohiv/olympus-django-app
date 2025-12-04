@@ -276,6 +276,8 @@
         // Only apply to same-origin navigations with a non-hash href
         const href = a.getAttribute('href');
         if(!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+        // Skip download links (CSV exports, etc.) - they don't trigger page navigation
+        if(a.hasAttribute('download') || href.includes('/export') || href.includes('download') || a.classList.contains('export-link')) return;
         // External links/open-in-new-tab are left untouched
         const target = a.getAttribute('target');
         const isExternal = a.hostname && a.hostname !== location.hostname;

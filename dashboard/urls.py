@@ -9,5 +9,6 @@ urlpatterns = [
     path('analytics/query/', views.analytics_query, name='analytics_query'),
     path('financial-reporting/', views.financial_reporting, name='financial_reporting'),
     path('drillthrough/units/', views.total_units_drillthrough, name='total_units_drillthrough'),
+    path('drillthrough/units/export/', views.total_units_drillthrough_export, name='total_units_drillthrough_export'),
     path('sample/', views.sample_page, name='sample_page'),
 ]

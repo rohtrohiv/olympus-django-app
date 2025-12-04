@@ -3,6 +3,8 @@
 {% block extra_head %}
 <style>
 .drill-page{display:flex;flex-direction:column;gap:24px;padding-bottom:48px}
+.back-link{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;color:#127c8a;font-weight:600;text-decoration:none;font-size:14px;background:rgba(18,124,138,.08);padding:8px 14px;border-radius:999px;transition:background .2s ease}
+.back-link:hover{background:rgba(18,124,138,.18)}
 .page-hero{display:none}
 .filter-panel{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;padding:18px 24px;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
 .filter-panel label{flex:1 1 160px}
@@ -20,7 +22,16 @@
 .metric-card small{color:#6b7280}
 .table-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);overflow:hidden}
 .table-card header{padding:20px 24px;border-bottom:1px solid #e5e9f0;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;font-weight:600;color:#0f172a}
-.table-card header span{font-size:13px;color:#6b7280}
+.table-card header .header-left{display:flex;flex-direction:column;gap:4px}
+.table-card header .header-left span{font-size:13px;color:#6b7280;font-weight:500}
+.table-card header .export-link{display:inline-flex;align-items:center;gap:6px;background:#127c8a;color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 6px 18px rgba(18,124,138,.28);transition:background .2s ease,box-shadow .2s ease}
+.table-card header .export-link:hover{background:#0f6571;box-shadow:0 10px 24px rgba(18,124,138,.32)}
+.table-card footer{padding:16px 24px;border-top:1px solid #e5e9f0;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;font-size:13px;color:#475569;background:#fff}
+.table-card footer .pager{display:flex;align-items:center;gap:10px}
+.table-card footer .pager a{border:1px solid #127c8a;color:#127c8a;padding:6px 14px;border-radius:999px;text-decoration:none;font-weight:600;transition:background .2s ease,color .2s ease}
+.table-card footer .pager a:hover{background:#127c8a;color:#fff}
+.table-card footer .pager .disabled{border:1px solid rgba(148,163,184,.5);color:rgba(100,116,139,.7);padding:6px 14px;border-radius:999px;font-weight:600;cursor:not-allowed}
+.table-card footer .page-indicator{font-weight:600;color:#0f172a}
 .table-scroll{width:100%;overflow:auto}
 .table-scroll table{width:100%;border-collapse:collapse;font-size:13px}
 .table-scroll th{background:#f8fafc;color:#41506b;text-align:left;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e2e8f0}
@@ -32,11 +43,14 @@
 {% endblock %}
 {% block content %}
 <div class="drill-page">
+  <a class="back-link" href="{{ dashboard_return_url }}">&#8592; Back to Dashboard</a>
   {% if error %}
     <div class="empty-state">{{ error }}</div>
   {% endif %}
 
   <form method="get" class="filter-panel" id="unitFilterForm">
+    <input type="hidden" name="return_url" value="{{ dashboard_return_url }}">
+    <input type="hidden" name="page" value="1" id="unit-page-input">
     {% for field in filter_blocks %}
       <label>
         <span>{{ field.label }}</span>
@@ -50,7 +64,7 @@
     {% endfor %}
     <div class="filter-actions">
       <button type="submit" class="btn primary auto-submit-hint">Apply Filters</button>
-      <a class="btn ghost" href="{% url 'total_units_drillthrough' %}">Reset</a>
+      <a class="btn ghost" href="{{ drill_reset_url }}">Reset</a>
     </div>
   </form>
 
@@ -59,10 +73,14 @@
       <span>Unit Count</span>
       <strong>{{ metrics.unit_count|default:'--' }}</strong>
       <small>
-        {% if limit_reached %}
-          Showing first {{ row_count }} units of {{ metrics.unit_count }}
+        {% if metrics.unit_count %}
+          {% if pagination.start_index and pagination.end_index %}
+            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }}
+          {% else %}
+            {{ metrics.unit_count }} total units
+          {% endif %}
         {% else %}
-          Full result set
+          No matching units
         {% endif %}
       </small>
     </article>
@@ -108,15 +126,40 @@
 
   <section class="table-card">
     <header>
-      <div>All Unit Details</div>
-      <span>
-        {% if metrics.unit_count %}
-          {{ metrics.unit_count }} total units{% if limit_reached %} · showing first {{ row_count }} (max {{ row_limit }}){% endif %}
-        {% else %}
-          No units found
-        {% endif %}
-      </span>
+      <div class="header-left">
+        <div>All Unit Details</div>
+        <span>
+          {% if metrics.unit_count %}
+            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units{% if pagination.total_pages > 1 %} · Page {{ pagination.page }} of {{ pagination.total_pages }}{% endif %}
+          {% else %}
+            No units found
+          {% endif %}
+        </span>
+      </div>
+      {% if export_url and metrics.unit_count %}
+        <a class="export-link" href="{{ export_url }}">Download CSV</a>
+      {% endif %}
     </header>
+    {% if pagination.total_pages > 1 and metrics.unit_count %}
+      <footer style="border-bottom:1px solid #e5e9f0;border-top:none;">
+        <span>
+          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units
+        </span>
+        <div class="pager">
+          {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}">‹ Previous</a>
+          {% else %}
+            <span class="disabled">‹ Previous</span>
+          {% endif %}
+          <span class="page-indicator">Page {{ pagination.page }} of {{ pagination.total_pages }}</span>
+          {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}">Next ›</a>
+          {% else %}
+            <span class="disabled">Next ›</span>
+          {% endif %}
+        </div>
+      </footer>
+    {% endif %}
     <div class="table-scroll">
       {% if table_rows %}
         <table>
@@ -141,6 +184,26 @@
         <div class="empty-state" style="margin:16px;">No unit-level records were returned for the selected filters.</div>
       {% endif %}
     </div>
+    {% if pagination.total_pages > 1 and metrics.unit_count %}
+      <footer>
+        <span>
+          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units
+        </span>
+        <div class="pager">
+          {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}">‹ Previous</a>
+          {% else %}
+            <span class="disabled">‹ Previous</span>
+          {% endif %}
+          <span class="page-indicator">Page {{ pagination.page }} of {{ pagination.total_pages }}</span>
+          {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}">Next ›</a>
+          {% else %}
+            <span class="disabled">Next ›</span>
+          {% endif %}
+        </div>
+      </footer>
+    {% endif %}
   </section>
 </div>
 {% block extra_scripts %}

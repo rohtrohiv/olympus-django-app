@@ -2329,14 +2329,16 @@ select[multiple] option:checked {
             if(!selectEl) return;
             var found = false;
             for(var i=0;i<selectEl.options.length;i++){
-                if((selectEl.options[i].value||'').toUpperCase() === 'BLACKSTONE/LIVCOR'){
+                var optVal = (selectEl.options[i].value||'').toUpperCase();
+                if(optVal === 'BLACKSTONE/LIVCOR' || optVal === 'LIVCOR'){
                     found = true; break;
                 }
             }
             if(!found){
+                // Try to add whichever variant exists in the original list
                 var opt = document.createElement('option');
-                opt.value = 'BLACKSTONE/LIVCOR';
-                opt.text = 'BLACKSTONE/LIVCOR';
+                opt.value = 'Livcor';
+                opt.text = 'Livcor';
                 // Insert after 'All Investors' (index 0)
                 try{ selectEl.add(opt, selectEl.options[1] || null); } catch(e){ selectEl.add(opt); }
             }
@@ -2345,7 +2347,8 @@ select[multiple] option:checked {
         function removeBlackstoneOption(selectEl){
             if(!selectEl) return;
             for(var i = selectEl.options.length-1; i>=0; i--){
-                if((selectEl.options[i].value||'').toUpperCase() === 'BLACKSTONE/LIVCOR'){
+                var optVal = (selectEl.options[i].value||'').toUpperCase();
+                if(optVal === 'BLACKSTONE/LIVCOR' || optVal === 'LIVCOR'){
                     // If currently selected, reset selection to All
                     if(selectEl.selectedIndex === i){ selectEl.selectedIndex = 0; }
                     selectEl.remove(i);
@@ -2385,12 +2388,12 @@ select[multiple] option:checked {
                 }
             } else {
                 // User explicitly selected one or more investors.
-                // Only show BLACKSTONE/LIVCOR if it was explicitly selected.
-                var hasBlackstone = selectedVals.indexOf('BLACKSTONE/LIVCOR') !== -1;
+                // Only show Livcor/BLACKSTONE if it was explicitly selected.
+                var hasBlackstone = selectedVals.some(function(v){ return v === 'BLACKSTONE/LIVCOR' || v === 'LIVCOR'; });
                 if(hasBlackstone){
                     ensureBlackstoneOption(invSelect);
                 } else {
-                    // User selected other investors but not Blackstone — hide it
+                    // User selected other investors but not Livcor — hide it
                     removeBlackstoneOption(invSelect);
                 }
             }

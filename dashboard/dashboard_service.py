@@ -58,6 +58,7 @@ class DashboardPageService:
             placeholders = ','.join(['%s'] * len(sel_comm))
             where.append(f'property_name IN ({placeholders})')
             params.extend(sel_comm)
+        
         # Business rule: exclude BLACKSTONE/LIVCOR for periods after June 2025
         # when no explicit investor filter is provided.
         try:
@@ -96,16 +97,17 @@ class DashboardPageService:
                 return False
 
             period_mode = self.params.get('period_mode') or ''
-            # Exclude BLACKSTONE/LIVCOR for periods after Jun-2025 unless it was explicitly selected
+            # Exclude BLACKSTONE/LIVCOR and Livcor for periods after Jun-2025 unless explicitly selected
             sel_up = [s.upper() for s in sel_inv] if sel_inv else []
-            if _period_after_jun_2025_p(period_mode, period_year, period_month, period_quarter) and 'BLACKSTONE/LIVCOR' not in sel_up:
-                # add exclusion clause
-                where = where + ["investor <> %s"]
-                params = params + ['BLACKSTONE/LIVCOR']
-                where_sql = ('WHERE ' + ' AND '.join(where))
+            livcor_selected = any(x in sel_up for x in ['BLACKSTONE/LIVCOR', 'LIVCOR'])
+            if _period_after_jun_2025_p(period_mode, period_year, period_month, period_quarter) and not livcor_selected:
+                # add exclusion clause for both possible investor names
+                where = where + ["(investor <> %s AND investor <> %s)"]
+                params = params + ['BLACKSTONE/LIVCOR', 'Livcor']
         except Exception:
             pass
-
+        
+        where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
         return where_sql, params
 
     def _fetch_latest_rows(self, where_sql, params):
@@ -183,12 +185,12 @@ class DashboardPageService:
             where_pred = ' AND ' + where_sql[6:]
 
         # If caller did not explicitly filter by investor (no investor param in params)
-        # then add exclusion of BLACKSTONE/LIVCOR rows for year=2025 and month>6 so that
+        # then add exclusion of BLACKSTONE/LIVCOR and Livcor rows for year=2025 and month>6 so that
         # the 2025 yearly aggregates exclude that investor's properties for months after June.
-        has_investor_param = any((isinstance(p, str) and p.upper() == 'BLACKSTONE/LIVCOR') for p in params)
+        has_investor_param = any((isinstance(p, str) and p.upper() in ['BLACKSTONE/LIVCOR', 'LIVCOR']) for p in params)
         if not has_investor_param:
-            where_pred += " AND NOT (investor = %s AND EXTRACT(YEAR FROM snapshot_date) = 2025 AND EXTRACT(MONTH FROM snapshot_date) > 6)"
-            extra_params.append('BLACKSTONE/LIVCOR')
+            where_pred += " AND NOT ((investor = %s OR investor = %s) AND EXTRACT(YEAR FROM snapshot_date) = 2025 AND EXTRACT(MONTH FROM snapshot_date) > 6)"
+            extra_params.extend(['BLACKSTONE/LIVCOR', 'Livcor'])
 
         yearly_sql = f"""
         WITH property_yearly_latest AS (

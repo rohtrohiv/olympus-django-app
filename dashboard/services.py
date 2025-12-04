@@ -315,14 +315,15 @@ class DashboardService:
 
         exclude_blackstone = _period_after_jun_2025(period_mode, period_year, period_month, period_quarter)
         # Apply exclusion when period is after Jun-2025 and the user did not
-        # explicitly select BLACKSTONE/LIVCOR. If the user selected other
-        # investors but not BLACKSTONE, still exclude BLACKSTONE rows.
+        # explicitly select BLACKSTONE/LIVCOR or Livcor. If the user selected other
+        # investors but not these, still exclude their rows.
         try:
             sel_up = [s.upper() for s in selected_investor] if selected_investor else []
         except Exception:
             sel_up = []
-        if exclude_blackstone and 'BLACKSTONE/LIVCOR' not in sel_up:
-            qs = qs.exclude(investor__iexact='BLACKSTONE/LIVCOR')
+        livcor_selected = any(x in sel_up for x in ['BLACKSTONE/LIVCOR', 'LIVCOR'])
+        if exclude_blackstone and not livcor_selected:
+            qs = qs.exclude(investor__iexact='BLACKSTONE/LIVCOR').exclude(investor__iexact='Livcor')
 
         # Determine the initial latest-month selection: prefer explicit period params, otherwise previous month
         if not (period_year or period_quarter or period_month or selected_period) and sorted_periods:

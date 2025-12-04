@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.db import connection
 from django.db.models import Max, Sum, Avg, Count, Q, F
+from django.urls import reverse
 from .models import OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly, FinanceKpiScorecard
 from datetime import datetime, date, timedelta
 from django.db.models.functions import ExtractYear, ExtractMonth
@@ -13,10 +14,13 @@ import calendar
 from django.db.models import IntegerField
 import json
 from django.core.paginator import Paginator
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
+from django.utils import timezone
 from django.template.loader import render_to_string
 import re
 from decimal import Decimal
+import csv
+from urllib.parse import urlencode
 
 
 def sample_page(request):
@@ -1766,7 +1770,7 @@ def _find_exact_column(columns, target):
 
 
 TOTAL_UNIT_DRILL_VIEW = 'web_ai.total_unit_occupancy_drill_through'
-TOTAL_UNIT_DRILL_LIMIT = 1200
+TOTAL_UNIT_DRILL_PAGE_SIZE = 500
 
 TOTAL_UNIT_FILTER_FIELDS = [
 	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
@@ -2087,17 +2091,19 @@ def _compute_vacancy_ntv_metrics(filter_clauses, filter_params, metric_columns, 
 		'ntv_total': row[2] or 0,
 	}
 
-
-def _build_total_unit_drill_context(request):
+def _prepare_total_unit_drill_query(request):
 	columns = _get_total_unit_drill_columns()
 	if not columns:
 		return {
-			'table_columns': [],
-			'table_rows': [],
-			'metrics': {'unit_count': 0},
-			'filter_options': {},
-			'filters': {},
-			'error': 'The total unit drill-through view is currently unavailable.',
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {'unit_count': 0},
+				'filter_options': {},
+				'filters': {},
+				'error': 'The total unit drill-through view is currently unavailable.',
+			},
 		}
 
 	select_parts = []
@@ -2114,14 +2120,19 @@ def _build_total_unit_drill_context(request):
 		display_columns.append({'key': alias, 'label': field['label']})
 		select_parts.append(f"{_quote_ident(col)} AS {alias}")
 
+	filter_options = _fetch_total_unit_filter_options(columns)
+
 	if not select_parts:
 		return {
-			'table_columns': [],
-			'table_rows': [],
-			'metrics': {'unit_count': 0},
-			'filter_options': _fetch_total_unit_filter_options(columns),
-			'filters': {},
-			'error': 'No recognizable columns were found for the total unit drill-through dataset.',
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {'unit_count': 0},
+				'filter_options': filter_options,
+				'filters': {},
+				'error': 'No recognizable columns were found for the total unit drill-through dataset.',
+			},
 		}
 
 	filter_clauses = []
@@ -2143,13 +2154,67 @@ def _build_total_unit_drill_context(request):
 		if clause_parts:
 			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
 
+	return {
+		'error': False,
+		'columns': columns,
+		'display_columns': display_columns,
+		'alias_order': alias_order,
+		'alias_to_source': alias_to_source,
+		'select_parts': select_parts,
+		'filter_clauses': filter_clauses,
+		'filter_params': filter_params,
+		'active_filters': active_filters,
+		'filter_options': filter_options,
+	}
+
+
+def _build_total_unit_drill_context(request):
+	query_info = _prepare_total_unit_drill_query(request)
+	if query_info.get('error'):
+		return query_info['error_context']
+
+	columns = query_info['columns']
+	display_columns = query_info['display_columns']
+	alias_order = query_info['alias_order']
+	alias_to_source = query_info['alias_to_source']
+	select_parts = query_info['select_parts']
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	active_filters = query_info['active_filters']
+	filter_options = query_info['filter_options']
+
+	metric_columns = {}
+	for key, keywords in TOTAL_UNIT_METRIC_HINTS.items():
+		if key in alias_to_source:
+			metric_columns[key] = alias_to_source[key]
+		else:
+			metric_columns[key] = _find_column_by_keywords(columns, keywords)
+
+	summary = _fetch_total_unit_summary(filter_clauses, filter_params, metric_columns)
+	total_units = summary.get('unit_count') or 0
+	page_size = TOTAL_UNIT_DRILL_PAGE_SIZE
+	page_param = request.GET.get('page') if hasattr(request, 'GET') else None
+	try:
+		requested_page = int(page_param) if page_param else 1
+	except Exception:
+		requested_page = 1
+	if requested_page < 1:
+		requested_page = 1
+	if total_units:
+		total_pages = (total_units + page_size - 1) // page_size
+		page = min(requested_page, total_pages)
+	else:
+		total_pages = 1
+		page = 1
+	offset = (page - 1) * page_size if total_units else 0
+
 	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
 	data_sql = f"SELECT {', '.join(select_parts)} FROM {TOTAL_UNIT_DRILL_VIEW}{where_sql}"
 	if order_alias:
 		data_sql += f" ORDER BY {order_alias} NULLS LAST"
-	data_sql += " LIMIT %s"
-	data_params = list(filter_params) + [TOTAL_UNIT_DRILL_LIMIT]
+	data_sql += " LIMIT %s OFFSET %s"
+	data_params = list(filter_params) + [page_size, offset]
 
 	rows = []
 	try:
@@ -2164,23 +2229,56 @@ def _build_total_unit_drill_context(request):
 		ordered_values = [_format_total_unit_value(alias, row_dict.get(alias)) for alias in alias_order]
 		rows.append(ordered_values)
 
-	metric_columns = {}
-	for key, keywords in TOTAL_UNIT_METRIC_HINTS.items():
-		if key in alias_to_source:
-			metric_columns[key] = alias_to_source[key]
-		else:
-			metric_columns[key] = _find_column_by_keywords(columns, keywords)
+	start_index = offset + 1 if total_units and rows else 0
+	end_index = offset + len(rows)
+	if total_units and end_index > total_units:
+		end_index = total_units
 
-	summary = _fetch_total_unit_summary(filter_clauses, filter_params, metric_columns)
-	filter_options = _fetch_total_unit_filter_options(columns)
+	base_query_pairs = []
+	if hasattr(request.GET, 'lists'):
+		for key, values in request.GET.lists():
+			if key == 'page':
+				continue
+			for val in values:
+				if val:
+					base_query_pairs.append((key, val))
+	base_drill_url = reverse('total_units_drillthrough')
+
+	def _build_page_url(target_page):
+		pairs = list(base_query_pairs)
+		if target_page > 1:
+			pairs.append(('page', target_page))
+		query = urlencode(pairs, doseq=True)
+		return f"{base_drill_url}?{query}" if query else base_drill_url
+
+	pagination = {
+		'page': page,
+		'page_size': page_size,
+		'total_pages': total_pages,
+		'has_prev': page > 1,
+		'has_next': bool(total_units and page < total_pages),
+		'prev_url': _build_page_url(page - 1) if page > 1 else '',
+		'next_url': _build_page_url(page + 1) if total_units and page < total_pages else '',
+		'start_index': start_index,
+		'end_index': end_index,
+		'total_results': total_units,
+	}
+
+	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
+	export_base = reverse('total_units_drillthrough_export')
+	export_query = urlencode(export_pairs, doseq=True)
+	export_url = f"{export_base}?{export_query}" if export_query else export_base
+
 	return {
 		'table_columns': display_columns,
 		'table_rows': rows,
 		'metrics': summary,
 		'filter_options': filter_options,
 		'filters': active_filters,
-		'limit_reached': bool(summary['unit_count'] and summary['unit_count'] > len(rows)),
+		'limit_reached': bool(pagination['has_next'] or (pagination['start_index'] > 1)),
 		'row_count': len(rows),
+		'pagination': pagination,
+		'export_url': export_url,
 	}
 
 
@@ -2434,8 +2532,16 @@ def total_units_drillthrough(request):
 	context = _build_total_unit_drill_context(request)
 	context['filter_fields'] = [{'key': field['key'], 'label': field['label']} for field in TOTAL_UNIT_FILTER_FIELDS]
 	context['page_title'] = 'Total Unit Drill-Through'
-	context['row_limit'] = TOTAL_UNIT_DRILL_LIMIT
+	context['row_limit'] = TOTAL_UNIT_DRILL_PAGE_SIZE
 	context.setdefault('error', '')
+	context.setdefault('export_url', '')
+	dashboard_return_url = request.GET.get('return_url') or reverse('dashboard')
+	context['dashboard_return_url'] = dashboard_return_url
+	reset_base = reverse('total_units_drillthrough')
+	if request.GET.get('return_url'):
+		context['drill_reset_url'] = f"{reset_base}?{urlencode({'return_url': request.GET.get('return_url')})}"
+	else:
+		context['drill_reset_url'] = reset_base
 	filters = context.get('filters') or {}
 	filter_options = context.get('filter_options') or {}
 	filter_blocks = []
@@ -2449,6 +2555,51 @@ def total_units_drillthrough(request):
 		})
 	context['filter_blocks'] = filter_blocks
 	return render(request, 'dashboard/total_units_drillthrough.html', context)
+
+
+@login_required
+def total_units_drillthrough_export(request):
+	query_info = _prepare_total_unit_drill_query(request)
+	if query_info.get('error'):
+		message = query_info['error_context'].get('error') if query_info.get('error_context') else 'The dataset is unavailable.'
+		return HttpResponse(message or 'The dataset is unavailable.', status=400)
+
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	if not alias_order or not select_parts:
+		return HttpResponse('No columns are available for export.', status=400)
+
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	display_columns = query_info['display_columns']
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {TOTAL_UNIT_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, list(filter_params))
+			rows = cur.fetchall()
+	except Exception as exc:
+		print('Total unit drill-through export failed:', exc)
+		return HttpResponse('Failed to export data.', status=500)
+
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"total_units_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+	writer = csv.writer(response)
+	writer.writerow([col['label'] for col in display_columns])
+	for raw in rows:
+		row_dict = dict(zip(alias_order, raw))
+		writer.writerow([_format_total_unit_value(alias, row_dict.get(alias)) for alias in alias_order])
+
+	return response
 
 @login_required
 def dashboard(request):
@@ -2619,8 +2770,11 @@ def dashboard(request):
 			sel_mode = svc_ctx.get('period_mode') or (params.get('period_mode') if hasattr(params, 'get') else None)
 			sel_period = svc_ctx.get('selected_period') or svc_ctx.get('period_month') or svc_ctx.get('period_quarter') or svc_ctx.get('period_year')
 			year, months = parse_period(sel_period) if sel_period else (None, None)
-			if _period_after_jun_2025_local(sel_mode, year, sel_period, svc_ctx.get('period_quarter')) and not inv:
-				monthly_qs = monthly_qs.exclude(investor__iexact='BLACKSTONE/LIVCOR')
+			# Check if Livcor/BLACKSTONE selected
+			inv_list_up = [x.upper() for x in inv_list] if inv_list else []
+			livcor_selected = any(x in inv_list_up for x in ['BLACKSTONE/LIVCOR', 'LIVCOR'])
+			if _period_after_jun_2025_local(sel_mode, year, sel_period, svc_ctx.get('period_quarter')) and not livcor_selected:
+				monthly_qs = monthly_qs.exclude(investor__iexact='BLACKSTONE/LIVCOR').exclude(investor__iexact='Livcor')
 		except Exception:
 			pass
 
@@ -3288,6 +3442,24 @@ def dashboard(request):
 		'renewal_conversion_chart_data': chart_renewal_conversion,
 	}
 
+	# Build drill-through URL that preserves compatible filters from the main dashboard.
+	drill_filter_keys = {field['key'] for field in TOTAL_UNIT_FILTER_FIELDS}
+	drill_pairs = []
+	if hasattr(request.GET, 'lists'):
+		for key, values in request.GET.lists():
+			if key in drill_filter_keys:
+				for val in values:
+					if val:
+						drill_pairs.append((key, val))
+	return_target = request.get_full_path()
+	if return_target:
+		drill_pairs.append(('return_url', return_target))
+	base_drill_url = reverse('total_units_drillthrough')
+	if drill_pairs:
+		context['total_unit_drill_url'] = f"{base_drill_url}?{urlencode(drill_pairs, doseq=True)}"
+	else:
+		context['total_unit_drill_url'] = base_drill_url
+
 	# Apply KPI overrides computed by the consolidated monthly aggregation (if any)
 	try:
 		print(f"\n{'='*80}")
@@ -3364,16 +3536,17 @@ def dashboard(request):
 		if exclude_blackstone:
 			# normalize selected list for comparison
 			sel_up = [s.upper() for s in selected_inv_list]
-			if 'BLACKSTONE/LIVCOR' in sel_up:
-				# user explicitly selected BLACKSTONE/LIVCOR — preserve it and any missing selections
+			livcor_selected = any(x in sel_up for x in ['BLACKSTONE/LIVCOR', 'LIVCOR'])
+			if livcor_selected:
+				# user explicitly selected Livcor/BLACKSTONE — preserve it and any missing selections
 				missing_invs = [inv for inv in selected_inv_list if inv and inv not in _unfiltered_investors]
 				if missing_invs:
 					context['investors'] = _unfiltered_investors + missing_invs
 				else:
 					context['investors'] = _unfiltered_investors
 			else:
-				# period is after Jun-2025 and user did NOT explicitly choose BLACKSTONE — hide it
-				context['investors'] = [i for i in _unfiltered_investors if i.upper() != 'BLACKSTONE/LIVCOR']
+				# period is after Jun-2025 and user did NOT explicitly choose Livcor — hide it
+				context['investors'] = [i for i in _unfiltered_investors if i.upper() not in ['BLACKSTONE/LIVCOR', 'LIVCOR']]
 		else:
 			# Not excluded by period — preserve the full list; ensure selected investors are present if explicitly chosen
 			missing_invs = [inv for inv in selected_inv_list if inv and inv not in _unfiltered_investors]
