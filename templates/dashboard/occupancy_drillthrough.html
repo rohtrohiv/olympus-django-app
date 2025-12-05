@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}Occupancy Drill-Through · Olympus{% endblock %}
+{% block extra_head %}
+<style>
+.drill-page{display:flex;flex-direction:column;gap:24px;padding-bottom:48px}
+.back-link{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;color:#127c8a;font-weight:600;text-decoration:none;font-size:14px;background:rgba(18,124,138,.08);padding:8px 14px;border-radius:999px;transition:background .2s ease}
+.back-link:hover{background:rgba(18,124,138,.18)}
+.page-hero{display:none}
+.filter-panel{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;padding:18px 24px;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+.filter-panel label{flex:1 1 160px}
+.filter-panel label{display:flex;flex-direction:column;font-size:12px;font-weight:600;color:#425466;text-transform:uppercase;letter-spacing:.05em}
+.filter-panel select{margin-top:6px;border:1px solid #d7dde5;border-radius:10px;padding:10px 12px;font-size:14px;background:#fdfefe}
+.filter-actions{display:flex;align-items:flex-end;gap:12px}
+.filter-actions .btn{border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center}
+.filter-actions .btn.primary{background:#127c8a;color:#fff;box-shadow:0 6px 20px rgba(18,124,138,.3)}
+.filter-actions .btn.ghost{background:transparent;color:#127c8a;border:1px solid rgba(18,124,138,.25)}
+.filter-actions .btn.auto-submit-hint{display:none}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.metric-card{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 10px 26px rgba(15,23,42,.07);display:flex;flex-direction:column;gap:6px}
+.metric-card span{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#7b8794}
+.metric-card strong{font-size:28px;font-weight:600;color:#0f172a}
+.metric-card small{color:#6b7280}
+.table-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);overflow:hidden}
+.table-card header{padding:20px 24px;border-bottom:1px solid #e5e9f0;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;font-weight:600;color:#0f172a}
+.table-card header .header-left{display:flex;flex-direction:column;gap:4px}
+.table-card header .header-left span{font-size:13px;color:#6b7280;font-weight:500}
+.table-card header .export-link{display:inline-flex;align-items:center;gap:6px;background:#127c8a;color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 6px 18px rgba(18,124,138,.28);transition:background .2s ease,box-shadow .2s ease}
+.table-card header .export-link:hover{background:#0f6571;box-shadow:0 10px 24px rgba(18,124,138,.32)}
+.table-card footer{padding:16px 24px;border-top:1px solid #e5e9f0;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;font-size:13px;color:#475569;background:#fff}
+.table-card footer .pager{display:flex;align-items:center;gap:10px}
+.table-card footer .pager a{border:1px solid #127c8a;color:#127c8a;padding:6px 14px;border-radius:999px;text-decoration:none;font-weight:600;transition:background .2s ease,color .2s ease}
+.table-card footer .pager a:hover{background:#127c8a;color:#fff}
+.table-card footer .pager .disabled{border:1px solid rgba(148,163,184,.5);color:rgba(100,116,139,.7);padding:6px 14px;border-radius:999px;font-weight:600;cursor:not-allowed}
+.table-card footer .page-indicator{font-weight:600;color:#0f172a}
+.table-scroll{width:100%;overflow:auto}
+.table-scroll table{width:100%;border-collapse:collapse;font-size:13px}
+.table-scroll th{background:#f8fafc;color:#41506b;text-align:left;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e2e8f0}
+.table-scroll td{padding:12px 16px;border-bottom:1px solid #f0f4f8;color:#0f172a;white-space:nowrap}
+.table-scroll tr:nth-child(even) td{background:#fcfeff}
+.empty-state{padding:18px 24px;border-radius:12px;background:#fff4f1;color:#b45309;font-weight:600}
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(450px,1fr));gap:24px;margin:24px 0}
+.chart-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);padding:24px}
+.chart-card h3{margin:0 0 16px 0;font-size:16px;font-weight:600;color:#0f172a;text-align:center}
+.chart-container{position:relative;height:300px}
+@media (max-width:768px){.filter-panel,.table-card header{padding:16px}.filter-panel{flex-direction:column}.filter-actions{flex-direction:column;width:100%}.charts-grid{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="drill-page">
+  <a class="back-link" href="{{ dashboard_return_url }}">&#8592; Back to Dashboard</a>
+  {% if error %}
+    <div class="empty-state">{{ error }}</div>
+  {% endif %}
+
+  <form method="get" class="filter-panel" id="occupancyFilterForm">
+    <input type="hidden" name="return_url" value="{{ dashboard_return_url }}">
+    <input type="hidden" name="page" value="1" id="occupancy-page-input">
+    {% for field in filter_blocks %}
+      <label>
+        <span>{{ field.label }}</span>
+        <select name="{{ field.key }}">
+          <option value="">All</option>
+          {% for option in field.options %}
+            <option value="{{ option }}" {% if field.selected == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endfor %}
+    <div class="filter-actions">
+      <button type="submit" class="btn primary auto-submit-hint">Apply Filters</button>
+      <a class="btn ghost" href="{{ drill_reset_url }}">Reset</a>
+    </div>
+  </form>
+
+  <section class="metrics-grid" style="margin-top:8px;">
+    <article class="metric-card">
+      <span>Unit Count</span>
+      <strong>{{ metrics.unit_count|default:'--' }}</strong>
+      <small>
+        {% if metrics.unit_count %}
+          {% if pagination.start_index and pagination.end_index %}
+            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }}
+          {% else %}
+            {{ metrics.unit_count }} total units
+          {% endif %}
+        {% else %}
+          No matching units
+        {% endif %}
+      </small>
+    </article>
+    <article class="metric-card">
+      <span>Available as Of</span>
+      <strong>
+        {% if metrics.available_as_of %}
+          {{ metrics.available_as_of }}
+        {% else %}
+          --
+        {% endif %}
+      </strong>
+      <small>Current snapshot date</small>
+    </article>
+    <article class="metric-card">
+      <span>Units Available</span>
+      <strong>{{ metrics.units_available|default:'--' }}</strong>
+      <small>
+        {% if metrics.units_available is not None %}
+          Units ready for occupancy
+        {% else %}
+          Ready for move-in
+        {% endif %}
+      </small>
+    </article>
+    <article class="metric-card">
+      <span>Average Vacant Days</span>
+      <strong>{{ metrics.avg_vacant_days|default:'--' }}</strong>
+      <small>Units Not Ready</small>
+    </article>
+    <article class="metric-card">
+      <span>Vacant Units Ready</span>
+      <strong>{{ metrics.vacant_ready_30_days|default:'--' }}</strong>
+      <small>> 30 days</small>
+    </article>
+  </section>
+
+  <section class="charts-grid">
+    <article class="chart-card">
+      <h3>AVAILABILITY BY UNIT STATUS</h3>
+      <div class="chart-container">
+        <canvas id="availabilityChart"></canvas>
+      </div>
+    </article>
+    <article class="chart-card">
+      <h3>VACANT UNIT MAKE READY STATUS</h3>
+      <div class="chart-container">
+        <canvas id="vacantStatusChart"></canvas>
+      </div>
+    </article>
+  </section>
+
+  <section class="table-card">
+    <header>
+      <div class="header-left">
+        <div>Unit Occupancy Details</div>
+        <span>
+          {% if metrics.unit_count %}
+            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units{% if pagination.total_pages > 1 %} · Page {{ pagination.page }} of {{ pagination.total_pages }}{% endif %}
+          {% else %}
+            No units found
+          {% endif %}
+        </span>
+      </div>
+      {% if export_url and metrics.unit_count %}
+        <a class="export-link" href="{{ export_url }}">Download CSV</a>
+      {% endif %}
+    </header>
+    {% if pagination.total_pages > 1 and metrics.unit_count %}
+      <footer style="border-bottom:1px solid #e5e9f0;border-top:none;">
+        <span>
+          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units
+        </span>
+        <div class="pager">
+          {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}">‹ Previous</a>
+          {% else %}
+            <span class="disabled">‹ Previous</span>
+          {% endif %}
+          <span class="page-indicator">Page {{ pagination.page }} of {{ pagination.total_pages }}</span>
+          {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}">Next ›</a>
+          {% else %}
+            <span class="disabled">Next ›</span>
+          {% endif %}
+        </div>
+      </footer>
+    {% endif %}
+    <div class="table-scroll">
+      {% if table_rows %}
+        <table>
+          <thead>
+            <tr>
+              {% for col in table_columns %}
+                <th scope="col">{{ col.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in table_rows %}
+              <tr>
+                {% for value in row %}
+                  <td>{{ value }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-state" style="margin:16px;">No unit-level records were returned for the selected filters.</div>
+      {% endif %}
+    </div>
+    {% if pagination.total_pages > 1 and metrics.unit_count %}
+      <footer>
+        <span>
+          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units
+        </span>
+        <div class="pager">
+          {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}">‹ Previous</a>
+          {% else %}
+            <span class="disabled">‹ Previous</span>
+          {% endif %}
+          <span class="page-indicator">Page {{ pagination.page }} of {{ pagination.total_pages }}</span>
+          {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}">Next ›</a>
+          {% else %}
+            <span class="disabled">Next ›</span>
+          {% endif %}
+        </div>
+      </footer>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Store chart instances globally to prevent "Canvas is already in use" error
+let availabilityChartInstance = null;
+let vacantStatusChartInstance = null;
+
+document.addEventListener('DOMContentLoaded', function(){
+  // Auto-submit form on filter change
+  var form = document.getElementById('occupancyFilterForm');
+  if(form){
+    var selects = form.querySelectorAll('select');
+    selects.forEach(function(sel){
+      sel.addEventListener('change', function(){
+        if(typeof form.requestSubmit === 'function'){
+          form.requestSubmit();
+        }else{
+          form.submit();
+        }
+      });
+    });
+  }
+
+  // Chart data from backend
+  var chartData = {{ chart_data|safe }};
+  
+  // Destroy existing chart instances if they exist
+  if (availabilityChartInstance) {
+    availabilityChartInstance.destroy();
+  }
+  if (vacantStatusChartInstance) {
+    vacantStatusChartInstance.destroy();
+  }
+  
+  // Availability by Unit Status Chart
+  var availCtx = document.getElementById('availabilityChart');
+  if(availCtx && chartData.availability){
+    // Extended color palette for multiple unit_condition values
+    const colors = ['#10b981', '#3b82f6', '#93c5fd', '#cbd5e1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+    const numColors = chartData.availability.labels.length;
+    
+    availabilityChartInstance = new Chart(availCtx, {
+      type: 'doughnut',
+      data: {
+        labels: chartData.availability.labels,
+        datasets: [{
+          data: chartData.availability.values,
+          backgroundColor: colors.slice(0, numColors),
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              usePointStyle: true,
+              padding: 15,
+              font: { size: 12 }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                var label = context.label || '';
+                var value = context.parsed || 0;
+                var total = context.dataset.data.reduce((a, b) => a + b, 0);
+                var percentage = total > 0 ? ((value / total) * 100).toFixed(2) : 0;
+                return label + ': ' + value + ' (' + percentage + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Vacant Unit Make Ready Status Chart
+  var vacantCtx = document.getElementById('vacantStatusChart');
+  if(vacantCtx && chartData.vacant_status){
+    const vacantColors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+    const numVacantColors = chartData.vacant_status.labels.length;
+    
+    vacantStatusChartInstance = new Chart(vacantCtx, {
+      type: 'doughnut',
+      data: {
+        labels: chartData.vacant_status.labels,
+        datasets: [{
+          data: chartData.vacant_status.values,
+          backgroundColor: vacantColors.slice(0, numVacantColors),
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              usePointStyle: true,
+              padding: 15,
+              font: { size: 12 }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                var label = context.label || '';
+                var value = context.parsed || 0;
+                var total = context.dataset.data.reduce((a, b) => a + b, 0);
+                var percentage = total > 0 ? ((value / total) * 100).toFixed(2) : 0;
+                return label + ': ' + value + ' (' + percentage + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+});
+</script>
+{% endblock %}

@@ -211,3 +211,76 @@ class FinanceKpiScorecard(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."finance_kpi_scorecard"'
+
+
+class TotalUnitOccupancyDrillThrough(models.Model):
+	"""Unmanaged materialized view for unit occupancy drill-through data."""
+	# Primary identifier columns
+	property_name = models.TextField(blank=True, null=True)
+	property_number = models.IntegerField(blank=True, null=True)
+	unit = models.TextField(blank=True, null=True)
+	unit_identifier = models.TextField(blank=True, null=True)
+	onesite_id = models.TextField(blank=True, null=True)
+	
+	# Unit details
+	unit_condition = models.TextField(blank=True, null=True)
+	floor_plan = models.TextField(blank=True, null=True)
+	beds_baths = models.TextField(blank=True, null=True)
+	floor_level = models.TextField(blank=True, null=True)
+	amenity_value = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	
+	# Dates
+	move_out = models.DateField(blank=True, null=True)
+	move_out_date = models.DateField(blank=True, null=True)
+	date_unit_available = models.DateField(blank=True, null=True)
+	move_in_date = models.DateField(blank=True, null=True)
+	scheduled_move_in = models.DateField(blank=True, null=True)
+	lease_start = models.DateField(blank=True, null=True)
+	lease_end = models.DateField(blank=True, null=True)
+	
+	# Metrics
+	turn_time = models.IntegerField(blank=True, null=True)
+	status = models.TextField(blank=True, null=True)
+	not_ready_past_dates = models.TextField(blank=True, null=True)
+	mr_day_variance = models.IntegerField(blank=True, null=True)
+	leased_not_leased = models.TextField(blank=True, null=True)
+	days_on_market = models.IntegerField(blank=True, null=True)
+	days_until_vacant = models.IntegerField(blank=True, null=True)
+	
+	# Financial
+	market_rent = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	lease_rent = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	effective_rent = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	lease_term = models.IntegerField(blank=True, null=True)
+	month_price_12 = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True, db_column='12_month_price')
+	best_term = models.IntegerField(blank=True, null=True)
+	best_price = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	forecasted_trade_out = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	
+	# Additional info
+	move_out_reason = models.TextField(blank=True, null=True)
+	resident_name = models.TextField(blank=True, null=True)
+	ntv_flag = models.TextField(blank=True, null=True)
+	exposure_8_weeks = models.FloatField(blank=True, null=True)
+	unit_type = models.TextField(blank=True, null=True)
+	leased_not_leased = models.TextField(blank=True, null=True, db_column='Leased/Not Leased')
+	vacant_status = models.TextField(blank=True, null=True, db_column='Vacant Status')
+	unit_available_flag = models.TextField(blank=True, null=True)
+	days_vacant = models.IntegerField(blank=True, null=True)
+	# mr_day_variance_2 = models.IntegerField(blank=True, null=True, db_column='mr_day_variance')
+	unit_vacant_over_30 = models.TextField(blank=True, null=True)
+	
+	# Organizational hierarchy
+	investor = models.TextField(blank=True, null=True)
+	regional_vp = models.TextField(blank=True, null=True)
+	regional_manager = models.TextField(blank=True, null=True)
+	regional_area_manager = models.TextField(blank=True, null=True)
+	regional_director = models.TextField(blank=True, null=True)
+	community = models.TextField(blank=True, null=True)
+	
+	# Site identifier
+	site_unit_id = models.TextField(blank=True, null=True)
+	
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."total_unit_occupancy_drill_through"'

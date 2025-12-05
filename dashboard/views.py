@@ -2601,6 +2601,684 @@ def total_units_drillthrough_export(request):
 
 	return response
 
+
+# ============================================================================
+# OCCUPANCY DRILL-THROUGH VIEWS
+# ============================================================================
+
+OCCUPANCY_DRILL_VIEW = 'web_ai.total_unit_occupancy_drill_through'
+OCCUPANCY_DRILL_PAGE_SIZE = 500
+
+OCCUPANCY_FILTER_FIELDS = [
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'keywords': ['regional', 'vp']},
+	{'key': 'regional_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+	{'key': 'floor_plan', 'label': 'Floor Plan', 'keywords': ['floor', 'plan']},
+]
+
+OCCUPANCY_TABLE_FIELDS = [
+	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
+	{'key': 'unit_condition', 'label': 'Unit Condition', 'keywords': ['unit', 'condition']},
+	{'key': 'unit', 'label': 'Unit', 'keywords': ['unit']},
+	{'key': 'floor_plan', 'label': 'Floor Plan', 'keywords': ['floor', 'plan']},
+	{'key': 'beds_baths', 'label': 'Beds / Baths', 'keywords': ['bed', 'bath']},
+	{'key': 'floor_level', 'label': 'Floor Level', 'keywords': ['floor', 'level']},
+	{'key': 'amenity_value', 'label': 'Amenity Value', 'keywords': ['amenity', 'value']},
+	{'key': 'move_out', 'label': 'Move Out', 'keywords': ['move', 'out']},
+	{'key': 'date_unit_available', 'label': 'Date Unit Available', 'keywords': ['available', 'date']},
+	{'key': 'turn_time', 'label': 'Turn Time', 'keywords': ['turn', 'time']},
+	{'key': 'status', 'label': 'Status', 'keywords': ['status']},
+	{'key': 'not_ready_past_dates', 'label': 'Not Ready / Past Dates', 'keywords': ['not', 'ready', 'past']},
+	{'key': 'mr_day_variance', 'label': 'MR Day Variance', 'keywords': ['variance', 'mr']},
+	{'key': 'leased_not_leased', 'label': 'Leased/Not Leased', 'keywords': ['leased']},
+	{'key': 'days_on_market', 'label': 'Days on Market', 'keywords': ['days', 'market']},
+	{'key': 'market_rent', 'label': 'Market Rent', 'keywords': ['market', 'rent']},
+	{'key': 'lease_rent', 'label': 'Lease Rent', 'keywords': ['lease', 'rent']},
+	{'key': 'lease_term', 'label': 'Lease Term', 'keywords': ['lease', 'term']},
+	{'key': '12_month_price', 'label': '12 Month Price', 'keywords': ['12', 'month', 'price']},
+	{'key': 'best_term', 'label': 'Best Term', 'keywords': ['best', 'term']},
+	{'key': 'best_price', 'label': 'Best Price', 'keywords': ['best', 'price']},
+	{'key': 'forecasted_trade_out', 'label': 'Forecasted Trade out', 'keywords': ['forecasted', 'trade']},
+	{'key': 'days_until_vacant', 'label': 'Days Until Vacant', 'keywords': ['days', 'until', 'vacant']},
+	{'key': 'move_out_reason', 'label': 'Move out Reason', 'keywords': ['move', 'out', 'reason']},
+	{'key': 'onesite_id', 'label': 'OneSiteID | Property # | Unit #', 'keywords': ['onesite', 'id']},
+]
+
+OCCUPANCY_CURRENCY_FIELDS = {'amenity_value', 'market_rent', 'lease_rent', '12_month_price', 'best_price', 'forecasted_trade_out'}
+OCCUPANCY_DATE_FIELDS = {'move_out', 'date_unit_available'}
+
+
+def _get_occupancy_drill_columns():
+	"""Get all columns from the occupancy drill-through materialized view."""
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'total_unit_occupancy_drill_through']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Occupancy drill-through column introspection failed:', exc)
+
+	if columns:
+		return columns
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.total_unit_occupancy_drill_through'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Occupancy drill-through pg_attribute introspection failed:', exc)
+	return columns
+
+
+def _format_occupancy_value(alias, value):
+	"""Format occupancy drill-through values for display."""
+	if value is None:
+		return '--'
+	if isinstance(value, (datetime, date)):
+		return value.strftime('%b %d, %Y')
+	if isinstance(value, Decimal):
+		value = float(value)
+	if alias in OCCUPANCY_CURRENCY_FIELDS:
+		try:
+			return f"${float(value):,.2f}"
+		except Exception:
+			return f"${value}"
+	if alias in OCCUPANCY_DATE_FIELDS:
+		try:
+			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
+			return parsed.strftime('%b %d, %Y')
+		except Exception:
+			return str(value)
+	text = str(value).strip()
+	return text or '--'
+
+
+def _fetch_occupancy_filter_options(columns):
+	"""Fetch distinct filter options for occupancy drill-through filters."""
+	options = {}
+	
+	# Find unit_condition (snake_case) column for base filtering
+	unit_condition_col = _find_exact_column(columns, 'unit_condition')
+	if not unit_condition_col:
+		unit_condition_col = _find_column_by_keywords(columns, ['unit', 'condition'])
+	
+	unit_condition_filter = ''
+	if unit_condition_col:
+		unit_condition_ident = _quote_ident(unit_condition_col)
+		unit_condition_filter = f" AND {unit_condition_ident} IS NOT NULL AND TRIM({unit_condition_ident}::text) <> ''"
+	
+	for field in OCCUPANCY_FILTER_FIELDS:
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			options[field['key']] = []
+			continue
+		ident = _quote_ident(col)
+		sql = (
+			f"SELECT DISTINCT {ident} FROM {OCCUPANCY_DRILL_VIEW} "
+			f"WHERE {ident} IS NOT NULL AND TRIM({ident}::text) <> ''{unit_condition_filter} "
+			f"ORDER BY {ident} ASC LIMIT 400"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql)
+				vals = [row[0] for row in cur.fetchall()]
+		except Exception as exc:
+			print(f"Occupancy drill filter options failed for {field['key']}:", exc)
+			vals = []
+		options[field['key']] = [str(v).strip() for v in vals if v]
+	return options
+
+
+def _fetch_occupancy_summary(filter_clauses, filter_params, columns):
+	"""Calculate summary metrics for occupancy drill-through.
+	
+	NOTE: Unit Count should reflect TOTAL units in the view, not just those with valid unit_condition.
+	Other metrics (units_available, avg_vacant_days, etc.) should use the filtered data.
+	"""
+	from datetime import datetime
+	
+	summary = {
+		'unit_count': 0,
+		'available_as_of': None,
+		'units_available': 0,
+		'avg_vacant_days': None,
+		'vacant_ready_30_days': 0,
+	}
+
+	# Find relevant columns
+	condition_col = _find_column_by_keywords(columns, ['unit', 'condition', 'status'])
+	status_col = _find_column_by_keywords(columns, ['status'])
+	turn_time_col = _find_column_by_keywords(columns, ['turn', 'time'])
+	days_vacant_col = _find_column_by_keywords(columns, ['days', 'until', 'vacant'])
+	date_available_col = _find_column_by_keywords(columns, ['date', 'available', 'unit'])
+	
+	# Calculate TOTAL unit count WITHOUT the base unit_condition IS NOT NULL filter
+	# This gives the actual total units in the view (matching main dashboard behavior)
+	try:
+		# Identify and exclude the base unit_condition filter
+		# The base filter is: "unit_condition" IS NOT NULL AND TRIM("unit_condition"::text) <> ''
+		user_filter_clauses = []
+		user_filter_params = []
+		
+		param_idx = 0
+		for clause in filter_clauses:
+			# Skip the base unit_condition filter
+			if '"unit_condition"' in clause and 'IS NOT NULL' in clause and 'TRIM' in clause:
+				continue
+			# Keep other filters
+			user_filter_clauses.append(clause)
+			# Count params needed for this clause
+			param_count = clause.count('%s')
+			user_filter_params.extend(filter_params[param_idx:param_idx + param_count])
+			param_idx += param_count
+		
+		count_sql = f"SELECT COUNT(*) FROM {OCCUPANCY_DRILL_VIEW}"
+		if user_filter_clauses:
+			count_sql += ' WHERE ' + ' AND '.join(user_filter_clauses)
+		
+		with connection.cursor() as cur:
+			cur.execute(count_sql, user_filter_params)
+			total_units = cur.fetchone()[0] or 0
+			summary['unit_count'] = total_units
+	except Exception as exc:
+		print('Occupancy total unit count query failed:', exc)
+		import traceback
+		traceback.print_exc()
+		summary['unit_count'] = 0
+	
+	# For other metrics, use the FULL filter (including unit_condition)
+	sql_parts = []
+	
+	# Units Available: COUNT(DISTINCT unit) WHERE "Leased/Not Leased" = 'Not Leased'
+	# This shows units that are available (not currently leased)
+	leased_col = _find_exact_column(columns, 'Leased/Not Leased')
+	unit_col = _find_exact_column(columns, 'unit')
+	
+	if leased_col and unit_col:
+		leased_ident = _quote_ident(leased_col)
+		unit_ident = _quote_ident(unit_col)
+		sql_parts.append(
+			f"COUNT(DISTINCT {unit_ident}) FILTER (WHERE {leased_ident}::text = 'Not Leased') AS units_available"
+		)
+	elif condition_col:
+		# Fallback to old logic if Leased/Not Leased column not found
+		ident = _quote_ident(condition_col)
+		sql_parts.append(
+			f"COUNT(*) FILTER (WHERE {ident}::text ILIKE '%Vacant%' AND {ident}::text ILIKE '%Ready%') AS units_available"
+		)
+		
+	# Average vacant days for units not ready
+	if turn_time_col:
+		turn_ident = _quote_ident(turn_time_col)
+		if condition_col:
+			cond_ident = _quote_ident(condition_col)
+			sql_parts.append(
+				f"AVG({turn_ident}) FILTER (WHERE {cond_ident}::text ILIKE '%Not Ready%') AS avg_vacant_days"
+			)
+		else:
+			sql_parts.append(f"AVG({turn_ident}) AS avg_vacant_days")
+	
+	# Vacant Units Ready > 30 days
+	if condition_col and days_vacant_col:
+		cond_ident = _quote_ident(condition_col)
+		days_ident = _quote_ident(days_vacant_col)
+		sql_parts.append(
+			f"COUNT(*) FILTER (WHERE {cond_ident}::text ILIKE '%Vacant%' AND {cond_ident}::text ILIKE '%Ready%' AND {days_ident} > 30) AS vacant_ready_30_days"
+		)
+	
+	# Get latest snapshot date
+	if date_available_col:
+		date_ident = _quote_ident(date_available_col)
+		sql_parts.append(f"MAX({date_ident}) AS latest_date")
+
+	# Query other metrics WITH full filters (including unit_condition)
+	sql = f"SELECT {', '.join(sql_parts)} FROM {OCCUPANCY_DRILL_VIEW}"
+	if filter_clauses:
+		sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(sql, filter_params)
+			row = cur.fetchone()
+			col_names = [desc[0] for desc in cur.description]
+			data = dict(zip(col_names, row if row else []))
+	except Exception as exc:
+		print('Occupancy drill summary query failed:', exc)
+		# Keep the total_units from earlier query
+		data = {}
+
+	# Don't override unit_count from the earlier total query
+	units_available = data.get('units_available') or 0
+	avg_vacant_days = data.get('avg_vacant_days')
+	vacant_ready_30_days = data.get('vacant_ready_30_days') or 0
+	latest_date = data.get('latest_date')
+	
+	summary['units_available'] = units_available
+	summary['vacant_ready_30_days'] = vacant_ready_30_days
+	
+	# Format average vacant days
+	if avg_vacant_days is not None:
+		try:
+			summary['avg_vacant_days'] = int(round(float(avg_vacant_days)))
+		except Exception:
+			summary['avg_vacant_days'] = None
+	
+	# Format available as of date
+	if latest_date:
+		try:
+			if isinstance(latest_date, str):
+				date_obj = datetime.strptime(latest_date, '%Y-%m-%d').date()
+			else:
+				date_obj = latest_date
+			summary['available_as_of'] = date_obj.strftime('%m/%d/%Y')
+		except Exception:
+			summary['available_as_of'] = str(latest_date)
+	else:
+		# Default to today's date
+		summary['available_as_of'] = datetime.now().strftime('%m/%d/%Y')
+	
+	return summary
+
+
+def _prepare_occupancy_drill_query(request):
+	"""Prepare occupancy drill-through query components."""
+	columns = _get_occupancy_drill_columns()
+	if not columns:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {'unit_count': 0},
+				'filter_options': {},
+				'filters': {},
+				'error': 'The occupancy drill-through view is currently unavailable.',
+			},
+		}
+
+	select_parts = []
+	display_columns = []
+	alias_order = []
+	alias_to_source = {}
+	
+	for field in OCCUPANCY_TABLE_FIELDS:
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		alias = field['key']
+		alias_to_source[alias] = col
+		alias_order.append(alias)
+		display_columns.append({'key': alias, 'label': field['label']})
+		select_parts.append(f"{_quote_ident(col)} AS {alias}")
+
+	filter_options = _fetch_occupancy_filter_options(columns)
+
+	if not select_parts:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {'unit_count': 0},
+				'filter_options': filter_options,
+				'filters': {},
+				'error': 'No recognizable columns were found for the occupancy drill-through dataset.',
+			},
+		}
+
+	filter_clauses = []
+	filter_params = []
+	active_filters = {}
+	
+	# Add base filter: only show rows where unit_condition (snake_case) is not empty
+	# NOTE: Use snake_case 'unit_condition' which has: Leased, Non Revenue, On Notice, Vacant
+	# NOT title case 'Unit Condition' which has: Admin, Corporate, Down, Model, On Notice, Vacant
+	unit_condition_col = _find_exact_column(columns, 'unit_condition')
+	if not unit_condition_col:
+		# Fallback: try finding by keywords (may match wrong column)
+		unit_condition_col = _find_column_by_keywords(columns, ['unit', 'condition'])
+	
+	if unit_condition_col:
+		unit_condition_ident = _quote_ident(unit_condition_col)
+		filter_clauses.append(f"{unit_condition_ident} IS NOT NULL AND TRIM({unit_condition_ident}::text) <> ''")
+	
+	for field in OCCUPANCY_FILTER_FIELDS:
+		values = _extract_filter_list(request, request.GET, field['key'])
+		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
+		active_filters[field['key']] = values[0] if values else ''
+		if not clean:
+			continue
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		clause_parts = []
+		for val in clean:
+			clause_parts.append(f"{_quote_ident(col)} ILIKE %s")
+			filter_params.append(f"%{val}%")
+		if clause_parts:
+			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+
+	return {
+		'error': False,
+		'columns': columns,
+		'display_columns': display_columns,
+		'alias_order': alias_order,
+		'alias_to_source': alias_to_source,
+		'select_parts': select_parts,
+		'filter_clauses': filter_clauses,
+		'filter_params': filter_params,
+		'active_filters': active_filters,
+		'filter_options': filter_options,
+	}
+
+
+def _build_occupancy_drill_context(request):
+	"""Build complete context for occupancy drill-through view."""
+	query_info = _prepare_occupancy_drill_query(request)
+	if query_info.get('error'):
+		return query_info['error_context']
+
+	columns = query_info['columns']
+	display_columns = query_info['display_columns']
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	active_filters = query_info['active_filters']
+	filter_options = query_info['filter_options']
+
+	summary = _fetch_occupancy_summary(filter_clauses, filter_params, columns)
+	total_units = summary.get('unit_count') or 0
+	
+	page_size = OCCUPANCY_DRILL_PAGE_SIZE
+	page_param = request.GET.get('page') if hasattr(request, 'GET') else None
+	try:
+		requested_page = int(page_param) if page_param else 1
+	except Exception:
+		requested_page = 1
+	if requested_page < 1:
+		requested_page = 1
+	if total_units:
+		total_pages = (total_units + page_size - 1) // page_size
+		page = min(requested_page, total_pages)
+	else:
+		total_pages = 1
+		page = 1
+	offset = (page - 1) * page_size if total_units else 0
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {OCCUPANCY_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+	data_sql += " LIMIT %s OFFSET %s"
+	data_params = list(filter_params) + [page_size, offset]
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, data_params)
+			result = cur.fetchall()
+	except Exception as exc:
+		print('Occupancy drill-through data query failed:', exc)
+		result = []
+	
+	for raw in result:
+		row_dict = dict(zip(alias_order, raw))
+		ordered_values = [_format_occupancy_value(alias, row_dict.get(alias)) for alias in alias_order]
+		rows.append(ordered_values)
+
+	start_index = offset + 1 if total_units and rows else 0
+	end_index = offset + len(rows)
+	if total_units and end_index > total_units:
+		end_index = total_units
+
+	base_query_pairs = []
+	if hasattr(request.GET, 'lists'):
+		for key, values in request.GET.lists():
+			if key == 'page':
+				continue
+			for val in values:
+				if val:
+					base_query_pairs.append((key, val))
+	
+	base_drill_url = reverse('occupancy_drillthrough')
+
+	def _build_page_url(target_page):
+		pairs = list(base_query_pairs)
+		if target_page > 1:
+			pairs.append(('page', target_page))
+		query = urlencode(pairs, doseq=True)
+		return f"{base_drill_url}?{query}" if query else base_drill_url
+
+	pagination = {
+		'page': page,
+		'page_size': page_size,
+		'total_pages': total_pages,
+		'has_prev': page > 1,
+		'has_next': bool(total_units and page < total_pages),
+		'prev_url': _build_page_url(page - 1) if page > 1 else '',
+		'next_url': _build_page_url(page + 1) if total_units and page < total_pages else '',
+		'start_index': start_index,
+		'end_index': end_index,
+		'total_results': total_units,
+	}
+
+	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
+	export_base = reverse('occupancy_drillthrough_export')
+	export_query = urlencode(export_pairs, doseq=True)
+	export_url = f"{export_base}?{export_query}" if export_query else export_base
+
+	return {
+		'table_columns': display_columns,
+		'table_rows': rows,
+		'metrics': summary,
+		'filter_options': filter_options,
+		'filters': active_filters,
+		'limit_reached': bool(pagination['has_next'] or (pagination['start_index'] > 1)),
+		'row_count': len(rows),
+		'pagination': pagination,
+		'export_url': export_url,
+	}
+
+
+def _fetch_occupancy_chart_data(filter_clauses, filter_params, columns):
+	"""Generate chart data for occupancy drill-through visualizations.
+	
+	Uses snake_case 'unit_condition' column which contains:
+	- Leased
+	- Non Revenue
+	- On Notice
+	- Vacant
+	"""
+	import json
+	
+	chart_data = {
+		'availability': {'labels': [], 'values': []},
+		'vacant_status': {'labels': [], 'values': []}
+	}
+	
+	# Use exact column name to get snake_case 'unit_condition' (not title case 'Unit Condition')
+	condition_col = _find_exact_column(columns, 'unit_condition')
+	
+	if not condition_col:
+		# Fallback: try finding by keywords
+		condition_col = _find_column_by_keywords(columns, ['unit', 'condition'])
+	
+	if not condition_col:
+		return json.dumps(chart_data)
+	
+	condition_ident = _quote_ident(condition_col)
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	
+	# Availability by Unit Status - Use actual distinct unit_condition values
+	# This will show all real categories from the database
+	availability_sql = f"""
+		SELECT 
+			{condition_ident}::text as condition,
+			COUNT(*) as cnt
+		FROM {OCCUPANCY_DRILL_VIEW}
+		{where_sql}
+		GROUP BY {condition_ident}::text
+		ORDER BY cnt DESC
+	"""
+	
+	try:
+		with connection.cursor() as cur:
+			if filter_params:
+				cur.execute(availability_sql, filter_params)
+			else:
+				cur.execute(availability_sql)
+			for row in cur.fetchall():
+				condition, count = row
+				if condition and condition.strip():
+					chart_data['availability']['labels'].append(condition.strip())
+					chart_data['availability']['values'].append(count)
+	except Exception as exc:
+		print(f'Availability chart data query failed: {exc}')
+	
+	# Vacant Unit Make Ready Status - Show all vacant-related statuses
+	vacant_where = f"{where_sql} AND" if where_sql else " WHERE"
+	vacant_like_pattern = '%%Vacant%%' if filter_params else '%Vacant%'
+	
+	vacant_status_sql = f"""
+		SELECT 
+			{condition_ident}::text as status,
+			COUNT(*) as cnt
+		FROM {OCCUPANCY_DRILL_VIEW}
+		{vacant_where} {condition_ident}::text ILIKE '{vacant_like_pattern}'
+		GROUP BY {condition_ident}::text
+		ORDER BY cnt DESC
+	"""
+	
+	try:
+		with connection.cursor() as cur:
+			if filter_params:
+				cur.execute(vacant_status_sql, filter_params)
+			else:
+				cur.execute(vacant_status_sql)
+			for row in cur.fetchall():
+				status, count = row
+				if status and status.strip():
+					label = status.strip()
+					chart_data['vacant_status']['labels'].append(label)
+					chart_data['vacant_status']['values'].append(count)
+	except Exception as exc:
+		print(f'Vacant status chart data query failed: {exc}')
+	
+	return json.dumps(chart_data)
+
+
+@login_required
+def occupancy_drillthrough(request):
+	"""Main occupancy drill-through view."""
+	context = _build_occupancy_drill_context(request)
+	context['filter_fields'] = [{'key': field['key'], 'label': field['label']} for field in OCCUPANCY_FILTER_FIELDS]
+	context['page_title'] = 'Occupancy Drill-Through'
+	context['row_limit'] = OCCUPANCY_DRILL_PAGE_SIZE
+	context.setdefault('error', '')
+	context.setdefault('export_url', '')
+	
+	dashboard_return_url = request.GET.get('return_url') or reverse('dashboard')
+	context['dashboard_return_url'] = dashboard_return_url
+	
+	reset_base = reverse('occupancy_drillthrough')
+	if request.GET.get('return_url'):
+		context['drill_reset_url'] = f"{reset_base}?{urlencode({'return_url': request.GET.get('return_url')})}"
+	else:
+		context['drill_reset_url'] = reset_base
+	
+	filters = context.get('filters') or {}
+	filter_options = context.get('filter_options') or {}
+	filter_blocks = []
+	
+	for field in context['filter_fields']:
+		key = field['key']
+		filter_blocks.append({
+			'key': key,
+			'label': field['label'],
+			'options': filter_options.get(key, []),
+			'selected': filters.get(key, ''),
+		})
+	context['filter_blocks'] = filter_blocks
+	
+	# Generate chart data
+	query_info = _prepare_occupancy_drill_query(request)
+	if not query_info.get('error'):
+		columns = query_info['columns']
+		filter_clauses = query_info['filter_clauses']
+		filter_params = query_info['filter_params']
+		context['chart_data'] = _fetch_occupancy_chart_data(filter_clauses, filter_params, columns)
+	else:
+		context['chart_data'] = '{"availability": {"labels": [], "values": []}, "vacant_status": {"labels": [], "values": []}}'
+	
+	return render(request, 'dashboard/occupancy_drillthrough.html', context)
+
+
+@login_required
+def occupancy_drillthrough_export(request):
+	"""CSV export for occupancy drill-through."""
+	query_info = _prepare_occupancy_drill_query(request)
+	if query_info.get('error'):
+		message = query_info['error_context'].get('error') if query_info.get('error_context') else 'The dataset is unavailable.'
+		return HttpResponse(message or 'The dataset is unavailable.', status=400)
+
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	if not alias_order or not select_parts:
+		return HttpResponse('No columns are available for export.', status=400)
+
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	display_columns = query_info['display_columns']
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {OCCUPANCY_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, list(filter_params))
+			rows = cur.fetchall()
+	except Exception as exc:
+		print('Occupancy drill-through export failed:', exc)
+		return HttpResponse('Failed to export data.', status=500)
+
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"occupancy_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+	writer = csv.writer(response)
+	writer.writerow([col['label'] for col in display_columns])
+	for raw in rows:
+		row_dict = dict(zip(alias_order, raw))
+		writer.writerow([_format_occupancy_value(alias, row_dict.get(alias)) for alias in alias_order])
+
+	return response
+
+
 @login_required
 def dashboard(request):
 	user = request.user
@@ -3459,6 +4137,13 @@ def dashboard(request):
 		context['total_unit_drill_url'] = f"{base_drill_url}?{urlencode(drill_pairs, doseq=True)}"
 	else:
 		context['total_unit_drill_url'] = base_drill_url
+
+	# Build occupancy drill-through URL with same filter/period context
+	occupancy_drill_url = reverse('occupancy_drillthrough')
+	if drill_pairs:
+		context['occupancy_drill_url'] = f"{occupancy_drill_url}?{urlencode(drill_pairs, doseq=True)}"
+	else:
+		context['occupancy_drill_url'] = occupancy_drill_url
 
 	# Apply KPI overrides computed by the consolidated monthly aggregation (if any)
 	try:
