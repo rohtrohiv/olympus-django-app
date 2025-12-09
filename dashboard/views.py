@@ -2837,7 +2837,18 @@ def _fetch_occupancy_summary(filter_clauses, filter_params, columns):
 			sql_parts.append(f"AVG({turn_ident}) AS avg_vacant_days")
 	
 	# Vacant Units Ready > 30 days
-	if condition_col and days_vacant_col:
+	# Logic: COUNT(*) WHERE "Vacant Status" = 'Ready' AND "days_on_market" > 30
+	vacant_status_col = _find_exact_column(columns, 'Vacant Status')
+	days_on_market_col = _find_exact_column(columns, 'days_on_market')
+	
+	if vacant_status_col and days_on_market_col:
+		vacant_status_ident = _quote_ident(vacant_status_col)
+		days_market_ident = _quote_ident(days_on_market_col)
+		sql_parts.append(
+			f"COUNT(*) FILTER (WHERE {vacant_status_ident}::text = 'Ready' AND {days_market_ident} > 30) AS vacant_ready_30_days"
+		)
+	elif condition_col and days_vacant_col:
+		# Fallback to old logic
 		cond_ident = _quote_ident(condition_col)
 		days_ident = _quote_ident(days_vacant_col)
 		sql_parts.append(
@@ -3155,34 +3166,57 @@ def _fetch_occupancy_chart_data(filter_clauses, filter_params, columns):
 	except Exception as exc:
 		print(f'Availability chart data query failed: {exc}')
 	
-	# Vacant Unit Make Ready Status - Show all vacant-related statuses
-	vacant_where = f"{where_sql} AND" if where_sql else " WHERE"
-	vacant_like_pattern = '%%Vacant%%' if filter_params else '%Vacant%'
+	# Vacant Unit Make Ready Status Chart
+	# Uses type_not_ready_past_dates column which contains:
+	# - Various type values (NTV Not Leased, Vacant Leased Ready, etc.)
+	# - "Not Ready / Past Date" (when not_ready_past_dates = 1)
+	# Only show specific categories matching Power BI dashboard:
+	# 1. Vacant Not Leased Ready
+	# 2. Not Ready / Past Date
+	# 3. Vacant Leased Ready
+	# 4. Vacant Not Leased Not Ready
+	# 5. Vacant Leased Not Ready
 	
-	vacant_status_sql = f"""
-		SELECT 
-			{condition_ident}::text as status,
-			COUNT(*) as cnt
-		FROM {OCCUPANCY_DRILL_VIEW}
-		{vacant_where} {condition_ident}::text ILIKE '{vacant_like_pattern}'
-		GROUP BY {condition_ident}::text
-		ORDER BY cnt DESC
-	"""
+	type_col = _find_exact_column(columns, 'type_not_ready_past_dates')
 	
-	try:
-		with connection.cursor() as cur:
-			if filter_params:
-				cur.execute(vacant_status_sql, filter_params)
-			else:
-				cur.execute(vacant_status_sql)
-			for row in cur.fetchall():
-				status, count = row
-				if status and status.strip():
-					label = status.strip()
-					chart_data['vacant_status']['labels'].append(label)
-					chart_data['vacant_status']['values'].append(count)
-	except Exception as exc:
-		print(f'Vacant status chart data query failed: {exc}')
+	if type_col:
+		type_ident = _quote_ident(type_col)
+		
+		# Specific categories to display (matching Power BI)
+		target_categories = [
+			'Vacant Not Leased Ready',
+			'Not Ready / Past Date',
+			'Vacant Leased Ready',
+			'Vacant Not Leased Not Ready',
+			'Vacant Leased Not Ready'
+		]
+		
+		# Get chart data grouped by type_not_ready_past_dates, filtered to specific categories
+		make_ready_sql = f"""
+			SELECT 
+				{type_ident}::text as category,
+				COUNT(*) as cnt
+			FROM {OCCUPANCY_DRILL_VIEW}
+			{where_sql}
+			GROUP BY {type_ident}::text
+			HAVING {type_ident}::text IN %s
+			ORDER BY cnt DESC
+		"""
+		
+		try:
+			with connection.cursor() as cur:
+				# Add target categories to params
+				params = list(filter_params) if filter_params else []
+				params.append(tuple(target_categories))
+				
+				cur.execute(make_ready_sql, params)
+				for row in cur.fetchall():
+					category, count = row
+					if category and category.strip():
+						chart_data['vacant_status']['labels'].append(category.strip())
+						chart_data['vacant_status']['values'].append(count)
+		except Exception as exc:
+			print(f'Make ready status chart data query failed: {exc}')
 	
 	return json.dumps(chart_data)
 
@@ -3275,6 +3309,558 @@ def occupancy_drillthrough_export(request):
 	for raw in rows:
 		row_dict = dict(zip(alias_order, raw))
 		writer.writerow([_format_occupancy_value(alias, row_dict.get(alias)) for alias in alias_order])
+
+	return response
+
+
+# ============================================================================
+# EXPOSURE DRILL-THROUGH VIEWS
+# ============================================================================
+
+EXPOSURE_DRILL_VIEW = 'web_ai.total_unit_occupancy_drill_through'
+EXPOSURE_DRILL_PAGE_SIZE = 500
+
+EXPOSURE_FILTER_FIELDS = [
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'keywords': ['regional', 'vp']},
+	{'key': 'regional_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+	{'key': 'floor_plan', 'label': 'Floor Plan', 'keywords': ['floor', 'plan']},
+]
+
+EXPOSURE_TABLE_FIELDS = [
+	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
+	{'key': 'unit_condition', 'label': 'Unit Condition', 'exact': 'Unit Condition'},
+	{'key': 'unit', 'label': 'Unit', 'keywords': ['unit'], 'exact': 'unit'},
+	{'key': 'floor_plan', 'label': 'Floor Plan', 'exact': 'Floor Plan'},
+	{'key': 'beds_baths', 'label': 'Beds / Baths', 'exact': 'Beds/Baths'},
+	{'key': 'floor_level', 'label': 'Floor Level', 'keywords': ['floor', 'level']},
+	{'key': 'amenity_value', 'label': 'Amenity Value', 'exact': 'Amenity Value'},
+	{'key': 'move_out', 'label': 'Move Out', 'keywords': ['move', 'out', 'date']},
+	{'key': 'date_unit_available', 'label': 'Date Unit Available', 'keywords': ['make', 'ready', 'date']},
+	{'key': 'days_until_vacant', 'label': 'Days Until Available', 'keywords': ['days', 'until', 'vacant']},
+	{'key': 'turn_time', 'label': 'Turn Time', 'keywords': ['turn', 'time']},
+	{'key': 'status', 'label': 'Status', 'keywords': ['type'], 'exact': 'type'},
+	{'key': 'not_ready_past_dates', 'label': 'Not Ready/ Past Dates', 'keywords': ['not', 'ready', 'past']},
+	{'key': 'mr_day_variance', 'label': 'MR Day Variance', 'keywords': ['mr', 'day', 'variance']},
+	{'key': 'leased_not_leased', 'label': 'Leased/Not Leased', 'exact': 'Leased/Not Leased'},
+	{'key': 'days_on_market', 'label': 'Days On Market', 'keywords': ['days', 'market']},
+	{'key': 'market_rent', 'label': 'Market Rent', 'exact': 'Market Rent'},
+	{'key': 'lease_rent', 'label': 'Lease Rent', 'keywords': ['lease', 'rent']},
+	{'key': 'lease_term', 'label': 'Lease Term', 'exact': 'Lease Term'},
+	{'key': '12_month_price', 'label': '12 Month Price', 'keywords': ['monthly', 'effective', 'rent']},
+	{'key': 'best_term', 'label': 'Best Term', 'keywords': ['best', 'price', 'term']},
+	{'key': 'best_price', 'label': 'Best Price', 'keywords': ['best', 'price', 'monthly']},
+	{'key': 'forecasted_trade_out', 'label': 'Forecasted Trade out', 'keywords': ['forecasted', 'trade']},
+	{'key': 'move_out_reason', 'label': 'Move out Reason', 'keywords': ['move', 'out', 'reason']},
+	{'key': 'onesite_id', 'label': 'OneSiteID | Property # | Unit #', 'keywords': ['site', 'id', 'property', 'unit', 'number']},
+]
+
+EXPOSURE_CURRENCY_FIELDS = {'amenity_value', 'market_rent', 'lease_rent', '12_month_price', 'best_price', 'forecasted_trade_out'}
+EXPOSURE_DATE_FIELDS = {'move_out', 'date_unit_available'}
+EXPOSURE_PERCENTAGE_FIELDS = set()
+
+
+def _get_exposure_drill_columns():
+	"""Get all columns from the exposure drill-through materialized view."""
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'total_unit_occupancy_drill_through']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Exposure drill-through column introspection failed:', exc)
+
+	if columns:
+		return columns
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.total_unit_occupancy_drill_through'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Exposure drill-through pg_attribute introspection failed:', exc)
+	return columns
+
+
+def _format_exposure_value(alias, value):
+	"""Format exposure drill-through values for display."""
+	if value is None:
+		return '--'
+	if isinstance(value, (datetime, date)):
+		return value.strftime('%b %d, %Y')
+	if isinstance(value, Decimal):
+		value = float(value)
+	if alias in EXPOSURE_CURRENCY_FIELDS:
+		try:
+			return f"${float(value):,.2f}"
+		except Exception:
+			return f"${value}"
+	if alias in EXPOSURE_PERCENTAGE_FIELDS:
+		try:
+			return f"{float(value):.2f}%"
+		except Exception:
+			return f"{value}%"
+	if alias in EXPOSURE_DATE_FIELDS:
+		try:
+			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
+			return parsed.strftime('%b %d, %Y')
+		except Exception:
+			return str(value)
+	text = str(value).strip()
+	return text or '--'
+
+
+def _fetch_exposure_filter_options(columns):
+	"""Fetch distinct filter options for exposure drill-through filters."""
+	options = {}
+	
+	for field in EXPOSURE_FILTER_FIELDS:
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			options[field['key']] = []
+			continue
+		ident = _quote_ident(col)
+		sql = (
+			f"SELECT DISTINCT {ident} FROM {EXPOSURE_DRILL_VIEW} "
+			f"WHERE {ident} IS NOT NULL AND TRIM({ident}::text) <> '' "
+			f"ORDER BY {ident} ASC LIMIT 400"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql)
+				vals = [row[0] for row in cur.fetchall()]
+		except Exception as exc:
+			print(f"Exposure drill filter options failed for {field['key']}:", exc)
+			vals = []
+		options[field['key']] = [str(v).strip() for v in vals if v]
+	return options
+
+
+def _fetch_exposure_summary(filter_clauses, filter_params, columns):
+	"""Calculate summary metrics for exposure drill-through.
+	
+	Metrics:
+	- Unit Count: Total units in view
+	- Units Not Leased: COUNT(DISTINCT unit) WHERE "Leased/Not Leased" = 'Not Leased'
+	- Exposure 8 Weeks: AVG(exposure_8_weeks) as percentage
+	- Forecasted Occupancy 8 Weeks: 100% - Exposure 8 Weeks
+	- Current Occupancy: (Total Units - Units Not Leased) / Total Units * 100
+	"""
+	from datetime import datetime
+	
+	summary = {
+		'unit_count': 0,
+		'exposure_as_of': None,
+		'units_not_leased': 0,
+		'exposure_8_weeks': None,
+		'forecasted_occupancy_8_weeks': None,
+		'current_occupancy': None,
+	}
+
+	# Find relevant columns
+	leased_col = _find_exact_column(columns, 'Leased/Not Leased')
+	unit_col = _find_exact_column(columns, 'unit')
+	exposure_col = _find_column_by_keywords(columns, ['exposure', '8', 'weeks'])
+	date_available_col = _find_column_by_keywords(columns, ['date', 'available', 'unit'])
+	
+	# Calculate TOTAL unit count (all units in view)
+	try:
+		count_sql = f"SELECT COUNT(*) FROM {EXPOSURE_DRILL_VIEW}"
+		if filter_clauses:
+			count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+		
+		with connection.cursor() as cur:
+			cur.execute(count_sql, filter_params)
+			total_units = cur.fetchone()[0] or 0
+			summary['unit_count'] = total_units
+	except Exception as exc:
+		print('Exposure total unit count query failed:', exc)
+		import traceback
+		traceback.print_exc()
+		summary['unit_count'] = 0
+	
+	# Build metrics query
+	sql_parts = []
+	
+	# Units Not Leased: COUNT(DISTINCT unit) WHERE "Leased/Not Leased" = 'Not Leased'
+	if leased_col and unit_col:
+		leased_ident = _quote_ident(leased_col)
+		unit_ident = _quote_ident(unit_col)
+		sql_parts.append(
+			f"COUNT(DISTINCT {unit_ident}) FILTER (WHERE {leased_ident}::text = 'Not Leased') AS units_not_leased"
+		)
+	
+	# Average Exposure 8 Weeks
+	if exposure_col:
+		exposure_ident = _quote_ident(exposure_col)
+		sql_parts.append(f"AVG({exposure_ident}) AS avg_exposure_8_weeks")
+	
+	# Get latest snapshot date
+	if date_available_col:
+		date_ident = _quote_ident(date_available_col)
+		sql_parts.append(f"MAX({date_ident}) AS latest_date")
+
+	# Query metrics
+	if sql_parts:
+		sql = f"SELECT {', '.join(sql_parts)} FROM {EXPOSURE_DRILL_VIEW}"
+		if filter_clauses:
+			sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql, filter_params)
+				row = cur.fetchone()
+				col_names = [desc[0] for desc in cur.description]
+				data = dict(zip(col_names, row if row else []))
+		except Exception as exc:
+			print('Exposure drill summary query failed:', exc)
+			data = {}
+	else:
+		data = {}
+
+	units_not_leased = data.get('units_not_leased') or 0
+	avg_exposure_8_weeks = data.get('avg_exposure_8_weeks')
+	latest_date = data.get('latest_date')
+	
+	summary['units_not_leased'] = units_not_leased
+	
+	# Calculate Exposure 8 Weeks percentage
+	if avg_exposure_8_weeks is not None:
+		try:
+			exposure_pct = float(avg_exposure_8_weeks)
+			summary['exposure_8_weeks'] = f"{exposure_pct:.2f}%"
+			# Forecasted Occupancy 8 Weeks = 100% - Exposure 8 Weeks
+			forecasted_pct = 100.0 - exposure_pct
+			summary['forecasted_occupancy_8_weeks'] = f"{forecasted_pct:.2f}%"
+		except Exception:
+			summary['exposure_8_weeks'] = '--'
+			summary['forecasted_occupancy_8_weeks'] = '--'
+	else:
+		summary['exposure_8_weeks'] = '--'
+		summary['forecasted_occupancy_8_weeks'] = '--'
+	
+	# Calculate Current Occupancy
+	if total_units > 0:
+		try:
+			occupied_units = total_units - units_not_leased
+			current_occupancy_pct = (occupied_units / total_units) * 100.0
+			summary['current_occupancy'] = f"{current_occupancy_pct:.2f}%"
+		except Exception:
+			summary['current_occupancy'] = '--'
+	else:
+		summary['current_occupancy'] = '--'
+	
+	# Format exposure as of date
+	if latest_date:
+		try:
+			if isinstance(latest_date, str):
+				date_obj = datetime.strptime(latest_date, '%Y-%m-%d').date()
+			else:
+				date_obj = latest_date
+			summary['exposure_as_of'] = date_obj.strftime('%m/%d/%Y')
+		except Exception:
+			summary['exposure_as_of'] = str(latest_date)
+	else:
+		# Default to today's date
+		summary['exposure_as_of'] = datetime.now().strftime('%m/%d/%Y')
+	
+	return summary
+
+
+def _prepare_exposure_drill_query(request):
+	"""Prepare exposure drill-through query components."""
+	columns = _get_exposure_drill_columns()
+	if not columns:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {'unit_count': 0},
+				'filter_options': {},
+				'filters': {},
+				'error': 'The exposure drill-through view is currently unavailable.',
+			},
+		}
+
+	select_parts = []
+	display_columns = []
+	alias_order = []
+	alias_to_source = {}
+	
+	for field in EXPOSURE_TABLE_FIELDS:
+		# Try exact match first if specified
+		col = None
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		# Fall back to keyword search
+		if not col and 'keywords' in field:
+			col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		alias = field['key']
+		alias_to_source[alias] = col
+		alias_order.append(alias)
+		display_columns.append({'key': alias, 'label': field['label']})
+		# Quote alias if it starts with a number
+		quoted_alias = _quote_ident(alias) if alias[0].isdigit() else alias
+		select_parts.append(f"{_quote_ident(col)} AS {quoted_alias}")
+
+	filter_options = _fetch_exposure_filter_options(columns)
+
+	if not select_parts:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {'unit_count': 0},
+				'filter_options': filter_options,
+				'filters': {},
+				'error': 'No recognizable columns were found for the exposure drill-through dataset.',
+			},
+		}
+
+	filter_clauses = []
+	filter_params = []
+	active_filters = {}
+	
+	for field in EXPOSURE_FILTER_FIELDS:
+		values = _extract_filter_list(request, request.GET, field['key'])
+		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
+		active_filters[field['key']] = values[0] if values else ''
+		if not clean:
+			continue
+		col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		clause_parts = []
+		for val in clean:
+			clause_parts.append(f"{_quote_ident(col)} ILIKE %s")
+			filter_params.append(f"%{val}%")
+		if clause_parts:
+			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+
+	return {
+		'error': False,
+		'columns': columns,
+		'display_columns': display_columns,
+		'alias_order': alias_order,
+		'alias_to_source': alias_to_source,
+		'select_parts': select_parts,
+		'filter_clauses': filter_clauses,
+		'filter_params': filter_params,
+		'active_filters': active_filters,
+		'filter_options': filter_options,
+	}
+
+
+def _build_exposure_drill_context(request):
+	"""Build complete context for exposure drill-through view."""
+	query_info = _prepare_exposure_drill_query(request)
+	if query_info.get('error'):
+		return query_info['error_context']
+
+	columns = query_info['columns']
+	display_columns = query_info['display_columns']
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	active_filters = query_info['active_filters']
+	filter_options = query_info['filter_options']
+
+	summary = _fetch_exposure_summary(filter_clauses, filter_params, columns)
+	total_units = summary.get('unit_count') or 0
+	
+	page_size = EXPOSURE_DRILL_PAGE_SIZE
+	page_param = request.GET.get('page') if hasattr(request, 'GET') else None
+	try:
+		requested_page = int(page_param) if page_param else 1
+	except Exception:
+		requested_page = 1
+	if requested_page < 1:
+		requested_page = 1
+	if total_units:
+		total_pages = (total_units + page_size - 1) // page_size
+		page = min(requested_page, total_pages)
+	else:
+		total_pages = 1
+		page = 1
+	offset = (page - 1) * page_size if total_units else 0
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {EXPOSURE_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+	data_sql += " LIMIT %s OFFSET %s"
+	data_params = list(filter_params) + [page_size, offset]
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, data_params)
+			result = cur.fetchall()
+	except Exception as exc:
+		print('Exposure drill-through data query failed:', exc)
+		result = []
+	
+	for raw in result:
+		row_dict = dict(zip(alias_order, raw))
+		ordered_values = [_format_exposure_value(alias, row_dict.get(alias)) for alias in alias_order]
+		rows.append(ordered_values)
+
+	start_index = offset + 1 if total_units and rows else 0
+	end_index = offset + len(rows)
+	if total_units and end_index > total_units:
+		end_index = total_units
+
+	base_query_pairs = []
+	if hasattr(request.GET, 'lists'):
+		for key, values in request.GET.lists():
+			if key == 'page':
+				continue
+			for val in values:
+				if val:
+					base_query_pairs.append((key, val))
+	
+	base_drill_url = reverse('exposure_drillthrough')
+
+	def _build_page_url(target_page):
+		pairs = list(base_query_pairs)
+		if target_page > 1:
+			pairs.append(('page', target_page))
+		query = urlencode(pairs, doseq=True)
+		return f"{base_drill_url}?{query}" if query else base_drill_url
+
+	pagination = {
+		'page': page,
+		'page_size': page_size,
+		'total_pages': total_pages,
+		'has_prev': page > 1,
+		'has_next': bool(total_units and page < total_pages),
+		'prev_url': _build_page_url(page - 1) if page > 1 else '',
+		'next_url': _build_page_url(page + 1) if total_units and page < total_pages else '',
+		'start_index': start_index,
+		'end_index': end_index,
+		'total_results': total_units,
+	}
+
+	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
+	export_base = reverse('exposure_drillthrough_export')
+	export_query = urlencode(export_pairs, doseq=True)
+	export_url = f"{export_base}?{export_query}" if export_query else export_base
+
+	return {
+		'table_columns': display_columns,
+		'table_rows': rows,
+		'metrics': summary,
+		'filter_options': filter_options,
+		'filters': active_filters,
+		'limit_reached': bool(pagination['has_next'] or (pagination['start_index'] > 1)),
+		'row_count': len(rows),
+		'pagination': pagination,
+		'export_url': export_url,
+	}
+
+
+@login_required
+def exposure_drillthrough(request):
+	"""Main exposure drill-through view."""
+	context = _build_exposure_drill_context(request)
+	context['filter_fields'] = [{'key': field['key'], 'label': field['label']} for field in EXPOSURE_FILTER_FIELDS]
+	context['page_title'] = 'Exposure Drill-Through'
+	context['row_limit'] = EXPOSURE_DRILL_PAGE_SIZE
+	context.setdefault('error', '')
+	context.setdefault('export_url', '')
+	
+	dashboard_return_url = request.GET.get('return_url') or reverse('dashboard')
+	context['dashboard_return_url'] = dashboard_return_url
+	
+	reset_base = reverse('exposure_drillthrough')
+	if request.GET.get('return_url'):
+		context['drill_reset_url'] = f"{reset_base}?{urlencode({'return_url': request.GET.get('return_url')})}"
+	else:
+		context['drill_reset_url'] = reset_base
+	
+	filters = context.get('filters') or {}
+	filter_options = context.get('filter_options') or {}
+	filter_blocks = []
+	
+	for field in context['filter_fields']:
+		key = field['key']
+		filter_blocks.append({
+			'key': key,
+			'label': field['label'],
+			'options': filter_options.get(key, []),
+			'selected': filters.get(key, ''),
+		})
+	context['filter_blocks'] = filter_blocks
+	
+	return render(request, 'dashboard/exposure_drillthrough.html', context)
+
+
+@login_required
+def exposure_drillthrough_export(request):
+	"""CSV export for exposure drill-through."""
+	query_info = _prepare_exposure_drill_query(request)
+	if query_info.get('error'):
+		message = query_info['error_context'].get('error') if query_info.get('error_context') else 'The dataset is unavailable.'
+		return HttpResponse(message or 'The dataset is unavailable.', status=400)
+
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	if not alias_order or not select_parts:
+		return HttpResponse('No columns are available for export.', status=400)
+
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	display_columns = query_info['display_columns']
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {EXPOSURE_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, list(filter_params))
+			rows = cur.fetchall()
+	except Exception as exc:
+		print('Exposure drill-through export failed:', exc)
+		return HttpResponse('Failed to export data.', status=500)
+
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"exposure_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+	writer = csv.writer(response)
+	writer.writerow([col['label'] for col in display_columns])
+	for raw in rows:
+		row_dict = dict(zip(alias_order, raw))
+		writer.writerow([_format_exposure_value(alias, row_dict.get(alias)) for alias in alias_order])
 
 	return response
 
