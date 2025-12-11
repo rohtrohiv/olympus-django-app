@@ -4173,12 +4173,11 @@ def _fetch_delinquency_summary(filter_clauses, filter_params, columns):
 		sql_parts.append(f"MAX({_quote_ident(delinquency_as_of_col)}) AS latest_date")
 
 	if sql_parts:
-		# Use a copy of incoming filters but restrict metric aggregation to RowNum = 1
+		# Apply all user-selected filters to the summary aggregation
+		# Note: We do NOT filter by RowNum here because we need to sum across
+		# all matching rows to get accurate totals
 		local_clauses = list(filter_clauses) if filter_clauses else []
 		local_params = list(filter_params) if filter_params else []
-		# Add RowNum = 1 per DAX logic to consider the primary row for metrics
-		local_clauses.append(f"{_quote_ident('RowNum')} = %s")
-		local_params.append(1)
 
 		sql = f"SELECT {', '.join(sql_parts)} FROM {DELINQUENCY_DRILL_VIEW}"
 		if local_clauses:
