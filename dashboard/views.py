@@ -4576,6 +4576,591 @@ def delinquency_drillthrough_export(request):
 	return response
 
 
+# ============================================================================
+# SERVICE REQUEST DRILL-THROUGH VIEWS
+# ============================================================================
+
+SERVICE_REQUEST_DRILL_VIEW = 'web_ai.service_request_drill_through'
+SERVICE_REQUEST_DRILL_PAGE_SIZE = 500
+
+SERVICE_REQUEST_FILTER_FIELDS = [
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'keywords': ['regional', 'vp']},
+	{'key': 'regional_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'area', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+]
+
+SERVICE_REQUEST_TABLE_FIELDS = [
+	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
+	{'key': 'request_number', 'label': 'Request Number', 'keywords': ['request', 'number']},
+	{'key': 'unit_number', 'label': 'Unit Number', 'keywords': ['unit', 'number']},
+	{'key': 'created_date', 'label': 'Created Date', 'keywords': ['created', 'date']},
+	{'key': 'completed_date_time', 'label': 'Completed Date', 'keywords': ['completed', 'date']},
+	{'key': 'days_open', 'label': 'Days Open', 'keywords': ['days', 'open']},
+	{'key': 'requestor', 'label': 'Requestor', 'keywords': ['requestor']},
+	{'key': 'category', 'label': 'Category', 'keywords': ['category']},
+	{'key': 'item', 'label': 'Item', 'keywords': ['item']},
+	{'key': 'issue', 'label': 'Issue', 'keywords': ['issue']},
+	{'key': 'assigned_to', 'label': 'Assigned To', 'keywords': ['assigned', 'to']},
+	{'key': 'status', 'label': 'Status', 'keywords': ['status']},
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'exact': 'Regional VP  | Sr. VP'},
+	{'key': 'regional_area_manager', 'label': 'Regional Area Manager', 'keywords': ['regional', 'area', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+]
+
+SERVICE_REQUEST_DATE_FIELDS = {'created_date', 'completed_date_time'}
+
+
+def _get_service_request_drill_columns():
+	"""Get all columns from the service request drill-through materialized view."""
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'service_request_drill_through']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Service request drill-through column introspection failed:', exc)
+
+	if columns:
+		return columns
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.service_request_drill_through'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Service request drill-through pg_attribute introspection failed:', exc)
+	return columns
+
+
+def _format_service_request_value(alias, value):
+	"""Format service request drill-through values for display."""
+	if value is None:
+		return '--'
+	if isinstance(value, (datetime, date)):
+		return value.strftime('%b %d, %Y')
+	if alias in SERVICE_REQUEST_DATE_FIELDS:
+		try:
+			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
+			return parsed.strftime('%b %d, %Y')
+		except Exception:
+			return str(value)
+	text = str(value).strip()
+	return text or '--'
+
+
+def _fetch_service_request_filter_options(columns):
+	"""Fetch distinct filter options for service request drill-through filters."""
+	options = {}
+	
+	for field in SERVICE_REQUEST_FILTER_FIELDS:
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		else:
+			col = _find_column_by_keywords(columns, field.get('keywords', []))
+		if not col:
+			options[field['key']] = []
+			continue
+		ident = _quote_ident(col)
+		sql = (
+			f"SELECT DISTINCT {ident} FROM {SERVICE_REQUEST_DRILL_VIEW} "
+			f"WHERE {ident} IS NOT NULL AND TRIM({ident}::text) <> '' "
+			f"ORDER BY {ident} ASC LIMIT 400"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql)
+				vals = [row[0] for row in cur.fetchall()]
+		except Exception as exc:
+			print(f"Service request drill filter options failed for {field['key']}:", exc)
+			vals = []
+		# Exclude Livcor from investor options
+		if field['key'] == 'investor':
+			vals = [v for v in vals if str(v).upper() not in ['BLACKSTONE/LIVCOR', 'LIVCOR']]
+		options[field['key']] = [str(v).strip() for v in vals if v]
+	return options
+
+
+def _fetch_service_request_summary(filter_clauses, filter_params, columns):
+	"""Calculate summary metrics for service request drill-through."""
+	summary = {
+		'total_requests': 0,
+		'completed_percentage': 0,
+		'avg_time_spent': 0,
+		'completed_mobile_percentage': 0,
+	}
+
+	# Create local copies of filter clauses and params for use throughout function
+	local_clauses = list(filter_clauses) if filter_clauses else []
+	local_params = list(filter_params) if filter_params else []
+
+	# Find relevant columns
+	status_col = _find_column_by_keywords(columns, ['status'])
+	completed_date_col = _find_column_by_keywords(columns, ['completed', 'date'])
+	avg_time_spent_col = _find_column_by_keywords(columns, ['avg', 'time', 'spent'])
+
+	sql_parts = []
+	sql_parts.append("COUNT(*) AS total_requests")
+	
+	# Calculate completion percentage
+	if completed_date_col:
+		sql_parts.append(f"SUM(CASE WHEN {_quote_ident(completed_date_col)} IS NOT NULL THEN 1 ELSE 0 END) AS completed_count")
+	elif status_col:
+		sql_parts.append(f"SUM(CASE WHEN {_quote_ident(status_col)}::text ILIKE '%complete%' THEN 1 ELSE 0 END) AS completed_count")
+	
+	# Average time spent (from avg_time_spent column or days_open)
+	if avg_time_spent_col:
+		sql_parts.append(f"AVG(CASE WHEN {_quote_ident(avg_time_spent_col)} IS NOT NULL THEN {_quote_ident(avg_time_spent_col)} ELSE NULL END) AS avg_time")
+	else:
+		days_open_col = _find_column_by_keywords(columns, ['days', 'open'])
+		if days_open_col:
+			sql_parts.append(f"AVG(CASE WHEN {_quote_ident(days_open_col)} IS NOT NULL THEN {_quote_ident(days_open_col)} ELSE NULL END) AS avg_time")
+
+	if sql_parts:
+
+		sql = f"SELECT {', '.join(sql_parts)} FROM {SERVICE_REQUEST_DRILL_VIEW}"
+		if local_clauses:
+			sql += ' WHERE ' + ' AND '.join(local_clauses)
+
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql, local_params)
+				row = cur.fetchone()
+				col_names = [desc[0] for desc in cur.description]
+				data = dict(zip(col_names, row if row else []))
+		except Exception as exc:
+			print('Service request drill summary query failed:', exc)
+			data = {}
+	else:
+		data = {}
+
+	total = data.get('total_requests') or 0
+	completed = data.get('completed_count') or 0
+	
+	summary['total_requests'] = total
+	summary['completed_percentage'] = round((completed / total * 100) if total else 0, 0)
+	summary['avg_time_spent'] = round(data.get('avg_time') or 0, 2)
+	
+	# Calculate mobile percentage using completing_system CONTAINSSTRING logic
+	# DAX formula: CONTAINSSTRING(lower(completing_system), "facilities plus")
+	completing_system_col = _find_column_by_keywords(columns, ['completing', 'system'])
+	unique_key_col = _find_column_by_keywords(columns, ['unique', 'key'])
+	
+	if completing_system_col and unique_key_col:
+		# Note: %% is used to escape % in psycopg2/Django SQL (% is parameter placeholder)
+		mobile_sql = f"""
+			SELECT 
+				COUNT(DISTINCT {_quote_ident(unique_key_col)}) as total_unique,
+				COUNT(DISTINCT CASE 
+					WHEN LOWER({_quote_ident(completing_system_col)}::text) LIKE '%%facilities plus%%' 
+					THEN {_quote_ident(unique_key_col)} 
+				END) as mobile_unique
+			FROM {SERVICE_REQUEST_DRILL_VIEW}
+		"""
+		if local_clauses:
+			mobile_sql += ' WHERE ' + ' AND '.join(local_clauses)
+		
+		try:
+			with connection.cursor() as cur:
+				cur.execute(mobile_sql, local_params)
+				mobile_row = cur.fetchone()
+				total_unique = mobile_row[0] or 0
+				mobile_unique = mobile_row[1] or 0
+				summary['completed_mobile_percentage'] = round((mobile_unique / total_unique * 100) if total_unique else 0, 0)
+		except Exception as exc:
+			print('Service request mobile percentage calculation failed:', exc)
+			summary['completed_mobile_percentage'] = 0
+	else:
+		summary['completed_mobile_percentage'] = 0
+
+	return summary
+
+
+def _prepare_service_request_drill_query(request):
+	"""Prepare service request drill-through query components."""
+	columns = _get_service_request_drill_columns()
+	if not columns:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {},
+				'filter_options': {},
+				'filters': {},
+				'criteria': 'created',
+				'error': 'The service request drill-through view is currently unavailable.',
+			},
+		}
+
+	select_parts = []
+	display_columns = []
+	alias_order = []
+	alias_to_source = {}
+	
+	for field in SERVICE_REQUEST_TABLE_FIELDS:
+		col = None
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		if not col and 'keywords' in field:
+			col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		alias = field['key']
+		alias_to_source[alias] = col
+		alias_order.append(alias)
+		display_columns.append({'key': alias, 'label': field['label']})
+		quoted_alias = _quote_ident(alias) if alias and alias[0].isdigit() else alias
+		select_parts.append(f"{_quote_ident(col)} AS {quoted_alias}")
+
+	filter_options = _fetch_service_request_filter_options(columns)
+
+	if not select_parts:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {},
+				'filter_options': filter_options,
+				'filters': {},
+				'error': 'No recognizable columns were found for the service request drill-through dataset.',
+			},
+		}
+
+	filter_clauses = []
+	filter_params = []
+	active_filters = {}
+	
+	# Exclude Livcor properties
+	investor_col = _find_column_by_keywords(columns, ['investor'])
+	if investor_col:
+		investor_ident = _quote_ident(investor_col)
+		filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
+		filter_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
+	
+	# Handle criteria filter (created vs completed)
+	criteria = request.GET.get('criteria', 'created').strip().lower()
+	if criteria not in ['created', 'completed']:
+		criteria = 'created'
+	active_filters['criteria'] = criteria
+
+	# Handle date range filters
+	start_date = request.GET.get('start_date', '').strip()
+	end_date = request.GET.get('end_date', '').strip()
+	
+	if criteria == 'created':
+		date_col = _find_column_by_keywords(columns, ['created', 'date'])
+	else:
+		date_col = _find_column_by_keywords(columns, ['completed', 'date'])
+	
+	if date_col:
+		# If no dates provided, default to current month's data up to latest available date
+		if not start_date and not end_date:
+			from datetime import date as _date
+			today = _date.today()
+			first_of_month = _date(today.year, today.month, 1)
+			# Query the latest available date for this column within current month
+			max_sql = f"SELECT MAX({_quote_ident(date_col)}) FROM {SERVICE_REQUEST_DRILL_VIEW} WHERE {_quote_ident(date_col)} >= %s"
+			try:
+				with connection.cursor() as cur:
+					cur.execute(max_sql, [first_of_month])
+					max_row = cur.fetchone()
+					max_val = max_row[0] if max_row else None
+			except Exception:
+				max_val = None
+			# Determine end_date: use max_val if present and not in the future, otherwise use today
+			if max_val:
+				# max_val may be date or datetime
+				try:
+					max_date_only = max_val.date()
+				except Exception:
+					max_date_only = max_val
+				if max_date_only and max_date_only <= today:
+					end_date_eff = max_date_only
+				else:
+					end_date_eff = today
+			else:
+				end_date_eff = today
+			# Format as ISO date strings
+			start_date = first_of_month.isoformat()
+			end_date = end_date_eff.isoformat()
+			filter_clauses.append(f"{_quote_ident(date_col)} >= %s")
+			filter_params.append(start_date)
+			active_filters['start_date'] = start_date
+			filter_clauses.append(f"{_quote_ident(date_col)} <= %s")
+			filter_params.append(end_date)
+			active_filters['end_date'] = end_date
+		else:
+			if start_date:
+				filter_clauses.append(f"{_quote_ident(date_col)} >= %s")
+				filter_params.append(start_date)
+				active_filters['start_date'] = start_date
+			if end_date:
+				filter_clauses.append(f"{_quote_ident(date_col)} <= %s")
+				filter_params.append(end_date)
+				active_filters['end_date'] = end_date
+	
+	for field in SERVICE_REQUEST_FILTER_FIELDS:
+		values = _extract_filter_list(request, request.GET, field['key'])
+		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
+		active_filters[field['key']] = values[0] if values else ''
+		if not clean:
+			continue
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		else:
+			col = _find_column_by_keywords(columns, field.get('keywords', []))
+		if not col:
+			continue
+		clause_parts = []
+		for val in clean:
+			clause_parts.append(f"{_quote_ident(col)} ILIKE %s")
+			filter_params.append(f"%{val}%")
+		if clause_parts:
+			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+
+	return {
+		'error': False,
+		'columns': columns,
+		'display_columns': display_columns,
+		'alias_order': alias_order,
+		'alias_to_source': alias_to_source,
+		'select_parts': select_parts,
+		'filter_clauses': filter_clauses,
+		'filter_params': filter_params,
+		'active_filters': active_filters,
+		'filter_options': filter_options,
+	}
+
+
+def _build_service_request_drill_context(request):
+	"""Build complete context for service request drill-through view."""
+	query_info = _prepare_service_request_drill_query(request)
+	if query_info.get('error'):
+		return query_info['error_context']
+
+	columns = query_info['columns']
+	display_columns = query_info['display_columns']
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	active_filters = query_info['active_filters']
+	filter_options = query_info['filter_options']
+
+	summary = _fetch_service_request_summary(filter_clauses, filter_params, columns)
+	
+	# Count total matching records for pagination
+	count_sql = f"SELECT COUNT(*) FROM {SERVICE_REQUEST_DRILL_VIEW}"
+	if filter_clauses:
+		count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+	
+	try:
+		with connection.cursor() as cur:
+			cur.execute(count_sql, filter_params)
+			total_records = cur.fetchone()[0] or 0
+	except Exception as exc:
+		print('Service request drill-through count query failed:', exc)
+		total_records = 0
+	
+	page_size = SERVICE_REQUEST_DRILL_PAGE_SIZE
+	page_param = request.GET.get('page') if hasattr(request, 'GET') else None
+	try:
+		requested_page = int(page_param) if page_param else 1
+	except Exception:
+		requested_page = 1
+	if requested_page < 1:
+		requested_page = 1
+	if total_records:
+		total_pages = (total_records + page_size - 1) // page_size
+		page = min(requested_page, total_pages)
+	else:
+		total_pages = 1
+		page = 1
+	offset = (page - 1) * page_size if total_records else 0
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'created_date' if 'created_date' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {SERVICE_REQUEST_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
+	data_sql += " LIMIT %s OFFSET %s"
+	data_params = list(filter_params) + [page_size, offset]
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, data_params)
+			result = cur.fetchall()
+	except Exception as exc:
+		print('Service request drill-through data query failed:', exc)
+		result = []
+	
+	for raw in result:
+		row_dict = dict(zip(alias_order, raw))
+		ordered_values = [_format_service_request_value(alias, row_dict.get(alias)) for alias in alias_order]
+		rows.append(ordered_values)
+
+	start_index = offset + 1 if total_records and rows else 0
+	end_index = offset + len(rows)
+	if total_records and end_index > total_records:
+		end_index = total_records
+
+	base_query_pairs = []
+	if hasattr(request.GET, 'lists'):
+		for key, values in request.GET.lists():
+			if key == 'page':
+				continue
+			for val in values:
+				if val:
+					base_query_pairs.append((key, val))
+	
+	dashboard_return_url = request.GET.get('return_url') or reverse('dashboard')
+	if base_query_pairs:
+		base_query_pairs.append(('return_url', dashboard_return_url))
+	
+	def build_page_url(pg):
+		pairs = list(base_query_pairs)
+		pairs.append(('page', pg))
+		return f"{reverse('service_request_drillthrough')}?{urlencode(pairs, doseq=True)}"
+	
+	prev_url = build_page_url(page - 1) if page > 1 else None
+	next_url = build_page_url(page + 1) if page < total_pages else None
+
+	export_pairs = list(base_query_pairs)
+	export_base = reverse('service_request_drillthrough_export')
+	if export_pairs:
+		export_url = f"{export_base}?{urlencode(export_pairs, doseq=True)}"
+	else:
+		export_url = export_base
+
+	reset_base = reverse('service_request_drillthrough')
+	if request.GET.get('return_url'):
+		drill_reset_url = f"{reset_base}?{urlencode({'return_url': request.GET.get('return_url')})}"
+	else:
+		drill_reset_url = reset_base
+
+	filter_fields = [{'key': field['key'], 'label': field['label']} for field in SERVICE_REQUEST_FILTER_FIELDS]
+	filter_blocks = []
+	for field in filter_fields:
+		key = field['key']
+		filter_blocks.append({
+			'key': key,
+			'label': field['label'],
+			'options': filter_options.get(key, []),
+			'selected': active_filters.get(key, ''),
+		})
+
+	# No need to build HTML string - criteria and date filters are now in template
+	# Just ensure filter values are in the context
+
+	return {
+		'table_columns': display_columns,
+		'table_rows': rows,
+		'metrics': summary,
+		'filters': {
+			**active_filters,
+			'criteria': active_filters.get('criteria', 'created'),
+			'start_date': active_filters.get('start_date', ''),
+			'end_date': active_filters.get('end_date', ''),
+		},
+		'filter_options': filter_options,
+		'filter_blocks': filter_blocks,
+		'pagination': {
+			'page': page,
+			'total_pages': total_pages,
+			'total_count': total_records,
+			'start_index': start_index,
+			'end_index': end_index,
+			'has_prev': page > 1,
+			'has_next': page < total_pages,
+			'prev_url': prev_url,
+			'next_url': next_url,
+		},
+		'dashboard_return_url': dashboard_return_url,
+		'drill_reset_url': drill_reset_url,
+		'export_url': export_url,
+	}
+
+
+@login_required
+def service_request_drillthrough(request):
+	"""Main service request drill-through view."""
+	context = _build_service_request_drill_context(request)
+	context['filter_fields'] = [{'key': field['key'], 'label': field['label']} for field in SERVICE_REQUEST_FILTER_FIELDS]
+	context['page_title'] = 'Service Request Drill-Through'
+	context['row_limit'] = SERVICE_REQUEST_DRILL_PAGE_SIZE
+	context.setdefault('error', '')
+	context.setdefault('export_url', '')
+	
+	return render(request, 'dashboard/service_request_drillthrough.html', context)
+
+
+@login_required
+def service_request_drillthrough_export(request):
+	"""CSV export for service request drill-through."""
+	query_info = _prepare_service_request_drill_query(request)
+	if query_info.get('error'):
+		message = query_info['error_context'].get('error') if query_info.get('error_context') else 'The dataset is unavailable.'
+		return HttpResponse(message or 'The dataset is unavailable.', status=400)
+
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	if not alias_order or not select_parts:
+		return HttpResponse('No columns are available for export.', status=400)
+
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	display_columns = query_info['display_columns']
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'created_date' if 'created_date' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {SERVICE_REQUEST_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, list(filter_params))
+			rows = cur.fetchall()
+	except Exception as exc:
+		print('Service request drill-through export failed:', exc)
+		return HttpResponse('Failed to export data.', status=500)
+
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"service_request_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+	writer = csv.writer(response)
+	writer.writerow([col['label'] for col in display_columns])
+	for raw in rows:
+		row_dict = dict(zip(alias_order, raw))
+		writer.writerow([_format_service_request_value(alias, row_dict.get(alias)) for alias in alias_order])
+
+	return response
+
+
 @login_required
 def dashboard(request):
 	user = request.user

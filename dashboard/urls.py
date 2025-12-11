@@ -16,5 +16,7 @@ urlpatterns = [
     path('drillthrough/exposure/export/', views.exposure_drillthrough_export, name='exposure_drillthrough_export'),
     path('drillthrough/delinquency/', views.delinquency_drillthrough, name='delinquency_drillthrough'),
     path('drillthrough/delinquency/export/', views.delinquency_drillthrough_export, name='delinquency_drillthrough_export'),
+    path('drillthrough/service-request/', views.service_request_drillthrough, name='service_request_drillthrough'),
+    path('drillthrough/service-request/export/', views.service_request_drillthrough_export, name='service_request_drillthrough_export'),
     path('sample/', views.sample_page, name='sample_page'),
 ]

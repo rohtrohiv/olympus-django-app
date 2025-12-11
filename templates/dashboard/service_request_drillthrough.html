@@ -1,0 +1,55 @@
+{% extends "dashboard/drillthrough_base.html" %}
+{% block drillthrough_title %}Service Request Drill-Through{% endblock %}
+
+{# criteria_date_filters moved below metric cards for layout consistency #}
+
+{% block metric_cards %}
+<article class="metric-card">
+  <span>Total # of Requests</span>
+  <strong>{{ metrics.total_requests|floatformat:0|default:'0' }}</strong>
+  <small>All service requests</small>
+</article>
+<article class="metric-card">
+  <span>Completed %</span>
+  <strong>{{ metrics.completed_percentage|floatformat:0|default:'0' }}%</strong>
+  <small>Completion rate</small>
+</article>
+<article class="metric-card">
+  <span>Avg Time Spent (Days)</span>
+  <strong>{{ metrics.avg_time_spent|floatformat:2|default:'0.00' }}</strong>
+  <small>Average resolution time</small>
+</article>
+<article class="metric-card">
+  <span>% Completed Mobile</span>
+  <strong>{{ metrics.completed_mobile_percentage|floatformat:0|default:'0' }}%</strong>
+  <small>Facilities Plus completion</small>
+</article>
+{% endblock %}
+
+{% block criteria_date_filters %}
+<div class="criteria-date-filters">
+  <div class="criteria-filter-box">
+    <h4>Service Requests Criteria</h4>
+    <div class="radio-group">
+      <label>
+        <input type="radio" name="criteria" value="created" {% if filters.criteria == 'created' or not filters.criteria %}checked{% endif %} form="drillthroughFilterForm">
+        <span>Created Date Time</span>
+      </label>
+      </div>
+      <div class="radio-group">
+      <label>
+        <input type="radio" name="criteria" value="completed" {% if filters.criteria == 'completed' %}checked{% endif %} form="drillthroughFilterForm">
+        <span>Completed Date Time</span>
+      </label>
+    </div>
+  </div>
+  <div class="date-filter-box">
+    <h4 id="dateRangeHeader">{% if filters.criteria == 'completed' %}Completed{% else %}Created{% endif %} Date Time</h4>
+    <div class="date-inputs">
+      <input type="date" name="start_date" id="start_date" value="{{ filters.start_date }}" placeholder="Start Date" form="drillthroughFilterForm">
+      <span>to</span>
+      <input type="date" name="end_date" id="end_date" value="{{ filters.end_date }}" placeholder="End Date" form="drillthroughFilterForm">
+    </div>
+  </div>
+</div>
+{% endblock %}

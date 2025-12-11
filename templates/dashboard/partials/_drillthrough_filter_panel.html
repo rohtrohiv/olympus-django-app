@@ -1,6 +1,9 @@
   <form method="get" class="filter-panel" id="drillthroughFilterForm">
     <input type="hidden" name="return_url" value="{{ dashboard_return_url }}">
     <input type="hidden" name="page" value="1" id="drillthrough-page-input">
+    
+    {% block filter_panel_extra_fields %}{% endblock %}
+    
     {% for field in filter_blocks %}
       <label>
         <span>{{ field.label }}</span>

@@ -42,7 +42,19 @@
 .chart-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);padding:24px}
 .chart-card h3{margin:0 0 16px 0;font-size:16px;font-weight:600;color:#0f172a;text-align:center}
 .chart-container{position:relative;height:300px}
-@media (max-width:768px){.filter-panel,.table-card header{padding:16px}.filter-panel{flex-direction:column}.filter-actions{flex-direction:column;width:100%}.charts-grid{grid-template-columns:1fr}}
+.criteria-date-filters{display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap;width:100%}
+.criteria-filter-box,.date-filter-box{background:#fff;padding:12px 16px;border-radius:10px;border:1px solid #d7dde5}
+.criteria-filter-box{flex:0 0 auto}
+.date-filter-box{min-width:400px}
+.criteria-filter-box h4,.date-filter-box h4{margin:0 0 12px 0;font-size:12px;font-weight:600;color:#425466;text-transform:uppercase;letter-spacing:.05em}
+.radio-group{display:flex;gap:24px;flex-wrap:wrap}
+.radio-group label{display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;padding:0;font-size:14px;color:#0f172a}
+.radio-group input[type="radio"]{width:18px;height:18px;margin:0;cursor:pointer}
+.radio-group span{font-size:14px;font-weight:500}
+.date-inputs{display:flex;gap:12px;align-items:center}
+.date-inputs input[type="date"]{padding:10px 12px;border:1px solid #d7dde5;border-radius:10px;font-size:14px;flex:1;background:#fdfefe}
+.date-inputs span{color:#6c757d;font-weight:500;font-size:13px}
+@media (max-width:768px){.filter-panel,.table-card header{padding:16px}.filter-panel{flex-direction:column}.filter-actions{flex-direction:column;width:100%}.charts-grid{grid-template-columns:1fr}.criteria-date-filters{flex-direction:column}.date-filter-box{min-width:100%}}
 {% block extra_drillthrough_styles %}{% endblock %}
 </style>
 {% endblock %}
@@ -55,6 +67,8 @@
 
   {% include "dashboard/partials/_drillthrough_filter_panel.html" %}
 
+  {% block extra_filters %}{% endblock %}
+
   {% block metrics_section %}
   <section class="metrics-grid" style="margin-top:8px;">
     {% block metric_cards %}{% endblock %}
@@ -62,6 +76,7 @@
   {% endblock %}
 
   {% block charts_section %}{% endblock %}
+  {% block criteria_date_filters %}{% endblock %}
 
   {% include "dashboard/partials/_drillthrough_data_table.html" %}
 </div>
@@ -80,6 +95,39 @@ document.addEventListener('DOMContentLoaded', function(){
           form.requestSubmit();
         }else{
           form.submit();
+        }
+      });
+    });
+    
+    // Radio buttons - listen globally (inputs may live outside the form)
+    var radios = document.querySelectorAll('input[type="radio"][name="criteria"]');
+    var dateRangeHeader = document.getElementById('dateRangeHeader');
+    radios.forEach(function(radio){
+      radio.addEventListener('change', function(){
+        if(dateRangeHeader){
+          dateRangeHeader.textContent = (this.value === 'completed' ? 'Completed' : 'Created') + ' Date Time';
+        }
+        // Submit the main form if present
+        if(form){
+          if(typeof form.requestSubmit === 'function'){
+            form.requestSubmit();
+          }else{
+            form.submit();
+          }
+        }
+      });
+    });
+
+    // Date inputs - listen globally and submit the main form
+    var dateInputs = document.querySelectorAll('input[type="date"][name="start_date"], input[type="date"][name="end_date"]');
+    dateInputs.forEach(function(input){
+      input.addEventListener('change', function(){
+        if(form){
+          if(typeof form.requestSubmit === 'function'){
+            form.requestSubmit();
+          }else{
+            form.submit();
+          }
         }
       });
     });

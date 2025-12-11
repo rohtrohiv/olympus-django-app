@@ -339,3 +339,37 @@ class DelinquencyDrillThrough(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."delinquency_drill_through"'
+
+
+class ServiceRequestDrillThrough(models.Model):
+	"""Unmanaged model for service_request_drill_through materialized view.
+	
+	Represents service request data including work orders, maintenance requests,
+	and their completion status across properties.
+	"""
+	property_name = models.CharField(max_length=80, blank=True, null=True)
+	request_number = models.CharField(max_length=20, primary_key=True)
+	unit_number = models.CharField(max_length=60, blank=True, null=True)
+	created_date = models.DateField(blank=True, null=True)
+	completed_date_time = models.DateTimeField(blank=True, null=True)
+	days_open = models.IntegerField(blank=True, null=True)
+	requestor = models.CharField(max_length=60, blank=True, null=True)
+	category = models.CharField(max_length=100, blank=True, null=True)
+	item = models.CharField(max_length=256, blank=True, null=True)
+	issue = models.CharField(max_length=256, blank=True, null=True)
+	assigned_to = models.CharField(max_length=80, blank=True, null=True)
+	status = models.CharField(max_length=20, blank=True, null=True)
+	work_notes = models.CharField(max_length=1024, blank=True, null=True)
+	site_id_property_unit_number = models.CharField(max_length=80, blank=True, null=True)
+	unique_key = models.TextField(blank=True, null=True)
+	avg_time_spent = models.IntegerField(blank=True, null=True)
+	completing_system = models.CharField(max_length=100, blank=True, null=True)
+	floor_plan = models.CharField(max_length=30, blank=True, null=True)
+	community = models.TextField(blank=True, null=True)
+	regional_vp = models.CharField(max_length=100, blank=True, null=True, db_column='Regional VP  | Sr. VP')
+	regional_area_manager = models.CharField(max_length=100, blank=True, null=True)
+	investor = models.CharField(max_length=255, blank=True, null=True)
+	
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."service_request_drill_through"'
