@@ -284,3 +284,58 @@ class TotalUnitOccupancyDrillThrough(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."total_unit_occupancy_drill_through"'
+
+
+class DelinquencyDrillThrough(models.Model):
+	"""Unmanaged materialized view for delinquency drill-through data.
+	
+	Maps to web_ai.delinquency_drill_through materialized view (28 columns).
+	Data source: Contains detailed delinquency records with financial breakdowns.
+	"""
+	# Identification columns
+	property_name = models.TextField(blank=True, null=True)
+	unit_number_name = models.TextField(blank=True, null=True, db_column='Unit_Number/Name')
+	unit_number = models.CharField(max_length=20, blank=True, null=True)
+	
+	# Categorization columns
+	code_description = models.CharField(max_length=60, blank=True, null=True)
+	delinquency_status = models.TextField(blank=True, null=True)
+	is_employee_lease_status = models.TextField(blank=True, null=True)
+	late_nsf_value = models.TextField(blank=True, null=True)
+	is_under_eviction = models.TextField(blank=True, null=True)
+	
+	# Financial columns - primary delinquency amounts
+	total_delinquent = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	total_prepaid = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	
+	# Age bucket columns
+	days_0_30 = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True, db_column='0-30 Days')
+	days_30_60 = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True, db_column='30-60 Days')
+	days_60_90 = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True, db_column='60-90 Days')
+	days_90_plus = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True, db_column='90 plus days')
+	
+	# Additional financial details
+	prorate_credits = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	deposits_held = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	outstanding_deposit = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	
+	# Date columns
+	notice_date = models.DateField(blank=True, null=True)
+	fiscal_as_of_month_year = models.TextField(blank=True, null=True, db_column='Fiscal As Of month Year')
+	fiscal_as_of = models.DateTimeField(blank=True, null=True)
+	delinquent_as_of_date = models.DateTimeField(blank=True, null=True)
+	
+	# Organizational hierarchy
+	community = models.TextField(blank=True, null=True)
+	regional_vp = models.CharField(max_length=100, blank=True, null=True, db_column='Regional VP  | Sr. VP')
+	regional_area_manager = models.CharField(max_length=100, blank=True, null=True)
+	investor = models.CharField(max_length=255, blank=True, null=True)
+	
+	# Metadata columns
+	row_num = models.BigIntegerField(primary_key=True, db_column='RowNum')
+	total_delinquent_as_of_date = models.TextField(blank=True, null=True)
+	total_prepaid_as_of_date = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True)
+	
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."delinquency_drill_through"'

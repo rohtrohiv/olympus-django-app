@@ -1,0 +1,85 @@
+  <section class="table-card">
+    <header>
+      <div class="header-left">
+        <div>{% block table_title %}Data Details{% endblock %}</div>
+        <span>
+          {% if pagination and pagination.total_count %}
+            Showing {{ pagination.start_index|default:1 }}–{{ pagination.end_index|default:0 }} of {{ pagination.total_count|default:'0' }} {{ count_label|default:'records' }}{% if pagination.total_pages and pagination.total_pages|default:0 > 1 %} · Page {{ pagination.page|default:1 }} of {{ pagination.total_pages }}{% endif %}
+          {% elif metrics.unit_count %}
+            Showing 1–{{ metrics.unit_count }} of {{ metrics.unit_count }} {{ count_label|default:'records' }}
+          {% else %}
+            No {{ empty_label|default:'records' }} found
+          {% endif %}
+        </span>
+      </div>
+      {% if export_url and pagination and pagination.total_count %}
+        <a class="export-link" href="{{ export_url }}">Download CSV</a>
+      {% elif export_url and metrics.unit_count %}
+        <a class="export-link" href="{{ export_url }}">Download CSV</a>
+      {% endif %}
+    </header>
+    {% if pagination and pagination.total_pages and pagination.total_pages|default:0 > 1 and pagination.total_count %}
+      <footer style="border-bottom:1px solid #e5e9f0;border-top:none;">
+        <span>
+          Showing {{ pagination.start_index|default:1 }}–{{ pagination.end_index|default:0 }} of {{ pagination.total_count|default:'0' }} {% block pagination_label %}records{% endblock %}
+        </span>
+        <div class="pager">
+          {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}">‹ Previous</a>
+          {% else %}
+            <span class="disabled">‹ Previous</span>
+          {% endif %}
+          <span class="page-indicator">Page {{ pagination.page }} of {{ pagination.total_pages }}</span>
+          {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}">Next ›</a>
+          {% else %}
+            <span class="disabled">Next ›</span>
+          {% endif %}
+        </div>
+      </footer>
+    {% endif %}
+    <div class="table-scroll">
+      {% if table_rows %}
+        <table>
+          <thead>
+            <tr>
+              {% for col in table_columns %}
+                <th scope="col">{{ col.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in table_rows %}
+              <tr>
+                {% for value in row %}
+                  <td>{{ value }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-state" style="margin:16px;">No records were returned for the selected filters.</div>
+      {% endif %}
+    </div>
+    {% if pagination and pagination.total_pages and pagination.total_pages|default:0 > 1 and pagination.total_count %}
+      <footer>
+        <span>
+          Showing {{ pagination.start_index|default:1 }}–{{ pagination.end_index|default:0 }} of {{ pagination.total_count|default:'0' }} {% block bottom_pagination_label %}records{% endblock %}
+        </span>
+        <div class="pager">
+          {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}">‹ Previous</a>
+          {% else %}
+            <span class="disabled">‹ Previous</span>
+          {% endif %}
+          <span class="page-indicator">Page {{ pagination.page }} of {{ pagination.total_pages }}</span>
+          {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}">Next ›</a>
+          {% else %}
+            <span class="disabled">Next ›</span>
+          {% endif %}
+        </div>
+      </footer>
+    {% endif %}
+  </section>

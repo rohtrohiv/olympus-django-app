@@ -1,0 +1,23 @@
+  <form method="get" class="filter-panel" id="drillthroughFilterForm">
+    <input type="hidden" name="return_url" value="{{ dashboard_return_url }}">
+    <input type="hidden" name="page" value="1" id="drillthrough-page-input">
+    {% for field in filter_blocks %}
+      <label>
+        <span>{{ field.label }}</span>
+        <select name="{{ field.key }}">
+          <option value="">All</option>
+          {% for option in field.options %}
+            {% if option.value %}
+              <option value="{{ option.value }}" {% if field.selected == option.value %}selected{% endif %}>{{ option.label }}</option>
+            {% else %}
+              <option value="{{ option }}" {% if field.selected == option %}selected{% endif %}>{{ option }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+    {% endfor %}
+    <div class="filter-actions">
+      <button type="submit" class="btn primary auto-submit-hint">Apply Filters</button>
+      <a class="btn ghost" href="{{ drill_reset_url }}">Reset</a>
+    </div>
+  </form>

@@ -1,0 +1,29 @@
+{% extends "dashboard/drillthrough_base.html" %}
+{% block drillthrough_title %}Delinquency Drill-Through{% endblock %}
+
+{% block metric_cards %}
+<article class="metric-card">
+  <span>Total Delinquent</span>
+  <strong>${{ metrics.total_delinquent|floatformat:2|default:'0.00' }}</strong>
+  <small>Sum of all delinquent amounts</small>
+</article>
+<article class="metric-card">
+  <span>Total Prepaid</span>
+  <strong>${{ metrics.total_prepaid|floatformat:2|default:'0.00' }}</strong>
+  <small>Sum of prepaid amounts</small>
+</article>
+<article class="metric-card">
+  <span>Delinquent As Of</span>
+  <strong>
+    {% if metrics.delinquency_as_of %}
+      {{ metrics.delinquency_as_of }}
+    {% else %}
+      --
+    {% endif %}
+  </strong>
+  <small>Current snapshot date</small>
+</article>
+{% endblock %}
+{% block charts_section %}{% endblock %}
+
+{% block extra_drillthrough_scripts %}{% endblock %}

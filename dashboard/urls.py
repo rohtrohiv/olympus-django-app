@@ -14,5 +14,7 @@ urlpatterns = [
     path('drillthrough/occupancy/export/', views.occupancy_drillthrough_export, name='occupancy_drillthrough_export'),
     path('drillthrough/exposure/', views.exposure_drillthrough, name='exposure_drillthrough'),
     path('drillthrough/exposure/export/', views.exposure_drillthrough_export, name='exposure_drillthrough_export'),
+    path('drillthrough/delinquency/', views.delinquency_drillthrough, name='delinquency_drillthrough'),
+    path('drillthrough/delinquency/export/', views.delinquency_drillthrough_export, name='delinquency_drillthrough_export'),
     path('sample/', views.sample_page, name='sample_page'),
 ]

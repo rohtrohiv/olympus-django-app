@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{% block drillthrough_title %}Drill-Through{% endblock %} · Olympus{% endblock %}
+{% block extra_head %}
+<style>
+.drill-page{display:flex;flex-direction:column;gap:24px;padding-bottom:48px}
+.back-link{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;color:#127c8a;font-weight:600;text-decoration:none;font-size:14px;background:rgba(18,124,138,.08);padding:8px 14px;border-radius:999px;transition:background .2s ease}
+.back-link:hover{background:rgba(18,124,138,.18)}
+.page-hero{display:none}
+.filter-panel{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;padding:18px 24px;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+.filter-panel label{flex:1 1 160px}
+.filter-panel label{display:flex;flex-direction:column;font-size:12px;font-weight:600;color:#425466;text-transform:uppercase;letter-spacing:.05em}
+.filter-panel select{margin-top:6px;border:1px solid #d7dde5;border-radius:10px;padding:10px 12px;font-size:14px;background:#fdfefe}
+.filter-actions{display:flex;align-items:flex-end;gap:12px}
+.filter-actions .btn{border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center}
+.filter-actions .btn.primary{background:#127c8a;color:#fff;box-shadow:0 6px 20px rgba(18,124,138,.3)}
+.filter-actions .btn.ghost{background:transparent;color:#127c8a;border:1px solid rgba(18,124,138,.25)}
+.filter-actions .btn.auto-submit-hint{display:none}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.metric-card{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 10px 26px rgba(15,23,42,.07);display:flex;flex-direction:column;gap:6px}
+.metric-card span{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#7b8794}
+.metric-card strong{font-size:28px;font-weight:600;color:#0f172a}
+.metric-card small{color:#6b7280}
+.table-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);overflow:hidden}
+.table-card header{padding:20px 24px;border-bottom:1px solid #e5e9f0;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;font-weight:600;color:#0f172a}
+.table-card header .header-left{display:flex;flex-direction:column;gap:4px}
+.table-card header .header-left span{font-size:13px;color:#6b7280;font-weight:500}
+.table-card header .export-link{display:inline-flex;align-items:center;gap:6px;background:#127c8a;color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 6px 18px rgba(18,124,138,.28);transition:background .2s ease,box-shadow .2s ease}
+.table-card header .export-link:hover{background:#0f6571;box-shadow:0 10px 24px rgba(18,124,138,.32)}
+.table-card footer{padding:16px 24px;border-top:1px solid #e5e9f0;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;font-size:13px;color:#475569;background:#fff}
+.table-card footer .pager{display:flex;align-items:center;gap:10px}
+.table-card footer .pager a{border:1px solid #127c8a;color:#127c8a;padding:6px 14px;border-radius:999px;text-decoration:none;font-weight:600;transition:background .2s ease,color .2s ease}
+.table-card footer .pager a:hover{background:#127c8a;color:#fff}
+.table-card footer .pager .disabled{border:1px solid rgba(148,163,184,.5);color:rgba(100,116,139,.7);padding:6px 14px;border-radius:999px;font-weight:600;cursor:not-allowed}
+.table-card footer .page-indicator{font-weight:600;color:#0f172a}
+.table-scroll{width:100%;overflow:auto}
+.table-scroll table{width:100%;border-collapse:collapse;font-size:13px}
+.table-scroll th{background:#f8fafc;color:#41506b;text-align:left;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e2e8f0}
+.table-scroll td{padding:12px 16px;border-bottom:1px solid #f0f4f8;color:#0f172a;white-space:nowrap}
+.table-scroll tr:nth-child(even) td{background:#fcfeff}
+.empty-state{padding:18px 24px;border-radius:12px;background:#fff4f1;color:#b45309;font-weight:600}
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(450px,1fr));gap:24px;margin:24px 0}
+.chart-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);padding:24px}
+.chart-card h3{margin:0 0 16px 0;font-size:16px;font-weight:600;color:#0f172a;text-align:center}
+.chart-container{position:relative;height:300px}
+@media (max-width:768px){.filter-panel,.table-card header{padding:16px}.filter-panel{flex-direction:column}.filter-actions{flex-direction:column;width:100%}.charts-grid{grid-template-columns:1fr}}
+{% block extra_drillthrough_styles %}{% endblock %}
+</style>
+{% endblock %}
+{% block content %}
+<div class="drill-page">
+  <a class="back-link" href="{{ dashboard_return_url }}">&#8592; Back to Dashboard</a>
+  {% if error %}
+    <div class="empty-state">{{ error }}</div>
+  {% endif %}
+
+  {% include "dashboard/partials/_drillthrough_filter_panel.html" %}
+
+  {% block metrics_section %}
+  <section class="metrics-grid" style="margin-top:8px;">
+    {% block metric_cards %}{% endblock %}
+  </section>
+  {% endblock %}
+
+  {% block charts_section %}{% endblock %}
+
+  {% include "dashboard/partials/_drillthrough_data_table.html" %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // Auto-submit form on filter change
+  var form = document.getElementById('drillthroughFilterForm');
+  if(form){
+    var selects = form.querySelectorAll('select');
+    selects.forEach(function(sel){
+      sel.addEventListener('change', function(){
+        if(typeof form.requestSubmit === 'function'){
+          form.requestSubmit();
+        }else{
+          form.submit();
+        }
+      });
+    });
+  }
+});
+</script>
+{% block extra_drillthrough_scripts %}{% endblock %}
+{% endblock %}

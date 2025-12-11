@@ -3,7 +3,8 @@ from django.contrib.auth.decorators import login_required
 from django.db import connection
 from django.db.models import Max, Sum, Avg, Count, Q, F
 from django.urls import reverse
-from .models import OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly, FinanceKpiScorecard
+from .models import (OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly, 
+					 FinanceKpiScorecard, DelinquencyDrillThrough)
 from datetime import datetime, date, timedelta
 from django.db.models.functions import ExtractYear, ExtractMonth
 from .services import DashboardService
@@ -3450,6 +3451,9 @@ def _fetch_exposure_filter_options(columns):
 		except Exception as exc:
 			print(f"Exposure drill filter options failed for {field['key']}:", exc)
 			vals = []
+		# Exclude Livcor from investor options (business rule: Livcor properties should not be shown)
+		if field['key'] == 'investor':
+			vals = [v for v in vals if str(v).upper() not in ['BLACKSTONE/LIVCOR', 'LIVCOR']]
 		options[field['key']] = [str(v).strip() for v in vals if v]
 	return options
 
@@ -3643,6 +3647,27 @@ def _prepare_exposure_drill_query(request):
 	filter_params = []
 	active_filters = {}
 	
+	# Base filters to apply to ALL queries (including total unit count)
+	base_filter_clauses = []
+	base_filter_params = []
+	
+	# 1. Exclude Livcor properties (business rule)
+	investor_col = _find_column_by_keywords(columns, ['investor'])
+	if investor_col:
+		investor_ident = _quote_ident(investor_col)
+		base_filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
+		base_filter_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
+	
+	# Copy base filters to main filter lists
+	filter_clauses.extend(base_filter_clauses)
+	filter_params.extend(base_filter_params)
+	
+	# 2. Add unit_condition filter for TABLE DATA ONLY (not for unit count)
+	# This filter will be added separately when fetching table rows
+	unit_condition_col = _find_exact_column(columns, 'Unit Condition')
+	if not unit_condition_col:
+		unit_condition_col = _find_column_by_keywords(columns, ['unit', 'condition'])
+	
 	for field in EXPOSURE_FILTER_FIELDS:
 		values = _extract_filter_list(request, request.GET, field['key'])
 		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
@@ -3670,6 +3695,7 @@ def _prepare_exposure_drill_query(request):
 		'filter_params': filter_params,
 		'active_filters': active_filters,
 		'filter_options': filter_options,
+		'unit_condition_col': unit_condition_col,  # For table-level filtering
 	}
 
 
@@ -3687,6 +3713,7 @@ def _build_exposure_drill_context(request):
 	filter_params = query_info['filter_params']
 	active_filters = query_info['active_filters']
 	filter_options = query_info['filter_options']
+	unit_condition_col = query_info.get('unit_condition_col')
 
 	summary = _fetch_exposure_summary(filter_clauses, filter_params, columns)
 	total_units = summary.get('unit_count') or 0
@@ -3707,13 +3734,20 @@ def _build_exposure_drill_context(request):
 		page = 1
 	offset = (page - 1) * page_size if total_units else 0
 
-	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	# For TABLE DATA: add unit_condition NOT NULL filter
+	table_filter_clauses = list(filter_clauses)
+	table_filter_params = list(filter_params)
+	if unit_condition_col:
+		unit_condition_ident = _quote_ident(unit_condition_col)
+		table_filter_clauses.append(f"{unit_condition_ident} IS NOT NULL AND TRIM({unit_condition_ident}::text) <> ''")
+
+	where_sql = ' WHERE ' + ' AND '.join(table_filter_clauses) if table_filter_clauses else ''
 	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
 	data_sql = f"SELECT {', '.join(select_parts)} FROM {EXPOSURE_DRILL_VIEW}{where_sql}"
 	if order_alias:
 		data_sql += f" ORDER BY {order_alias} NULLS LAST"
 	data_sql += " LIMIT %s OFFSET %s"
-	data_params = list(filter_params) + [page_size, offset]
+	data_params = table_filter_params + [page_size, offset]
 
 	rows = []
 	try:
@@ -3861,6 +3895,684 @@ def exposure_drillthrough_export(request):
 	for raw in rows:
 		row_dict = dict(zip(alias_order, raw))
 		writer.writerow([_format_exposure_value(alias, row_dict.get(alias)) for alias in alias_order])
+
+	return response
+
+
+# ============================================================================
+# DELINQUENCY DRILL-THROUGH VIEWS
+# ============================================================================
+
+DELINQUENCY_DRILL_VIEW = 'web_ai.delinquency_drill_through'
+DELINQUENCY_DRILL_PAGE_SIZE = 500
+
+DELINQUENCY_FILTER_FIELDS = [
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'keywords': ['regional', 'vp']},
+	{'key': 'regional_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+	# Allow selecting a fiscal month-year (exact column name on the MV)
+	{'key': 'fiscal_as_of_month_year', 'label': 'Fiscal As Of Month Year', 'exact': 'Fiscal As Of month Year'},
+]
+
+DELINQUENCY_TABLE_FIELDS = [
+	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
+	{'key': 'unit_number_name', 'label': 'Unit Number/Name', 'exact': 'Unit_Number/Name'},
+	{'key': 'code_description', 'label': 'Code Description', 'keywords': ['code', 'description']},
+	{'key': 'delinquency_status', 'label': 'Delinquency Status', 'keywords': ['delinquency', 'status']},
+	{'key': 'total_delinquent', 'label': 'Total Delinquent', 'keywords': ['total', 'delinquent']},
+	{'key': 'total_prepaid', 'label': 'Total Prepaid', 'keywords': ['total', 'prepaid']},
+	{'key': 'days_0_30', 'label': '0-30 Days', 'exact': '0-30 Days'},
+	{'key': 'days_30_60', 'label': '30-60 Days', 'exact': '30-60 Days'},
+	{'key': 'days_60_90', 'label': '60-90 Days', 'exact': '60-90 Days'},
+	{'key': 'days_90_plus', 'label': '90+ Days', 'exact': '90 plus days'},
+	{'key': 'prorate_credits', 'label': 'Prorate Credits', 'keywords': ['prorate', 'credits']},
+	{'key': 'deposits_held', 'label': 'Deposits Held', 'keywords': ['deposits', 'held']},
+	{'key': 'outstanding_deposit', 'label': 'Outstanding Deposit', 'keywords': ['outstanding', 'deposit']},
+	{'key': 'is_employee_lease_status', 'label': 'Is Employee Lease', 'keywords': ['employee', 'lease', 'status']},
+	{'key': 'late_nsf_value', 'label': 'Late/NSF', 'keywords': ['late', 'nsf', 'value']},
+	{'key': 'is_under_eviction', 'label': 'Is Under Eviction', 'keywords': ['eviction']},
+	{'key': 'notice_date', 'label': 'Notice Date', 'keywords': ['notice', 'date']},
+	{'key': 'fiscal_as_of_month_year', 'label': 'Fiscal As Of Month Year', 'exact': 'Fiscal As Of month Year'},
+	{'key': 'unit_number', 'label': 'Unit Number', 'keywords': ['unit', 'number']},
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'exact': 'Regional VP  | Sr. VP'},
+	{'key': 'regional_area_manager', 'label': 'Regional Area Manager', 'keywords': ['regional', 'area', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+]
+
+DELINQUENCY_CURRENCY_FIELDS = {
+	'total_delinquent', 'total_prepaid', 'days_0_30', 'days_30_60', 'days_60_90', 'days_90_plus',
+	'prorate_credits', 'deposits_held', 'outstanding_deposit'
+}
+DELINQUENCY_DATE_FIELDS = {'notice_date', 'fiscal_as_of', 'delinquent_as_of_date'}
+
+
+def _get_delinquency_drill_columns():
+	"""Get all columns from the delinquency drill-through materialized view."""
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'delinquency_drill_through']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Delinquency drill-through column introspection failed:', exc)
+
+	if columns:
+		return columns
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.delinquency_drill_through'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Delinquency drill-through pg_attribute introspection failed:', exc)
+	return columns
+
+
+def _format_delinquency_value(alias, value):
+	"""Format delinquency drill-through values for display."""
+	if value is None:
+		return '--'
+	if isinstance(value, (datetime, date)):
+		return value.strftime('%b %d, %Y')
+	if isinstance(value, Decimal):
+		value = float(value)
+	if alias in DELINQUENCY_CURRENCY_FIELDS:
+		try:
+			return f"${float(value):,.2f}"
+		except Exception:
+			return f"${value}"
+	if alias in DELINQUENCY_DATE_FIELDS:
+		try:
+			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
+			return parsed.strftime('%b %d, %Y')
+		except Exception:
+			return str(value)
+	text = str(value).strip()
+	return text or '--'
+
+
+def _fetch_delinquency_filter_options(columns):
+	"""Fetch distinct filter options for delinquency drill-through filters."""
+	options = {}
+	
+	for field in DELINQUENCY_FILTER_FIELDS:
+		# Support fields defined with either 'keywords' or an 'exact' column name
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		else:
+			col = _find_column_by_keywords(columns, field.get('keywords', []))
+		if not col:
+			options[field['key']] = []
+			continue
+		ident = _quote_ident(col)
+		sql = (
+			f"SELECT DISTINCT {ident} FROM {DELINQUENCY_DRILL_VIEW} "
+			f"WHERE {ident} IS NOT NULL AND TRIM({ident}::text) <> '' "
+			f"ORDER BY {ident} ASC LIMIT 400"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql)
+				vals = [row[0] for row in cur.fetchall()]
+		except Exception as exc:
+			print(f"Delinquency drill filter options failed for {field['key']}:", exc)
+			vals = []
+		# Exclude Livcor from investor options
+		if field['key'] == 'investor':
+			vals = [v for v in vals if str(v).upper() not in ['BLACKSTONE/LIVCOR', 'LIVCOR']]
+
+		# For fiscal month-year provide a human-friendly label while preserving
+		# the raw value for form submissions. Other fields remain simple strings.
+		if field['key'] == 'fiscal_as_of_month_year':
+			labelled = []
+			for v in vals:
+				if not v:
+					continue
+				raw = str(v).strip()
+				label = _humanize_fiscal_label(raw)
+				labelled.append({'value': raw, 'label': label})
+			# Sort by parsed fiscal date (year then month). Use latest-first
+			try:
+				labelled.sort(key=lambda it: (_parse_fiscal_to_date(it.get('value')) or date.min), reverse=True)
+			except Exception:
+				pass
+			options[field['key']] = labelled
+		else:
+			options[field['key']] = [str(v).strip() for v in vals if v]
+	return options
+
+
+def _humanize_fiscal_label(raw_val):
+	"""Turn various fiscal value formats into a readable 'Mon-YYYY' label.
+
+	Accepts formats like '2025-10-01', '2025-10', '10/01/2025', '102025',
+	'Oct-2025', 'October 2025', etc. Falls back to the original string.
+	"""
+	if not raw_val:
+		return ''
+	s = str(raw_val).strip()
+	# Try several common date formats
+	fmts = ['%Y-%m-%d', '%Y-%m', '%m/%d/%Y', '%m-%Y', '%b-%Y', '%B %Y', '%b %Y']
+	for fmt in fmts:
+		try:
+			dt = datetime.strptime(s, fmt)
+			return dt.strftime('%b-%Y')
+		except Exception:
+			continue
+	# Handle MMYYYY like '102025' or '1202024'
+	if re.match(r'^\d{6}$', s):
+		try:
+			mm = int(s[:2])
+			yy = int(s[2:])
+			dt = date(yy, mm, 1)
+			return dt.strftime('%b-%Y')
+		except Exception:
+			pass
+	# Fallback: return original trimmed string
+	return s
+
+
+def _parse_fiscal_to_date(raw_val):
+	"""Parse fiscal option raw value into a date object representing the month.
+
+	Returns a date (first of month) or None if parsing fails.
+	"""
+	if not raw_val:
+		return None
+	s = str(raw_val).strip()
+	fmts = ['%Y-%m-%d', '%Y-%m', '%m/%d/%Y', '%m-%Y', '%b-%Y', '%B %Y', '%b %Y']
+	for fmt in fmts:
+		try:
+			dt = datetime.strptime(s, fmt)
+			return date(dt.year, dt.month, 1)
+		except Exception:
+			continue
+	if re.match(r'^\d{6}$', s):
+		try:
+			mm = int(s[:2])
+			yy = int(s[2:])
+			return date(yy, mm, 1)
+		except Exception:
+			return None
+	return None
+
+
+def _fetch_delinquency_summary(filter_clauses, filter_params, columns):
+	"""Calculate summary metrics for delinquency drill-through.
+
+	Uses a SQL aggregation that strips non-numeric characters before casting
+	to numeric to avoid Decimal conversion errors when the source columns
+	contain formatted text (commas, dollar signs, etc.).
+	"""
+	summary = {
+		'total_delinquent': 0,
+		'total_prepaid': 0,
+		'delinquency_as_of': None,
+		'days_0_30': 0,
+		'days_30_60': 0,
+		'days_60_90': 0,
+	}
+
+	# Find relevant columns
+	total_delinquent_col = _find_column_by_keywords(columns, ['total', 'delinquent'])
+	total_prepaid_col = _find_column_by_keywords(columns, ['total', 'prepaid'])
+	days_0_30_col = _find_exact_column(columns, '0-30_days')
+	days_30_60_col = _find_exact_column(columns, '30-60_days')
+	days_60_90_col = _find_exact_column(columns, '60-90_days')
+	# Attempt to locate the "as of" date column. The materialized view
+	# may use different names like 'delinquent_as_of_date', 'delinquent_as_of',
+	# or variants using the words 'delinquency'/'delinquent'. Try several
+	# exact and keyword-based matches to increase robustness.
+	delinquency_as_of_col = (
+		_find_exact_column(columns, 'delinquent_as_of_date')
+		or _find_exact_column(columns, 'delinquent_as_of')
+		or _find_exact_column(columns, 'delinquency_as_of')
+		or _find_column_by_keywords(columns, ['delinquent', 'as', 'of'])
+		or _find_column_by_keywords(columns, ['delinquency', 'as', 'of'])
+		or _find_column_by_keywords(columns, ['delinquent', 'as'])
+	)
+
+	sql_parts = []
+
+	def cleaned_sum_expr(col_name):
+		# Convert value to text, remove non-numeric characters except . and -,
+		# NULLIF empty string to avoid cast errors, then cast to numeric
+		ident = _quote_ident(col_name)
+		return f"SUM( (NULLIF(regexp_replace({ident}::text, '[^0-9.\-]', '', 'g'), ''))::numeric )"
+
+	if total_delinquent_col:
+		sql_parts.append(f"{cleaned_sum_expr(total_delinquent_col)} AS total_delinquent")
+	if total_prepaid_col:
+		sql_parts.append(f"{cleaned_sum_expr(total_prepaid_col)} AS total_prepaid")
+	if days_0_30_col:
+		sql_parts.append(f"{cleaned_sum_expr(days_0_30_col)} AS days_0_30")
+	if days_30_60_col:
+		sql_parts.append(f"{cleaned_sum_expr(days_30_60_col)} AS days_30_60")
+	if days_60_90_col:
+		sql_parts.append(f"{cleaned_sum_expr(days_60_90_col)} AS days_60_90")
+	if delinquency_as_of_col:
+		sql_parts.append(f"MAX({_quote_ident(delinquency_as_of_col)}) AS latest_date")
+
+	if sql_parts:
+		# Use a copy of incoming filters but restrict metric aggregation to RowNum = 1
+		local_clauses = list(filter_clauses) if filter_clauses else []
+		local_params = list(filter_params) if filter_params else []
+		# Add RowNum = 1 per DAX logic to consider the primary row for metrics
+		local_clauses.append(f"{_quote_ident('RowNum')} = %s")
+		local_params.append(1)
+
+		sql = f"SELECT {', '.join(sql_parts)} FROM {DELINQUENCY_DRILL_VIEW}"
+		if local_clauses:
+			sql += ' WHERE ' + ' AND '.join(local_clauses)
+
+		try:
+			with connection.cursor() as cur:
+				cur.execute(sql, local_params)
+				row = cur.fetchone()
+				col_names = [desc[0] for desc in cur.description]
+				data = dict(zip(col_names, row if row else []))
+		except Exception as exc:
+			print('Delinquency drill summary query failed:', exc)
+			data = {}
+	else:
+		data = {}
+
+	# Populate summary from query result
+	try:
+		summary['total_delinquent'] = data.get('total_delinquent') or 0
+		summary['total_prepaid'] = data.get('total_prepaid') or 0
+		summary['days_0_30'] = data.get('days_0_30') or 0
+		summary['days_30_60'] = data.get('days_30_60') or 0
+		summary['days_60_90'] = data.get('days_60_90') or 0
+	except Exception:
+		# Defensive: ensure numeric defaults
+		summary['total_delinquent'] = summary.get('total_delinquent', 0)
+		summary['total_prepaid'] = summary.get('total_prepaid', 0)
+
+	# Add unit_count for template compatibility (uses total_count as record count)
+	summary['unit_count'] = None
+
+	latest_date = data.get('latest_date')
+	if latest_date:
+		try:
+			if isinstance(latest_date, str):
+				date_obj = datetime.strptime(latest_date, '%Y-%m-%d').date()
+			else:
+				date_obj = latest_date
+			summary['delinquency_as_of'] = date_obj.strftime('%m/%d/%Y')
+		except Exception:
+			summary['delinquency_as_of'] = str(latest_date)
+
+	return summary
+
+
+def _prepare_delinquency_drill_query(request):
+	"""Prepare delinquency drill-through query components."""
+	columns = _get_delinquency_drill_columns()
+	if not columns:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {},
+				'filter_options': {},
+				'filters': {},
+				'error': 'The delinquency drill-through view is currently unavailable.',
+			},
+		}
+
+	select_parts = []
+	display_columns = []
+	alias_order = []
+	alias_to_source = {}
+	
+	for field in DELINQUENCY_TABLE_FIELDS:
+		col = None
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		if not col and 'keywords' in field:
+			col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		alias = field['key']
+		alias_to_source[alias] = col
+		alias_order.append(alias)
+		display_columns.append({'key': alias, 'label': field['label']})
+		quoted_alias = _quote_ident(alias) if alias and alias[0].isdigit() else alias
+		select_parts.append(f"{_quote_ident(col)} AS {quoted_alias}")
+
+	filter_options = _fetch_delinquency_filter_options(columns)
+
+	if not select_parts:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {},
+				'filter_options': filter_options,
+				'filters': {},
+				'error': 'No recognizable columns were found for the delinquency drill-through dataset.',
+			},
+		}
+
+	filter_clauses = []
+	filter_params = []
+	active_filters = {}
+	
+	# Exclude Livcor properties
+	investor_col = _find_column_by_keywords(columns, ['investor'])
+	if investor_col:
+		investor_ident = _quote_ident(investor_col)
+		filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
+		filter_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
+	
+	for field in DELINQUENCY_FILTER_FIELDS:
+		values = _extract_filter_list(request, request.GET, field['key'])
+		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
+		active_filters[field['key']] = values[0] if values else ''
+		if not clean:
+			continue
+		# Support exact column names when provided (useful for fiscal month-year)
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		else:
+			col = _find_column_by_keywords(columns, field.get('keywords', []))
+		if not col:
+			continue
+		clause_parts = []
+		for val in clean:
+			# For exact fiscal month-year match use equality, otherwise use ILIKE
+			if field.get('exact'):
+				clause_parts.append(f"{_quote_ident(col)} = %s")
+				filter_params.append(val)
+			else:
+				clause_parts.append(f"{_quote_ident(col)} ILIKE %s")
+				filter_params.append(f"%{val}%")
+		if clause_parts:
+			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+
+	return {
+		'error': False,
+		'columns': columns,
+		'display_columns': display_columns,
+		'alias_order': alias_order,
+		'alias_to_source': alias_to_source,
+		'select_parts': select_parts,
+		'filter_clauses': filter_clauses,
+		'filter_params': filter_params,
+		'active_filters': active_filters,
+		'filter_options': filter_options,
+	}
+
+
+def _build_delinquency_drill_context(request):
+	"""Build complete context for delinquency drill-through view."""
+	query_info = _prepare_delinquency_drill_query(request)
+	if query_info.get('error'):
+		return query_info['error_context']
+
+	columns = query_info['columns']
+	display_columns = query_info['display_columns']
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	active_filters = query_info['active_filters']
+	filter_options = query_info['filter_options']
+
+
+	# If user didn't provide a fiscal month filter, attempt to default to the
+	# previous available fiscal month (or the most recent available month).
+	fiscal_key = 'fiscal_as_of_month_year'
+	try:
+		has_fiscal_filter = bool(active_filters.get(fiscal_key))
+	except Exception:
+		has_fiscal_filter = False
+	if not has_fiscal_filter:
+		fiscal_opts = filter_options.get(fiscal_key) or []
+		# fiscal_opts expected to be list of dicts with 'value' and 'label'
+		candidates = []
+		for o in fiscal_opts:
+			raw = o.get('value') if isinstance(o, dict) else o
+			dt = _parse_fiscal_to_date(raw)
+			if dt:
+				candidates.append((dt, raw))
+		if candidates:
+			# target = previous calendar month
+			today = datetime.now().date()
+			if today.month == 1:
+				target = date(today.year - 1, 12, 1)
+			else:
+				target = date(today.year, today.month - 1, 1)
+			# Find exact match for previous month
+			match = next((r for (d, r) in candidates if d.year == target.year and d.month == target.month), None)
+			if not match:
+				# fallback: pick latest candidate <= target, else pick latest overall
+				leq = [ (d, r) for (d, r) in candidates if d <= target ]
+				if leq:
+					match = max(leq, key=lambda t: t[0])[1]
+				else:
+					match = max(candidates, key=lambda t: t[0])[1]
+			# Apply chosen default to active filters and extend filter clauses/params
+			if match:
+				# find the actual column name for fiscal
+				fcol = None
+				for f in DELINQUENCY_FILTER_FIELDS:
+					if f['key'] == fiscal_key:
+						if 'exact' in f:
+							fcol = _find_exact_column(columns, f['exact'])
+						else:
+							fcol = _find_column_by_keywords(columns, f.get('keywords', []))
+						break
+				if fcol:
+					filter_clauses.append(f"{_quote_ident(fcol)} = %s")
+					filter_params.append(match)
+					active_filters[fiscal_key] = match
+
+	# Compute summary AFTER applying any default fiscal filter
+	summary = _fetch_delinquency_summary(filter_clauses, filter_params, columns)
+	
+	# Count total matching records for pagination
+	count_sql = f"SELECT COUNT(*) FROM {DELINQUENCY_DRILL_VIEW}"
+	if filter_clauses:
+		count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+	
+	try:
+		with connection.cursor() as cur:
+			cur.execute(count_sql, filter_params)
+			total_records = cur.fetchone()[0] or 0
+	except Exception as exc:
+		print('Delinquency drill-through count query failed:', exc)
+		total_records = 0
+	
+	page_size = DELINQUENCY_DRILL_PAGE_SIZE
+	page_param = request.GET.get('page') if hasattr(request, 'GET') else None
+	try:
+		requested_page = int(page_param) if page_param else 1
+	except Exception:
+		requested_page = 1
+	if requested_page < 1:
+		requested_page = 1
+	if total_records:
+		total_pages = (total_records + page_size - 1) // page_size
+		page = min(requested_page, total_pages)
+	else:
+		total_pages = 1
+		page = 1
+	offset = (page - 1) * page_size if total_records else 0
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {DELINQUENCY_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+	data_sql += " LIMIT %s OFFSET %s"
+	data_params = list(filter_params) + [page_size, offset]
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, data_params)
+			result = cur.fetchall()
+	except Exception as exc:
+		print('Delinquency drill-through data query failed:', exc)
+		result = []
+	
+	for raw in result:
+		row_dict = dict(zip(alias_order, raw))
+		ordered_values = [_format_delinquency_value(alias, row_dict.get(alias)) for alias in alias_order]
+		rows.append(ordered_values)
+
+	start_index = offset + 1 if total_records and rows else 0
+	end_index = offset + len(rows)
+	if total_records and end_index > total_records:
+		end_index = total_records
+
+	base_query_pairs = []
+	if hasattr(request.GET, 'lists'):
+		for key, values in request.GET.lists():
+			if key == 'page':
+				continue
+			for val in values:
+				if val:
+					base_query_pairs.append((key, val))
+	
+	dashboard_return_url = request.GET.get('return_url') or reverse('dashboard')
+	if base_query_pairs:
+		base_query_pairs.append(('return_url', dashboard_return_url))
+	
+	def build_page_url(pg):
+		pairs = list(base_query_pairs)
+		pairs.append(('page', pg))
+		return f"{reverse('delinquency_drillthrough')}?{urlencode(pairs, doseq=True)}"
+	
+	prev_url = build_page_url(page - 1) if page > 1 else None
+	next_url = build_page_url(page + 1) if page < total_pages else None
+
+	export_pairs = list(base_query_pairs)
+	export_base = reverse('delinquency_drillthrough_export')
+	if export_pairs:
+		export_url = f"{export_base}?{urlencode(export_pairs, doseq=True)}"
+	else:
+		export_url = export_base
+
+	reset_base = reverse('delinquency_drillthrough')
+	if request.GET.get('return_url'):
+		drill_reset_url = f"{reset_base}?{urlencode({'return_url': request.GET.get('return_url')})}"
+	else:
+		drill_reset_url = reset_base
+
+	filter_fields = [{'key': field['key'], 'label': field['label']} for field in DELINQUENCY_FILTER_FIELDS]
+	filter_blocks = []
+	for field in filter_fields:
+		key = field['key']
+		filter_blocks.append({
+			'key': key,
+			'label': field['label'],
+			'options': filter_options.get(key, []),
+			'selected': active_filters.get(key, ''),
+		})
+
+	return {
+		'table_columns': display_columns,
+		'table_rows': rows,
+		'metrics': summary,
+		'filters': active_filters,
+		'filter_options': filter_options,
+		'filter_blocks': filter_blocks,
+		'pagination': {
+			'page': page,
+			'total_pages': total_pages,
+			'total_count': total_records,
+			'start_index': start_index,
+			'end_index': end_index,
+			'has_prev': page > 1,
+			'has_next': page < total_pages,
+			'prev_url': prev_url,
+			'next_url': next_url,
+		},
+		'dashboard_return_url': dashboard_return_url,
+		'drill_reset_url': drill_reset_url,
+		'export_url': export_url,
+	}
+
+
+@login_required
+def delinquency_drillthrough(request):
+	"""Main delinquency drill-through view."""
+	context = _build_delinquency_drill_context(request)
+	context['filter_fields'] = [{'key': field['key'], 'label': field['label']} for field in DELINQUENCY_FILTER_FIELDS]
+	context['page_title'] = 'Delinquency Drill-Through'
+	context['row_limit'] = DELINQUENCY_DRILL_PAGE_SIZE
+	context.setdefault('error', '')
+	context.setdefault('export_url', '')
+	
+	return render(request, 'dashboard/delinquency_drillthrough.html', context)
+
+
+@login_required
+def delinquency_drillthrough_export(request):
+	"""CSV export for delinquency drill-through."""
+	query_info = _prepare_delinquency_drill_query(request)
+	if query_info.get('error'):
+		message = query_info['error_context'].get('error') if query_info.get('error_context') else 'The dataset is unavailable.'
+		return HttpResponse(message or 'The dataset is unavailable.', status=400)
+
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	if not alias_order or not select_parts:
+		return HttpResponse('No columns are available for export.', status=400)
+
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	display_columns = query_info['display_columns']
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {DELINQUENCY_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, list(filter_params))
+			rows = cur.fetchall()
+	except Exception as exc:
+		print('Delinquency drill-through export failed:', exc)
+		return HttpResponse('Failed to export data.', status=500)
+
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"delinquency_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+	writer = csv.writer(response)
+	writer.writerow([col['label'] for col in display_columns])
+	for raw in rows:
+		row_dict = dict(zip(alias_order, raw))
+		writer.writerow([_format_delinquency_value(alias, row_dict.get(alias)) for alias in alias_order])
 
 	return response
 

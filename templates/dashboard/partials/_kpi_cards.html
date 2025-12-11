@@ -22,7 +22,12 @@
         <a href="#" onclick="openExposureChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a>
         <a href="{% url 'exposure_drillthrough' %}" onclick="event.stopPropagation();" style="font-size:12px;color:#0d766e;text-decoration:none;margin-top:2px;display:block;font-weight:600;">Drill Through →</a>
     </div>
-    <div class="card kpi" id="delinquency-card" style="cursor:pointer;"><div class="label">Delinquency</div><div class="value">{{ kpi.delinquency|floatformat:2 }}%</div><a href="#" onclick="openDelinquencyChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
+    <div class="card kpi" id="delinquency-card" style="cursor:pointer;">
+        <div class="label">Delinquency</div>
+        <div class="value">{{ kpi.delinquency|floatformat:2 }}%</div>
+        <a href="#" onclick="openDelinquencyChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a>
+        <a href="{% url 'delinquency_drillthrough' %}" onclick="event.stopPropagation();" style="font-size:12px;color:#0d766e;text-decoration:none;margin-top:2px;display:block;font-weight:600;">Drill Through →</a>
+    </div>
     <div class="card kpi" id="avg-turn-time-card" style="cursor:pointer;"><div class="label">Avg Turn Time</div><div class="value">{{ kpi.avg_turn_time }}</div><a href="#" onclick="openAvgTurnTimeChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
     <div class="card kpi" id="service-requests-card" style="cursor:pointer;"><div class="label">Service Requests</div><div class="value">{{ kpi.service_requests }}</div><a href="#" onclick="openServiceRequestsChartModal(); event.stopPropagation();" style="font-size:12px;color:#4f6bed;text-decoration:none;margin-top:4px;display:block;">View Trend</a></div>
     <!-- <div class="card kpi"><div class="label">Google Stars</div><div class="value">{{ kpi.google_stars }}</div></div> -->
