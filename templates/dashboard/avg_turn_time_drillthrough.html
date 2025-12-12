@@ -1,0 +1,56 @@
+{% extends "dashboard/drillthrough_base.html" %}
+{% load humanize %}
+
+{% block drillthrough_title %}Average Turn Time Drill-Through{% endblock %}
+
+{% block metric_cards %}
+<article class="metric-card">
+  <span>Apartment Homes</span>
+  <strong>{{ metrics.apartment_homes|floatformat:0|intcomma|default:'0' }}</strong>
+  <small>Total Units</small>
+</article>
+<article class="metric-card">
+  <span>Total Turns</span>
+  <strong>{{ metrics.total_turns|floatformat:0|intcomma|default:'0' }}</strong>
+  <small>Unit turnovers</small>
+</article>
+<article class="metric-card">
+  <span>Average Turn Days</span>
+  <strong>{{ metrics.avg_turn_days|floatformat:2|default:'0.00' }}</strong>
+  <small>Days to turn unit</small>
+</article>
+<article class="metric-card">
+  <span>&lt; 7 Turn Days</span>
+  <strong>{{ metrics.percent_under_7_days|floatformat:2|default:'0.00' }}%</strong>
+  <small>Fast turnovers</small>
+</article>
+<article class="metric-card">
+  <span>Total Expenses</span>
+  <strong>${{ metrics.total_expenses|floatformat:0|intcomma|default:'0' }}</strong>
+  <small>Turn-related costs</small>
+</article>
+<article class="metric-card">
+  <span>Avg Turn Cost</span>
+  <strong>${{ metrics.avg_turn_cost|floatformat:0|intcomma|default:'0' }}</strong>
+  <small>Cost per turn</small>
+</article>
+{% endblock %}
+
+{% block criteria_date_filters %}
+<!-- Date Range Filters -->
+<div class="criteria-date-filters">
+    <div class="date-filter-box">
+        <label><strong>Date Range (Make Ready Date):</strong></label>
+        <div class="date-inputs">
+            <div class="date-input-group">
+                <label for="start_date">From:</label>
+                <input type="date" id="start_date" name="start_date" value="{{ filters.start_date }}" form="drillthroughFilterForm">
+            </div>
+            <div class="date-input-group">
+                <label for="end_date">To:</label>
+                <input type="date" id="end_date" name="end_date" value="{{ filters.end_date }}" form="drillthroughFilterForm">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

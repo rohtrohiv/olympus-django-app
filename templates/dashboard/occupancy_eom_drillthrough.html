@@ -1,0 +1,271 @@
+{% extends "dashboard/drillthrough_base.html" %}
+{% load humanize %}
+
+{% block drillthrough_title %}Occupancy End-of-Month Drill-Through{% endblock %}
+
+{% block extra_drillthrough_styles %}
+<style>
+/* Occupancy-specific pivot table styles */
+.occupancy-pivot-table {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 24px;
+}
+
+.occupancy-pivot-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.occupancy-pivot-table thead th {
+  background: linear-gradient(135deg, #127c8a 0%, #0f6571 100%);
+  color: white;
+  text-align: center;
+  padding: 14px 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.occupancy-pivot-table thead th:first-child {
+  text-align: left;
+  min-width: 200px;
+}
+
+.occupancy-pivot-table tbody td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.occupancy-pivot-table tbody td:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: #0f172a;
+  background: #f8fafc;
+  position: sticky;
+  left: 0;
+  z-index: 5;
+}
+
+.occupancy-pivot-table tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.occupancy-pivot-table tbody tr:hover td:first-child {
+  background: #e2e8f0;
+}
+
+/* Occupancy percentage cell colors */
+.occ-excellent {
+  background: #10b981 !important;
+  color: white !important;
+  font-weight: 600;
+}
+
+.occ-good {
+  background: #fbbf24 !important;
+  color: #78350f !important;
+  font-weight: 600;
+}
+
+.occ-low {
+  background: #ef4444 !important;
+  color: white !important;
+  font-weight: 600;
+}
+
+.occ-empty {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* Period mode selector */
+.period-mode-selector {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #d7dde5;
+  margin-bottom: 16px;
+}
+
+.period-mode-selector label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #425466;
+  margin-right: 8px;
+}
+
+.period-mode-selector select {
+  padding: 8px 12px;
+  border: 1px solid #d7dde5;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fdfefe;
+  cursor: pointer;
+}
+
+/* Legend */
+.occupancy-legend {
+  display: flex;
+  gap: 20px;
+  padding: 16px 20px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  margin-top: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.occupancy-legend strong {
+  font-size: 13px;
+  color: #425466;
+  margin-right: 12px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.legend-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.legend-color.excellent { background: #10b981; }
+.legend-color.good { background: #fbbf24; }
+.legend-color.low { background: #ef4444; }
+</style>
+{% endblock %}
+
+{% block metric_cards %}
+<article class="metric-card">
+  <span>Total Properties</span>
+  <strong>{{ total_properties|intcomma|default:'0' }}</strong>
+  <small>Properties analyzed</small>
+</article>
+<article class="metric-card">
+  <span>Total Periods</span>
+  <strong>{{ total_periods|default:'0' }}</strong>
+  <small>Time periods</small>
+</article>
+<article class="metric-card">
+  <span>Period Mode</span>
+  <strong>{{ period_mode|title }}</strong>
+  <small>Aggregation level</small>
+</article>
+{% endblock %}
+
+{% block extra_filters %}
+<!-- Period Mode Selector -->
+<div class="period-mode-selector">
+  <label for="period_mode"><i class="fas fa-calendar-alt"></i> Period Mode:</label>
+  <select name="period_mode" id="period_mode" form="drillthroughFilterForm">
+    <option value="monthly" {% if period_mode == 'monthly' %}selected{% endif %}>Monthly</option>
+    <option value="quarterly" {% if period_mode == 'quarterly' %}selected{% endif %}>Quarterly</option>
+    <option value="yearly" {% if period_mode == 'yearly' %}selected{% endif %}>Yearly</option>
+  </select>
+</div>
+{% endblock %}
+
+{% block criteria_date_filters %}
+<!-- Occupancy Pivot Table -->
+<div class="occupancy-pivot-table">
+  <table>
+    <thead>
+      <tr>
+        <th>Property Name</th>
+        <th>Investor</th>
+        <th>Regional VP</th>
+        <th>Regional Manager</th>
+        {% for period in period_columns %}
+          <th>{{ period }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% if property_rows %}
+        {% for row in property_rows %}
+          <tr>
+            <td>{{ row.property_name }}</td>
+            <td>{{ row.investor|default:"—" }}</td>
+            <td>{{ row.regional_vp|default:"—" }}</td>
+            <td>{{ row.regional_manager|default:"—" }}</td>
+            {% for value in row.period_values %}
+              <td class="{% if value is not None %}{% if value >= 95 %}occ-excellent{% elif value >= 85 %}occ-good{% else %}occ-low{% endif %}{% else %}occ-empty{% endif %}">
+                {% if value is not None %}
+                  {{ value }}%
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="{{ period_columns|length|add:4 }}" style="text-align: center; padding: 24px; color: #9ca3af;">
+            <em>No data available for the selected filters.</em>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Legend -->
+<div class="occupancy-legend">
+  <strong><i class="fas fa-info-circle"></i> Color Legend:</strong>
+  <div class="legend-item">
+    <div class="legend-color excellent"></div>
+    <span>≥95% (Excellent)</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-color good"></div>
+    <span>85-94% (Good)</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-color low"></div>
+    <span>&lt;85% (Low)</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_drillthrough_scripts %}
+<script>
+// Period mode selector auto-submit
+document.addEventListener('DOMContentLoaded', function() {
+  const periodModeSelect = document.getElementById('period_mode');
+  const form = document.getElementById('drillthroughFilterForm');
+  
+  if (periodModeSelect && form) {
+    periodModeSelect.addEventListener('change', function() {
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    });
+  }
+});
+</script>
+{% endblock %}

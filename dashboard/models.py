@@ -373,3 +373,45 @@ class ServiceRequestDrillThrough(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."service_request_drill_through"'
+
+
+class AvgTurnTimeDrillThrough(models.Model):
+	"""Unmanaged model for avg_turn_time_drill_through materialized view.
+	
+	Represents unit turn time data including move-out dates, make-ready dates,
+	vacant days, and associated expenses across properties.
+	"""
+	property_name = models.CharField(max_length=255, blank=True, null=True)
+	community = models.CharField(max_length=255, blank=True, null=True)
+	regional_vp = models.CharField(max_length=255, blank=True, null=True, db_column='Regional VP  | Sr. VP')
+	regional_area_manager = models.CharField(max_length=255, blank=True, null=True)
+	investor = models.CharField(max_length=255, blank=True, null=True)
+	unit = models.CharField(max_length=100, blank=True, null=True)
+	floor_plan = models.CharField(max_length=100, blank=True, null=True, db_column='Floor Plan')
+	previous_lease_move_out = models.DateField(blank=True, null=True, db_column='Previous Lease Move Out')
+	make_ready_date = models.DateField(blank=True, null=True, db_column='Make Ready Date')
+	make_ready_date_errored = models.IntegerField(blank=True, null=True, db_column='Make Ready Date Errored')
+	turn_time_measure_second = models.IntegerField(blank=True, null=True)
+	move_in_date = models.DateField(blank=True, null=True)
+	vacant_days = models.IntegerField(blank=True, null=True)
+	previously_occupied_time = models.CharField(max_length=50, blank=True, null=True)
+	onesite_id_property_unit = models.CharField(max_length=255, primary_key=True, db_column='OneSiteID-Property-Unit')
+	capx_expense = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+	rehab_expense = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+	standard_expense = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+	category_name = models.CharField(max_length=255, blank=True, null=True)
+	cost_type = models.CharField(max_length=100, blank=True, null=True)
+	gl_code = models.CharField(max_length=50, blank=True, null=True)
+	gl_description = models.CharField(max_length=255, blank=True, null=True)
+	gl_type_invoice = models.CharField(max_length=100, blank=True, null=True)
+	invoice_date = models.DateField(blank=True, null=True)
+	invoice_status = models.CharField(max_length=100, blank=True, null=True)
+	irn = models.CharField(max_length=100, blank=True, null=True, db_column='IRN')
+	posting_date = models.DateField(blank=True, null=True)
+	process_status = models.CharField(max_length=100, blank=True, null=True)
+	sum_of_line_item_total = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+	turn_cost_by_unit = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+	
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."avg_turn_time_drill_through"'

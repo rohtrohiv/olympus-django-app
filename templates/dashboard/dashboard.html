@@ -934,7 +934,17 @@ select[multiple] option:checked {
             <div class="chart-card">
                 <canvas id="chartRent"></canvas>
             </div>
-            <div class="chart-card">
+            <div class="chart-card" style="position: relative;">
+                <a href="{% url 'occupancy_eom_drillthrough' %}"
+                   class="chart-details-link"
+                   role="button"
+                   aria-label="Open occupancy drill-through"
+                   style="position: absolute; top: 8px; right: 8px; z-index: 100; width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; background:rgba(16,24,40,0.06); color:#0f172a; border-radius:50%; text-decoration:none; border:1px solid rgba(15,23,42,0.06); cursor:pointer; transition: transform .12s ease, box-shadow .12s ease, background .12s ease;"
+                   onmouseover="this.style.transform='scale(1.08)'; this.style.boxShadow='0 6px 18px rgba(15,23,42,0.12)'; this.style.background='rgba(16,24,40,0.12)';"
+                   onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none'; this.style.background='rgba(16,24,40,0.06)';"
+                   title="Open occupancy drill-through">
+                    <i class="fas fa-chevron-right" aria-hidden="true" style="font-size:14px;"></i>
+                </a>
                 <canvas id="chartOccRev"></canvas>
             </div>
             <div class="chart-card">

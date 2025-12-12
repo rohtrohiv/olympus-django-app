@@ -4279,12 +4279,10 @@ def _prepare_delinquency_drill_query(request):
 	filter_params = []
 	active_filters = {}
 	
-	# Exclude Livcor properties
-	investor_col = _find_column_by_keywords(columns, ['investor'])
-	if investor_col:
-		investor_ident = _quote_ident(investor_col)
-		filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
-		filter_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
+	# Note: investor-based exclusions (e.g., Livcor) are applied later after
+	# processing explicit filter selections so that choosing an investor like
+	# 'Livcor' will return results. We intentionally do not add unconditional
+	# exclusions here.
 	
 	for field in DELINQUENCY_FILTER_FIELDS:
 		values = _extract_filter_list(request, request.GET, field['key'])
@@ -5157,6 +5155,594 @@ def service_request_drillthrough_export(request):
 	for raw in rows:
 		row_dict = dict(zip(alias_order, raw))
 		writer.writerow([_format_service_request_value(alias, row_dict.get(alias)) for alias in alias_order])
+
+	return response
+
+
+# ============================================================================
+# AVERAGE TURN TIME DRILL-THROUGH VIEWS
+# ============================================================================
+
+AVG_TURN_TIME_DRILL_VIEW = 'web_ai.avg_turn_time_drill_through'
+AVG_TURN_TIME_DRILL_PAGE_SIZE = 500
+
+AVG_TURN_TIME_FILTER_FIELDS = [
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'keywords': ['regional', 'vp']},
+	{'key': 'regional_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'area', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+]
+
+AVG_TURN_TIME_TABLE_FIELDS = [
+	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
+	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
+	{'key': 'unit', 'label': 'Unit', 'keywords': ['unit']},
+	{'key': 'floor_plan', 'label': 'Floor Plan', 'exact': 'Floor Plan'},
+	{'key': 'previous_lease_move_out', 'label': 'Previous Move Out', 'exact': 'Previous Lease Move Out'},
+	{'key': 'make_ready_date', 'label': 'Make Ready Date', 'exact': 'Make Ready Date'},
+	{'key': 'turn_time_measure_second', 'label': 'Turn Time (Days)', 'keywords': ['turn', 'time', 'measure']},
+	{'key': 'vacant_days', 'label': 'Vacant Days', 'keywords': ['vacant', 'days']},
+	{'key': 'capx_expense', 'label': 'CapEx Expense', 'keywords': ['capx', 'expense']},
+	{'key': 'rehab_expense', 'label': 'Rehab Expense', 'keywords': ['rehab', 'expense']},
+	{'key': 'standard_expense', 'label': 'Standard Expense', 'keywords': ['standard', 'expense']},
+	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'exact': 'Regional VP  | Sr. VP'},
+	{'key': 'regional_area_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'area', 'manager']},
+	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
+]
+
+
+def _get_avg_turn_time_drill_columns():
+	"""Get all columns from the avg turn time drill-through materialized view."""
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'avg_turn_time_drill_through']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Avg turn time drill-through column introspection failed:', exc)
+
+	if columns:
+		return columns
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.avg_turn_time_drill_through'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Avg turn time drill-through pg_attribute introspection failed:', exc)
+
+	return columns
+
+
+def _fetch_avg_turn_time_filter_options(columns):
+	"""Fetch distinct values for filterable avg turn time columns."""
+	filter_options = {}
+	for field in AVG_TURN_TIME_FILTER_FIELDS:
+		col = None
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		if not col and 'keywords' in field:
+			col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+
+		ident = _quote_ident(col)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(
+					f"SELECT DISTINCT {ident} FROM {AVG_TURN_TIME_DRILL_VIEW} "
+					f"WHERE {ident} IS NOT NULL AND {ident} != '' ORDER BY {ident} LIMIT 500"
+				)
+				filter_options[field['key']] = [row[0] for row in cur.fetchall() if row[0]]
+		except Exception as exc:
+			print(f'Avg turn time drill-through filter options for {field["key"]} failed:', exc)
+			filter_options[field['key']] = []
+
+	return filter_options
+
+
+def _format_avg_turn_time_value(alias, val):
+	"""Format a value for avg turn time table display."""
+	if val is None:
+		return ''
+	# Format expenses as currency
+	if 'expense' in alias.lower():
+		try:
+			return f'${float(val):,.2f}'
+		except:
+			return str(val)
+	# Format dates
+	if 'date' in alias.lower() or 'move' in alias.lower():
+		if hasattr(val, 'strftime'):
+			return val.strftime('%Y-%m-%d')
+	return str(val)
+
+
+def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns):
+	"""Calculate summary metrics for avg turn time drill-through."""
+	summary = {
+		'apartment_homes': 0,
+		'total_turns': 0,
+		'avg_turn_days': 0,
+		'percent_under_7_days': 0,
+		'total_expenses': 0,
+		'avg_turn_cost': 0,
+	}
+
+	# Initialize parameters at function scope
+	local_clauses = list(filter_clauses) if filter_clauses else []
+	local_params = list(filter_params) if filter_params else []
+
+	# Apartment homes count should be calculated across the entire materialized view
+	# Build apartment_homes count using all active filters EXCEPT the date
+	# range filter. We detect the Make Ready Date column and exclude any
+	# clauses that reference it so date-range filtering does not affect this
+	# metric while other filter panel selections still apply.
+	apartment_homes = 0
+	try:
+		# identify the make ready date column (used for date filters)
+		make_ready_col = _find_exact_column(columns, 'Make Ready Date')
+		q_make_ready = _quote_ident(make_ready_col) if make_ready_col else None
+
+		non_date_clauses = []
+		non_date_params = []
+		# iterate clauses and params in order; allocate params to their clause
+		params_iter = iter(local_params)
+		for clause in local_clauses:
+			ph = clause.count('%s')
+			chunk = []
+			for _ in range(ph):
+				try:
+					chunk.append(next(params_iter))
+				except StopIteration:
+					break
+			# skip clauses that reference the make ready/date column
+			if q_make_ready and q_make_ready in clause:
+				continue
+			non_date_clauses.append(clause)
+			non_date_params.extend(chunk)
+
+		apt_sql = f'SELECT COUNT(DISTINCT "OneSiteID-Property-Unit") FROM {AVG_TURN_TIME_DRILL_VIEW}'
+		if non_date_clauses:
+			apt_sql += ' WHERE ' + ' AND '.join(non_date_clauses)
+		with connection.cursor() as cur:
+			cur.execute(apt_sql, non_date_params)
+			row = cur.fetchone()
+			apartment_homes = row[0] if row and row[0] is not None else 0
+	except Exception as exc:
+		print('Apartment homes count (non-date filters) failed:', exc)
+		apartment_homes = 0
+
+	# Build summary SQL
+	turn_time_col = _find_column_by_keywords(columns, ['turn', 'time', 'measure'])
+	capx_col = _find_column_by_keywords(columns, ['capx', 'expense'])
+	rehab_col = _find_column_by_keywords(columns, ['rehab', 'expense'])
+	standard_col = _find_column_by_keywords(columns, ['standard', 'expense'])
+	property_col = _find_column_by_keywords(columns, ['property', 'name'])
+
+	sql_parts = [
+		'COUNT(*) as total_turns',
+		f'COUNT(DISTINCT {_quote_ident(property_col)}) as apartment_homes' if property_col else 'COUNT(DISTINCT 1) as apartment_homes'
+	]
+
+	if turn_time_col:
+		sql_parts.append(f'AVG({_quote_ident(turn_time_col)}) as avg_turn')
+		sql_parts.append(f'SUM(CASE WHEN {_quote_ident(turn_time_col)} < 7 THEN 1 ELSE 0 END) as under_7_days')
+
+	if capx_col and rehab_col and standard_col:
+		sql_parts.append(
+			f'SUM(COALESCE({_quote_ident(capx_col)}, 0) + '
+			f'COALESCE({_quote_ident(rehab_col)}, 0) + '
+			f'COALESCE({_quote_ident(standard_col)}, 0)) as total_exp'
+		)
+		sql_parts.append(
+			f'AVG(COALESCE({_quote_ident(capx_col)}, 0) + '
+			f'COALESCE({_quote_ident(rehab_col)}, 0) + '
+			f'COALESCE({_quote_ident(standard_col)}, 0)) as avg_cost'
+		)
+
+	if not sql_parts:
+		return summary
+
+	sql = f"SELECT {', '.join(sql_parts)} FROM {AVG_TURN_TIME_DRILL_VIEW}"
+	if local_clauses:
+		sql += ' WHERE ' + ' AND '.join(local_clauses)
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(sql, local_params)
+			data = dict(zip([desc[0] for desc in cur.description], cur.fetchone() or []))
+	except Exception as exc:
+		print('Avg turn time drill-through summary calculation failed:', exc)
+		return summary
+
+	total_turns = data.get('total_turns') or 0
+	under_7_days = data.get('under_7_days') or 0
+	
+	# Use the unfiltered apartment_homes if the direct COUNT succeeded; otherwise
+	# fall back to the filtered count returned by the summary query.
+	if apartment_homes and apartment_homes > 0:
+		summary['apartment_homes'] = apartment_homes
+	else:
+		summary['apartment_homes'] = data.get('apartment_homes') or 0
+	summary['total_turns'] = total_turns
+	summary['avg_turn_days'] = round(data.get('avg_turn') or 0, 2)
+	summary['percent_under_7_days'] = round((under_7_days / total_turns * 100) if total_turns > 0 else 0, 2)
+	summary['total_expenses'] = round(data.get('total_exp') or 0, 2)
+	summary['avg_turn_cost'] = round(data.get('avg_cost') or 0, 2)
+
+	return summary
+
+
+def _prepare_avg_turn_time_drill_query(request):
+	"""Prepare avg turn time drill-through query components."""
+	columns = _get_avg_turn_time_drill_columns()
+	if not columns:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {},
+				'filter_options': {},
+				'filters': {},
+				'error': 'The avg turn time drill-through view is currently unavailable.',
+			},
+		}
+
+	select_parts = []
+	display_columns = []
+	alias_order = []
+	alias_to_source = {}
+
+	for field in AVG_TURN_TIME_TABLE_FIELDS:
+		col = None
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		if not col and 'keywords' in field:
+			col = _find_column_by_keywords(columns, field['keywords'])
+		if not col:
+			continue
+		alias = field['key']
+		alias_to_source[alias] = col
+		alias_order.append(alias)
+		display_columns.append({'key': alias, 'label': field['label']})
+		quoted_alias = _quote_ident(alias) if alias and alias[0].isdigit() else alias
+		select_parts.append(f"{_quote_ident(col)} AS {quoted_alias}")
+
+	filter_options = _fetch_avg_turn_time_filter_options(columns)
+
+	if not select_parts:
+		return {
+			'error': True,
+			'error_context': {
+				'table_columns': [],
+				'table_rows': [],
+				'metrics': {},
+				'filter_options': filter_options,
+				'filters': {},
+				'error': 'No recognizable columns were found for the avg turn time drill-through dataset.',
+			},
+		}
+
+	filter_clauses = []
+	filter_params = []
+	active_filters = {}
+
+	# Exclude Livcor properties
+	investor_col = _find_column_by_keywords(columns, ['investor'])
+	if investor_col:
+		investor_ident = _quote_ident(investor_col)
+		filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
+		filter_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
+
+	# Handle date range filters (Make Ready Date)
+	start_date = request.GET.get('start_date', '').strip()
+	end_date = request.GET.get('end_date', '').strip()
+
+	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
+
+	if make_ready_col:
+		# If no dates provided, default to current month's data up to latest available date
+		if not start_date and not end_date:
+			from datetime import date as _date
+			today = _date.today()
+			first_of_month = _date(today.year, today.month, 1)
+			# Query the latest available date for this column within current month
+			max_sql = f"SELECT MAX({_quote_ident(make_ready_col)}) FROM {AVG_TURN_TIME_DRILL_VIEW} WHERE {_quote_ident(make_ready_col)} >= %s"
+			try:
+				with connection.cursor() as cur:
+					cur.execute(max_sql, [first_of_month])
+					max_row = cur.fetchone()
+					max_val = max_row[0] if max_row else None
+			except Exception:
+				max_val = None
+			# Determine end_date: use max_val if present and not in the future, otherwise use today
+			if max_val:
+				try:
+					max_date_only = max_val.date() if hasattr(max_val, 'date') else max_val
+				except Exception:
+					max_date_only = max_val
+				if max_date_only and max_date_only <= today:
+					end_date_eff = max_date_only
+				else:
+					end_date_eff = today
+			else:
+				end_date_eff = today
+			# Format as ISO date strings
+			start_date = first_of_month.isoformat()
+			end_date = end_date_eff.isoformat()
+			filter_clauses.append(f"{_quote_ident(make_ready_col)} >= %s")
+			filter_params.append(start_date)
+			active_filters['start_date'] = start_date
+			filter_clauses.append(f"{_quote_ident(make_ready_col)} <= %s")
+			filter_params.append(end_date)
+			active_filters['end_date'] = end_date
+		else:
+			if start_date:
+				filter_clauses.append(f"{_quote_ident(make_ready_col)} >= %s")
+				filter_params.append(start_date)
+				active_filters['start_date'] = start_date
+			if end_date:
+				filter_clauses.append(f"{_quote_ident(make_ready_col)} <= %s")
+				filter_params.append(end_date)
+				active_filters['end_date'] = end_date
+
+	for field in AVG_TURN_TIME_FILTER_FIELDS:
+		values = _extract_filter_list(request, request.GET, field['key'])
+		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
+		active_filters[field['key']] = values[0] if values else ''
+		if not clean:
+			continue
+		if 'exact' in field:
+			col = _find_exact_column(columns, field['exact'])
+		else:
+			col = _find_column_by_keywords(columns, field.get('keywords', []))
+		if not col:
+			continue
+		clause_parts = []
+		for val in clean:
+			clause_parts.append(f"{_quote_ident(col)} ILIKE %s")
+			filter_params.append(f"%{val}%")
+		if clause_parts:
+			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+
+	# Apply Livcor exclusion only when the user has not explicitly filtered by investor.
+	# If the investor filter is set (e.g., 'Livcor'), do not exclude it.
+	investor_col = _find_column_by_keywords(columns, ['investor'])
+	if investor_col:
+		inv_selected = active_filters.get('investor', '') or ''
+		if not inv_selected or inv_selected.strip().lower() in ['', 'all']:
+			investor_ident = _quote_ident(investor_col)
+			filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
+			filter_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
+
+	return {
+		'error': False,
+		'columns': columns,
+		'display_columns': display_columns,
+		'alias_order': alias_order,
+		'alias_to_source': alias_to_source,
+		'select_parts': select_parts,
+		'filter_clauses': filter_clauses,
+		'filter_params': filter_params,
+		'active_filters': active_filters,
+		'filter_options': filter_options,
+	}
+
+
+def _build_avg_turn_time_drill_context(request):
+	"""Build complete context for avg turn time drill-through view."""
+	query_info = _prepare_avg_turn_time_drill_query(request)
+	if query_info.get('error'):
+		return query_info['error_context']
+
+	columns = query_info['columns']
+	display_columns = query_info['display_columns']
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+	active_filters = query_info['active_filters']
+	filter_options = query_info['filter_options']
+
+	summary = _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns)
+
+	# Count total matching records for pagination
+	count_sql = f"SELECT COUNT(*) FROM {AVG_TURN_TIME_DRILL_VIEW}"
+	if filter_clauses:
+		count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(count_sql, filter_params)
+			total_records = cur.fetchone()[0] or 0
+	except Exception as exc:
+		print('Avg turn time drill-through count query failed:', exc)
+		total_records = 0
+
+	page_size = AVG_TURN_TIME_DRILL_PAGE_SIZE
+	page_param = request.GET.get('page') if hasattr(request, 'GET') else None
+	try:
+		requested_page = int(page_param) if page_param else 1
+	except Exception:
+		requested_page = 1
+	if requested_page < 1:
+		requested_page = 1
+	if total_records:
+		total_pages = (total_records + page_size - 1) // page_size
+		page = min(requested_page, total_pages)
+	else:
+		total_pages = 1
+		page = 1
+	offset = (page - 1) * page_size if total_records else 0
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'make_ready_date' if 'make_ready_date' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {AVG_TURN_TIME_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
+	data_sql += " LIMIT %s OFFSET %s"
+	data_params = list(filter_params) + [page_size, offset]
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, data_params)
+			result = cur.fetchall()
+	except Exception as exc:
+		print('Avg turn time drill-through data query failed:', exc)
+		result = []
+
+	for raw in result:
+		row_dict = dict(zip(alias_order, raw))
+		ordered_values = [_format_avg_turn_time_value(alias, row_dict.get(alias)) for alias in alias_order]
+		rows.append(ordered_values)
+
+	start_index = offset + 1 if total_records and rows else 0
+	end_index = offset + len(rows)
+	if total_records and end_index > total_records:
+		end_index = total_records
+
+	base_query_pairs = []
+	if hasattr(request.GET, 'lists'):
+		for key, values in request.GET.lists():
+			if key == 'page':
+				continue
+			for val in values:
+				if val:
+					base_query_pairs.append((key, val))
+	
+	dashboard_return_url = request.GET.get('return_url') or reverse('dashboard')
+	if base_query_pairs:
+		base_query_pairs.append(('return_url', dashboard_return_url))
+	
+	def build_page_url(pg):
+		pairs = list(base_query_pairs)
+		pairs.append(('page', pg))
+		return f"{reverse('avg_turn_time_drillthrough')}?{urlencode(pairs, doseq=True)}"
+	
+	prev_url = build_page_url(page - 1) if page > 1 else None
+	next_url = build_page_url(page + 1) if page < total_pages else None
+
+	export_pairs = list(base_query_pairs)
+	export_base = reverse('avg_turn_time_drillthrough_export')
+	if export_pairs:
+		export_url = f"{export_base}?{urlencode(export_pairs, doseq=True)}"
+	else:
+		export_url = export_base
+
+	reset_base = reverse('avg_turn_time_drillthrough')
+	if request.GET.get('return_url'):
+		drill_reset_url = f"{reset_base}?{urlencode({'return_url': request.GET.get('return_url')})}"
+	else:
+		drill_reset_url = reset_base
+
+	filter_blocks = []
+	for field in AVG_TURN_TIME_FILTER_FIELDS:
+		key = field['key']
+		filter_blocks.append({
+			'key': key,
+			'label': field['label'],
+			'options': filter_options.get(key, []),
+			'selected': active_filters.get(key, ''),
+		})
+
+	return {
+		'table_columns': display_columns,
+		'table_rows': rows,
+		'metrics': summary,
+		'filters': {
+			**active_filters,
+			'start_date': active_filters.get('start_date', ''),
+			'end_date': active_filters.get('end_date', ''),
+		},
+		'filter_options': filter_options,
+		'filter_blocks': filter_blocks,
+		'columns': columns,
+		'pagination': {
+			'page': page,
+			'total_pages': total_pages,
+			'total_count': total_records,
+			'start_index': start_index,
+			'end_index': end_index,
+			'page_size': page_size,
+			'has_prev': page > 1,
+			'has_next': page < total_pages,
+			'prev_url': prev_url,
+			'next_url': next_url,
+		},
+		'dashboard_return_url': dashboard_return_url,
+		'drill_reset_url': drill_reset_url,
+		'export_url': export_url,
+	}
+
+
+@login_required
+def avg_turn_time_drillthrough_view(request):
+	"""View for avg turn time drill-through page."""
+	context = _build_avg_turn_time_drill_context(request)
+	return render(request, 'dashboard/avg_turn_time_drillthrough.html', context)
+
+
+@login_required
+def avg_turn_time_drillthrough_csv(request):
+	"""Export avg turn time drill-through data as CSV."""
+	query_info = _prepare_avg_turn_time_drill_query(request)
+	if query_info.get('error'):
+		return HttpResponse('Data unavailable', status=500)
+
+	display_columns = query_info['display_columns']
+	alias_order = query_info['alias_order']
+	select_parts = query_info['select_parts']
+	filter_clauses = query_info['filter_clauses']
+	filter_params = query_info['filter_params']
+
+	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
+	order_alias = 'make_ready_date' if 'make_ready_date' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {AVG_TURN_TIME_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
+	data_sql += " LIMIT 10000"
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, filter_params)
+			result = cur.fetchall()
+	except Exception as exc:
+		print('Avg turn time drill-through CSV export failed:', exc)
+		return HttpResponse('Export failed', status=500)
+
+	for raw in result:
+		row_dict = dict(zip(alias_order, raw))
+		ordered_values = [_format_avg_turn_time_value(alias, row_dict.get(alias)) for alias in alias_order]
+		rows.append(ordered_values)
+
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = 'attachment; filename="avg_turn_time_data.csv"'
+
+	writer = csv.writer(response)
+	writer.writerow([col['label'] for col in display_columns])
+	for row in rows:
+		writer.writerow(row)
 
 	return response
 
@@ -6148,3 +6734,253 @@ def dashboard(request):
 		return JsonResponse({'kpi_html': kpi_html, 'table_html': table_html, 'selected_period': svc_ctx.get('selected_period')})
 
 	return render(request, 'dashboard/dashboard.html', context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# OCCUPANCY EOM DRILL-THROUGH
+# ─────────────────────────────────────────────────────────────────────────────────
+
+def occupancy_eom_drillthrough_view(request):
+	"""
+	Occupancy End-of-Month drill-through view.
+	Displays property-level occupancy % in a pivot table: properties as rows, months as columns.
+	Data source: OlympusLeaseTrendAnalysis.percentage_occupacy
+	"""
+	# Get filter parameters
+	community = request.GET.get('community', '')
+	regional_vp = request.GET.get('regional_vp', '')
+	regional_manager = request.GET.get('regional_manager', '')
+	investor = request.GET.get('investor', '')
+	
+	# Get period mode (monthly, quarterly, yearly)
+	period_mode = request.GET.get('period_mode', 'monthly')
+	
+	# Build base query
+	qs = OlympusLeaseTrendAnalysis.objects.all()
+	
+	# Apply filters
+	if community and community.lower() not in ['', 'all']:
+		qs = qs.filter(property_name=community)
+	if regional_vp and regional_vp.lower() not in ['', 'all']:
+		qs = qs.filter(regional_director=regional_vp)
+	if regional_manager and regional_manager.lower() not in ['', 'all']:
+		qs = qs.filter(regional_area_manager=regional_manager)
+	if investor and investor.lower() not in ['', 'all']:
+		qs = qs.filter(investor=investor)
+	
+	# Fetch all records with required fields
+	records = qs.values(
+		'property_name',
+		'property_number',
+		'snapshotdate',
+		'percentage_occupacy',
+		'investor',
+		'regional_director',
+		'regional_area_manager'
+	).order_by('property_name', 'snapshotdate')
+	
+	# Build property × period pivot table
+	property_data = {}  # {property_name: {period_key: occupancy_value}}
+	periods = set()  # All unique periods
+	
+	for record in records:
+		prop_name = record['property_name'] or 'Unknown'
+		snapshot_date = record['snapshotdate']
+		occupancy = record['percentage_occupacy']
+		
+		if not snapshot_date or occupancy is None:
+			continue
+		
+		# Generate period key based on period_mode
+		if period_mode == 'yearly':
+			period_key = snapshot_date.strftime('%Y')
+		elif period_mode == 'quarterly':
+			quarter = (snapshot_date.month - 1) // 3 + 1
+			period_key = f"Q{quarter}-{snapshot_date.year}"
+		else:  # monthly (default)
+			period_key = snapshot_date.strftime('%b-%Y')
+		
+		periods.add(period_key)
+		
+		# Initialize property dict if not exists
+		if prop_name not in property_data:
+			property_data[prop_name] = {
+				'property_name': prop_name,
+				'investor': record['investor'],
+				'regional_vp': record['regional_director'],
+				'regional_manager': record['regional_area_manager'],
+				'periods': {}
+			}
+		
+		# Store occupancy value for this property-period combination
+		# If multiple snapshots exist for same period, take the latest (or average)
+		if period_key not in property_data[prop_name]['periods']:
+			property_data[prop_name]['periods'][period_key] = []
+		property_data[prop_name]['periods'][period_key].append(occupancy)
+	
+	# Sort periods chronologically
+	if period_mode == 'yearly':
+		sorted_periods = sorted(periods, key=lambda x: int(x))
+	elif period_mode == 'quarterly':
+		sorted_periods = sorted(periods, key=lambda x: (int(x.split('-')[1]), int(x[1])))
+	else:  # monthly
+		sorted_periods = sorted(periods, key=lambda x: datetime.strptime(x, '%b-%Y'))
+	
+	# Calculate average occupancy for each property-period cell
+	for prop_name in property_data:
+		for period_key in property_data[prop_name]['periods']:
+			values = property_data[prop_name]['periods'][period_key]
+			avg_occupancy = round(sum(values) / len(values), 2) if values else 0.0
+			property_data[prop_name]['periods'][period_key] = avg_occupancy
+	
+	# Convert to list for template
+	property_rows = []
+	for prop_name, data in sorted(property_data.items()):
+		row = {
+			'property_name': prop_name,
+			'investor': data['investor'],
+			'regional_vp': data['regional_vp'],
+			'regional_manager': data['regional_manager'],
+			'period_values': [data['periods'].get(p, None) for p in sorted_periods]
+		}
+		property_rows.append(row)
+	
+	# Fetch filter choices for dropdown population
+	investors = OlympusLeaseTrendAnalysis.objects.values_list('investor', flat=True).distinct().order_by('investor')
+	communities = OlympusLeaseTrendAnalysis.objects.values_list('property_name', flat=True).distinct().order_by('property_name')
+	regional_vps = OlympusLeaseTrendAnalysis.objects.values_list('regional_director', flat=True).distinct().order_by('regional_director')
+	regional_managers = OlympusLeaseTrendAnalysis.objects.values_list('regional_area_manager', flat=True).distinct().order_by('regional_area_manager')
+	
+	# Filter out None/empty values
+	investors = [i for i in investors if i]
+	communities = [c for c in communities if c]
+	regional_vps = [r for r in regional_vps if r]
+	regional_managers = [r for r in regional_managers if r]
+	
+	context = {
+		'property_rows': property_rows,
+		'period_columns': sorted_periods,
+		'period_mode': period_mode,
+		'selected_community': community,
+		'selected_regional_vp': regional_vp,
+		'selected_regional_manager': regional_manager,
+		'selected_investor': investor,
+		'investors': investors,
+		'communities': communities,
+		'regional_vps': regional_vps,
+		'regional_managers': regional_managers,
+		'total_properties': len(property_rows),
+		'total_periods': len(sorted_periods)
+	}
+	
+	return render(request, 'dashboard/occupancy_eom_drillthrough.html', context)
+
+
+def occupancy_eom_drillthrough_csv(request):
+	"""CSV export for occupancy EOM drill-through data."""
+	import csv
+	
+	# Reuse the same query logic as the main view
+	# Get filter parameters
+	community = request.GET.get('community', '')
+	regional_vp = request.GET.get('regional_vp', '')
+	regional_manager = request.GET.get('regional_manager', '')
+	investor = request.GET.get('investor', '')
+	period_mode = request.GET.get('period_mode', 'monthly')
+	
+	# Build base query
+	qs = OlympusLeaseTrendAnalysis.objects.all()
+	
+	# Apply filters
+	if community and community.lower() not in ['', 'all']:
+		qs = qs.filter(property_name=community)
+	if regional_vp and regional_vp.lower() not in ['', 'all']:
+		qs = qs.filter(regional_director=regional_vp)
+	if regional_manager and regional_manager.lower() not in ['', 'all']:
+		qs = qs.filter(regional_area_manager=regional_manager)
+	if investor and investor.lower() not in ['', 'all']:
+		qs = qs.filter(investor=investor)
+	
+	# Fetch all records
+	records = qs.values(
+		'property_name',
+		'property_number',
+		'snapshotdate',
+		'percentage_occupacy',
+		'investor',
+		'regional_director',
+		'regional_area_manager'
+	).order_by('property_name', 'snapshotdate')
+	
+	# Build pivot table
+	property_data = {}
+	periods = set()
+	
+	for record in records:
+		prop_name = record['property_name'] or 'Unknown'
+		snapshot_date = record['snapshotdate']
+		occupancy = record['percentage_occupacy']
+		
+		if not snapshot_date or occupancy is None:
+			continue
+		
+		if period_mode == 'yearly':
+			period_key = snapshot_date.strftime('%Y')
+		elif period_mode == 'quarterly':
+			quarter = (snapshot_date.month - 1) // 3 + 1
+			period_key = f"Q{quarter}-{snapshot_date.year}"
+		else:
+			period_key = snapshot_date.strftime('%b-%Y')
+		
+		periods.add(period_key)
+		
+		if prop_name not in property_data:
+			property_data[prop_name] = {
+				'property_name': prop_name,
+				'investor': record['investor'],
+				'regional_vp': record['regional_director'],
+				'regional_manager': record['regional_area_manager'],
+				'periods': {}
+			}
+		
+		if period_key not in property_data[prop_name]['periods']:
+			property_data[prop_name]['periods'][period_key] = []
+		property_data[prop_name]['periods'][period_key].append(occupancy)
+	
+	# Sort periods
+	if period_mode == 'yearly':
+		sorted_periods = sorted(periods, key=lambda x: int(x))
+	elif period_mode == 'quarterly':
+		sorted_periods = sorted(periods, key=lambda x: (int(x.split('-')[1]), int(x[1])))
+	else:
+		sorted_periods = sorted(periods, key=lambda x: datetime.strptime(x, '%b-%Y'))
+	
+	# Calculate averages
+	for prop_name in property_data:
+		for period_key in property_data[prop_name]['periods']:
+			values = property_data[prop_name]['periods'][period_key]
+			avg_occupancy = round(sum(values) / len(values), 2) if values else 0.0
+			property_data[prop_name]['periods'][period_key] = avg_occupancy
+	
+	# Create CSV response
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="occupancy_eom_{period_mode}.csv"'
+	
+	writer = csv.writer(response)
+	
+	# Write header
+	header = ['Property Name', 'Investor', 'Regional VP', 'Regional Manager'] + sorted_periods
+	writer.writerow(header)
+	
+	# Write data rows
+	for prop_name, data in sorted(property_data.items()):
+		row = [
+			prop_name,
+			data['investor'] or '',
+			data['regional_vp'] or '',
+			data['regional_manager'] or ''
+		]
+		row.extend([data['periods'].get(p, '') for p in sorted_periods])
+		writer.writerow(row)
+	
+	return response
