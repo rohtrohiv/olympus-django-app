@@ -188,6 +188,22 @@
 {% endblock %}
 
 {% block criteria_date_filters %}
+<!-- Legend -->
+<div class="occupancy-legend">
+  <strong><i class="fas fa-info-circle"></i> Color Legend:</strong>
+  <div class="legend-item">
+    <div class="legend-color excellent"></div>
+    <span>≥95% (Excellent)</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-color good"></div>
+    <span>85-94% (Good)</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-color low"></div>
+    <span>&lt;85% (Low)</span>
+  </div>
+</div>
 <!-- Occupancy Pivot Table -->
 <div class="occupancy-pivot-table">
   <table>
@@ -232,22 +248,7 @@
   </table>
 </div>
 
-<!-- Legend -->
-<div class="occupancy-legend">
-  <strong><i class="fas fa-info-circle"></i> Color Legend:</strong>
-  <div class="legend-item">
-    <div class="legend-color excellent"></div>
-    <span>≥95% (Excellent)</span>
-  </div>
-  <div class="legend-item">
-    <div class="legend-color good"></div>
-    <span>85-94% (Good)</span>
-  </div>
-  <div class="legend-item">
-    <div class="legend-color low"></div>
-    <span>&lt;85% (Low)</span>
-  </div>
-</div>
+
 {% endblock %}
 
 {% block extra_drillthrough_scripts %}
