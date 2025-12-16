@@ -20,7 +20,11 @@ urlpatterns = [
     path('drillthrough/service-request/export/', views.service_request_drillthrough_export, name='service_request_drillthrough_export'),
     path('drillthrough/avg-turn-time/', views.avg_turn_time_drillthrough_view, name='avg_turn_time_drillthrough'),
     path('drillthrough/avg-turn-time/export/', views.avg_turn_time_drillthrough_csv, name='avg_turn_time_drillthrough_export'),
+    path('drillthrough/trade-out/', views.trade_out_drillthrough_view, name='trade_out_drillthrough'),
+    path('drillthrough/trade-out/export/', views.trade_out_drillthrough_export, name='trade_out_drillthrough_export'),
     path('drillthrough/occupancy-eom/', views.occupancy_eom_drillthrough_view, name='occupancy_eom_drillthrough'),
     path('drillthrough/occupancy-eom/export/', views.occupancy_eom_drillthrough_csv, name='occupancy_eom_drillthrough_csv'),
+    path('drillthrough/move-out-reasons/', views.move_out_reasons_drillthrough, name='move_out_reasons_drillthrough'),
+    path('drillthrough/move-out-reasons/export/', views.move_out_reasons_drillthrough_export, name='move_out_reasons_drillthrough_export'),
     path('sample/', views.sample_page, name='sample_page'),
 ]

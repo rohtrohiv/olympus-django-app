@@ -1,0 +1,103 @@
+{% extends "dashboard/drillthrough_base.html" %}
+{% block drillthrough_title %}Trade Out Drill-Through{% endblock %}
+
+{% block metric_cards %}
+<article class="metric-card">
+  <span>Renewals</span>
+  <strong>{{ metrics.renewals|floatformat:0|default:'0' }}</strong>
+  <small>Total renewals</small>
+</article>
+<article class="metric-card">
+  <span>Renewal %</span>
+  <strong>{{ metrics.renewal_percentage|floatformat:2|default:'0' }}%</strong>
+  <small>Renewal rate</small>
+</article>
+<article class="metric-card">
+  <span>Avg Trade Out $ Renewal</span>
+  <strong>${{ metrics.renewal_trade_out_avg_dollar|floatformat:0|default:'0' }}</strong>
+  <small>Average renewal trade-out</small>
+</article>
+<article class="metric-card">
+  <span>Avg Trade Out % Renewals</span>
+  <strong>{{ metrics.renewal_trade_out_avg_percent|floatformat:2|default:'0' }}%</strong>
+  <small>Renewal trade-out percentage</small>
+</article>
+<article class="metric-card">
+  <span>New Leases</span>
+  <strong>{{ metrics.new_leases|floatformat:0|default:'0' }}</strong>
+  <small>Total new leases</small>
+</article>
+<article class="metric-card">
+  <span>Avg Trade Out $ New leases</span>
+  <strong>${{ metrics.new_lease_trade_out_avg_dollar|floatformat:0|default:'0' }}</strong>
+  <small>Average new lease trade-out</small>
+</article>
+<article class="metric-card">
+  <span>Avg Trade Out % New Leases</span>
+  <strong>{{ metrics.new_lease_trade_out_avg_percent|floatformat:2|default:'0' }}%</strong>
+  <small>New lease trade-out percentage</small>
+</article>
+{% endblock %}
+
+{% block filter_panel_extra_fields %}
+<!-- Criteria and dates are handled by the visible inputs below with form="drillthroughFilterForm" -->
+{% endblock %}
+
+{% block criteria_date_filters %}
+<div class="criteria-date-filters">
+  <div class="criteria-filter-box">
+    <h4>Trade Out Criteria</h4>
+    <div class="radio-group">
+      <label>
+        <input type="radio" name="criteria" value="signed" {% if filters.criteria == 'signed' %}checked{% endif %} form="drillthroughFilterForm">
+        <span>Current Lease Signed Date</span>
+      </label>
+    </div>
+    <div class="radio-group">
+      <label>
+        <input type="radio" name="criteria" value="start" {% if filters.criteria == 'start' or not filters.criteria %}checked{% endif %} form="drillthroughFilterForm">
+        <span>Current Lease Start Date</span>
+      </label>
+    </div>
+  </div>
+  <div class="date-filter-box">
+    <h4 id="dateRangeHeader">{% if filters.criteria == 'signed' %}Current Lease Signed Date{% else %}Current Lease Start Date{% endif %}</h4>
+    <div class="date-inputs">
+      <input type="date" name="start_date" id="start_date" value="{{ filters.start_date }}" placeholder="Start Date" form="drillthroughFilterForm">
+      <span>to</span>
+      <input type="date" name="end_date" id="end_date" value="{{ filters.end_date }}" placeholder="End Date" form="drillthroughFilterForm">
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const criteriaRadios = document.querySelectorAll('input[name="criteria"]');
+  const dateHeader = document.getElementById('dateRangeHeader');
+  
+  // Update header text when criteria changes
+  criteriaRadios.forEach(radio => {
+    radio.addEventListener('change', function() {
+      if (this.value === 'signed') {
+        dateHeader.textContent = 'Current Lease Signed Date';
+      } else {
+        dateHeader.textContent = 'Current Lease Start Date';
+      }
+    });
+  });
+});
+</script>
+{% endblock %}
+
+{% block extra_filters %}{% endblock %}
+
+{% block extra_drillthrough_styles %}
+<style>
+.negative {
+  color: #dc3545;
+}
+.positive {
+  color: #28a745;
+}
+</style>
+{% endblock %}

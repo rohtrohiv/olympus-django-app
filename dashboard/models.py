@@ -415,3 +415,86 @@ class AvgTurnTimeDrillThrough(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."avg_turn_time_drill_through"'
+
+
+class TradeOutDrillThrough(models.Model):
+	"""Unmanaged model for trade_out_drill_through materialized view.
+	
+	Represents lease trade-out analysis comparing current and previous leases,
+	including rent changes, concessions, and lease terms across properties.
+	
+	Trade Out metrics show the difference between previous and current lease
+	effective rents, helping identify renewal pricing strategies and revenue trends.
+	
+	Total rows: ~111K records
+	"""
+	property_name = models.CharField(max_length=255, blank=True, null=True)
+	unit = models.CharField(max_length=100, blank=True, null=True)
+	floor_plan = models.CharField(max_length=100, blank=True, null=True, db_column='Floor Plan')
+	renewal_new_lease = models.CharField(max_length=50, blank=True, null=True, db_column='Renewal/New Lease')
+	current_lease_start_date = models.DateField(blank=True, null=True, db_column='Current Lease Start Date')
+	trade_out_dollar = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, db_column='Trade Out $')
+	trade_out_percent = models.DecimalField(max_digits=20, decimal_places=18, blank=True, null=True, db_column='Trade Out %')
+	# PostgreSQL money type - store as string to match DB behavior
+	current_lease_concession = models.CharField(max_length=50, blank=True, null=True, db_column='Current lease Concession')
+	current_lease_term = models.IntegerField(blank=True, null=True, db_column='Current Lease Term')
+	# PostgreSQL money type - store as string to match DB behavior
+	current_lease_effective_rent = models.CharField(max_length=50, blank=True, null=True, db_column='Current Lease Effective Rent')
+	previous_lease_term = models.IntegerField(blank=True, null=True, db_column='Previous Lease Term')
+	# PostgreSQL money type - store as string to match DB behavior
+	previous_lease_effective_rent = models.CharField(max_length=50, blank=True, null=True, db_column='Previous Lease Effective Rent')
+	current_lease_type = models.CharField(max_length=50, blank=True, null=True, db_column='Current Lease Type')
+	current_lease_end_date = models.DateField(blank=True, null=True, db_column='Current Lease End Date')
+	previous_lease_start_date = models.DateField(blank=True, null=True, db_column='Previous Lease Start Date')
+	previous_lease_end_date = models.DateField(blank=True, null=True, db_column='Previous Lease End Date')
+	onesite_id_property_unit = models.CharField(max_length=255, primary_key=True, db_column='OneSiteID | Property # | Unit #')
+	community = models.TextField(blank=True, null=True)
+	regional_vp = models.CharField(max_length=255, blank=True, null=True, db_column='Regional VP  | Sr. VP')
+	regional_area_manager = models.CharField(max_length=255, blank=True, null=True)
+	investor = models.CharField(max_length=255, blank=True, null=True)
+	current_lease_app_signed_date = models.DateField(blank=True, null=True, db_column='Current_lease_App_Signed Date')
+	lease_start_date_month_year = models.TextField(blank=True, null=True)
+	property_unit_number = models.TextField(blank=True, null=True)
+	
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."trade_out_drill_through"'
+
+
+class MoveOutReasonsDrillThrough(models.Model):
+	"""Unmanaged model for the `web_ai.move_out_reasons_drill_through` materialized view.
+
+	Columns discovered in the DB (mapped to safe Python attributes):
+	- property_name
+	- community
+	- "Regional VP  | Sr. VP"
+	- regional_area_manager
+	- "Lease ID"
+	- unit
+	- "Beds/Baths"
+	- "Lease Rent"
+	- "Lease Term"
+	- "Move-In Date"
+	- "Move-Out Date"
+	- "Move-Out Category"
+	- "Move-Out Reason"
+	- "OneSiteID-Property-Unit"
+	"""
+	property_name = models.TextField(blank=True, null=True)
+	community = models.TextField(blank=True, null=True)
+	regional_vp = models.CharField(max_length=255, blank=True, null=True, db_column='Regional VP  | Sr. VP')
+	regional_area_manager = models.CharField(max_length=255, blank=True, null=True)
+	lease_id = models.CharField(max_length=128, blank=True, null=True, db_column='Lease ID')
+	unit = models.TextField(blank=True, null=True)
+	beds_baths = models.CharField(max_length=64, blank=True, null=True, db_column='Beds/Baths')
+	lease_rent = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, db_column='Lease Rent')
+	lease_term = models.IntegerField(blank=True, null=True, db_column='Lease Term')
+	move_in_date = models.DateField(blank=True, null=True, db_column='Move-In Date')
+	move_out_date = models.DateField(blank=True, null=True, db_column='Move-Out Date')
+	move_out_category = models.CharField(max_length=255, blank=True, null=True, db_column='Move-Out Category')
+	move_out_reason = models.TextField(blank=True, null=True, db_column='Move-Out Reason')
+	onesite_id_property_unit = models.CharField(max_length=255, primary_key=False, blank=True, null=True, db_column='OneSiteID-Property-Unit')
+
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."move_out_reasons_drill_through"'

@@ -2266,6 +2266,7 @@ def _build_total_unit_drill_context(request):
 	}
 
 	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
+	# Do not include 'page' parameter — export should return the full filtered dataset
 	export_base = reverse('total_units_drillthrough_export')
 	export_query = urlencode(export_pairs, doseq=True)
 	export_url = f"{export_base}?{export_query}" if export_query else export_base
@@ -3269,6 +3270,239 @@ def occupancy_drillthrough(request):
 
 
 @login_required
+def move_out_reasons_drillthrough(request):
+	"""Move-Out Reasons drill-through page.
+
+	Queries the materialized view `web_ai.move_out_reasons_drill_through` and
+	returns context in the standardized drill-through format (table_columns,
+	table_rows, pagination, filters, filter_blocks, export_url).
+	"""
+	from django.db import connection
+	from datetime import datetime
+	from decimal import Decimal
+
+	# Read filters from request
+	community = request.GET.get('community', '')
+	regional_vp = request.GET.get('regional_vp', '')
+	regional_manager = request.GET.get('regional_manager', '')
+	start_date = request.GET.get('start_date', '')
+	end_date = request.GET.get('end_date', '')
+
+	filter_clauses = []
+	params = []
+	if community:
+		filter_clauses.append('community = %s')
+		params.append(community)
+	if regional_vp:
+		filter_clauses.append('"Regional VP  | Sr. VP" = %s')
+		params.append(regional_vp)
+	if regional_manager:
+		filter_clauses.append('regional_area_manager = %s')
+		params.append(regional_manager)
+	# Use Move-Out Date as the date filter column
+	if start_date:
+		filter_clauses.append('"Move-Out Date" >= %s')
+		params.append(start_date)
+	if end_date:
+		filter_clauses.append('"Move-Out Date" <= %s')
+		params.append(end_date)
+
+	# Exclude records without a Move-Out Date — this drill-through only shows move-outs
+	filter_clauses.append('"Move-Out Date" IS NOT NULL')
+
+	where_sql = (' WHERE ' + ' AND '.join(filter_clauses)) if filter_clauses else ''
+
+	with connection.cursor() as cursor:
+		# distinct options for filters
+		try:
+			cursor.execute('SELECT DISTINCT community FROM "web_ai"."move_out_reasons_drill_through" WHERE community IS NOT NULL ORDER BY community')
+			communities = [row[0] for row in cursor.fetchall()]
+		except Exception:
+			communities = []
+		try:
+			cursor.execute('SELECT DISTINCT "Regional VP  | Sr. VP" FROM "web_ai"."move_out_reasons_drill_through" WHERE "Regional VP  | Sr. VP" IS NOT NULL ORDER BY "Regional VP  | Sr. VP"')
+			regional_vps = [row[0] for row in cursor.fetchall()]
+		except Exception:
+			regional_vps = []
+		try:
+			cursor.execute('SELECT DISTINCT regional_area_manager FROM "web_ai"."move_out_reasons_drill_through" WHERE regional_area_manager IS NOT NULL ORDER BY regional_area_manager')
+			regional_managers = [row[0] for row in cursor.fetchall()]
+		except Exception:
+			regional_managers = []
+		investors = []
+
+		# Count for pagination
+		try:
+			cursor.execute(f'SELECT COUNT(*) FROM "web_ai"."move_out_reasons_drill_through" {where_sql}', params)
+			total_records = cursor.fetchone()[0] or 0
+		except Exception:
+			total_records = 0
+
+		page_size = 100
+		try:
+			page = int(request.GET.get('page', 1))
+		except Exception:
+			page = 1
+		if page < 1:
+			page = 1
+		offset = (page - 1) * page_size
+		total_pages = (total_records + page_size - 1) // page_size if total_records else 1
+
+		data_sql = f'''
+			SELECT property_name, community, "Regional VP  | Sr. VP", regional_area_manager,
+				   "Lease ID", unit, "Beds/Baths", "Lease Rent", "Lease Term",
+				   "Move-In Date", "Move-Out Date", "Move-Out Category", "Move-Out Reason", "OneSiteID-Property-Unit"
+			FROM "web_ai"."move_out_reasons_drill_through"
+			{where_sql}
+			ORDER BY "Move-Out Date" DESC
+			LIMIT %s OFFSET %s
+		'''
+		try:
+			cursor.execute(data_sql, params + [page_size, offset])
+			raw_rows = cursor.fetchall()
+		except Exception as exc:
+			print('Move-out drill-through data query failed:', exc)
+			raw_rows = []
+
+	# Format rows
+	table_rows = []
+	def _format_money_field(v):
+		"""Return formatted money string like "$1,234.56" for various input types."""
+		if v is None:
+			return '-'
+		# numeric types
+		try:
+			if isinstance(v, Decimal):
+				num = float(v)
+			elif isinstance(v, (int, float)):
+				num = float(v)
+			else:
+				s = str(v).strip()
+				# remove common currency formatting
+				s = s.replace('$', '').replace(',', '').replace('\u00A0', '')
+				# handle parentheses for negative values
+				if s.startswith('(') and s.endswith(')'):
+					s = '-' + s[1:-1]
+				# strip any spaces
+				s = s.strip()
+				num = float(s)
+		except Exception:
+			return str(v)
+		return f"${num:,.2f}"
+
+	for r in raw_rows:
+		# r: property_name, community, Regional VP, regional_area_manager, Lease ID, unit,
+		#    Beds/Baths, Lease Rent, Lease Term, Move-In Date, Move-Out Date, Move-Out Category, Move-Out Reason, OneSiteID
+		formatted = [
+			r[0] or '-',
+			r[1] or '-',
+			r[2] or '-',
+			r[3] or '-',
+			r[4] or '-',
+			r[5] or '-',
+			r[6] or '-',
+			_format_money_field(r[7]),
+			(str(r[8]) if r[8] is not None else '-'),
+			(r[9].strftime('%Y-%m-%d') if hasattr(r[9], 'strftime') else (str(r[9]) if r[9] else '-')),
+			(r[10].strftime('%Y-%m-%d') if hasattr(r[10], 'strftime') else (str(r[10]) if r[10] else '-')),
+			r[11] or '-',
+			r[12] or '-',
+			r[13] or '-',
+		]
+		table_rows.append(formatted)
+
+	table_columns = [
+		{'label': 'Property Name'},
+		{'label': 'Community'},
+		{'label': 'Regional VP'},
+		{'label': 'Regional Manager'},
+		{'label': 'Lease ID'},
+		{'label': 'Unit'},
+		{'label': 'Beds/Baths'},
+		{'label': 'Lease Rent'},
+		{'label': 'Lease Term'},
+		{'label': 'Move-In Date'},
+		{'label': 'Move-Out Date'},
+		{'label': 'Move-Out Category'},
+		{'label': 'Move-Out Reason'},
+		{'label': 'OneSiteID'},
+	]
+
+	# build pagination urls
+	base_query_pairs = []
+	for key in ['community','regional_vp','regional_manager','start_date','end_date','return_url']:
+		v = request.GET.get(key)
+		if v:
+			base_query_pairs.append((key, v))
+
+	from django.urls import reverse
+	from urllib.parse import urlencode
+	base_drill_url = reverse('move_out_reasons_drillthrough')
+	def _build_page_url(tp):
+		pairs = list(base_query_pairs)
+		if tp > 1:
+			pairs.append(('page', tp))
+		q = urlencode(pairs, doseq=True)
+		return f"{base_drill_url}?{q}" if q else base_drill_url
+
+	start_index = offset + 1 if total_records and table_rows else 0
+	end_index = offset + len(table_rows)
+	if total_records and end_index > total_records:
+		end_index = total_records
+
+	pagination = {
+		'page': page,
+		'page_size': page_size,
+		'total_pages': total_pages,
+		'has_prev': page > 1,
+		'has_next': bool(total_records and page < total_pages),
+		'prev_url': _build_page_url(page - 1) if page > 1 else '',
+		'next_url': _build_page_url(page + 1) if total_records and page < total_pages else '',
+		'start_index': start_index,
+		'end_index': end_index,
+		'total_count': total_records,
+	}
+
+	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
+	# Include current page in export URL so export can match the displayed table page
+	try:
+		current_page = int(request.GET.get('page', 1))
+		if current_page > 1:
+			export_pairs.append(('page', current_page))
+	except Exception:
+		pass
+	export_base = reverse('move_out_reasons_drillthrough_export') if 'move_out_reasons_drillthrough_export' in globals() else base_drill_url
+	export_query = urlencode(export_pairs, doseq=True)
+	export_url = f"{export_base}?{export_query}" if export_query else export_base
+
+	context = {
+		'page_title': 'Move-Out Reasons Drill-Through',
+		'table_columns': table_columns,
+		'table_rows': table_rows,
+		'pagination': pagination,
+		'metrics': {},
+		'filters': {
+			'community': community,
+			'regional_vp': regional_vp,
+			'regional_manager': regional_manager,
+			'start_date': start_date,
+			'end_date': end_date,
+		},
+		'filter_blocks': [
+			{'key': 'community', 'label': 'Community', 'options': communities, 'selected': community},
+			{'key': 'regional_vp', 'label': 'Regional VP', 'options': regional_vps, 'selected': regional_vp},
+			{'key': 'regional_manager', 'label': 'Regional Manager', 'options': regional_managers, 'selected': regional_manager},
+		],
+		'filter_options': {'community': communities, 'regional_vp': regional_vps, 'regional_manager': regional_managers},
+		'export_url': export_url,
+		'dashboard_return_url': request.GET.get('return_url') or reverse('dashboard'),
+		'drill_reset_url': base_drill_url,
+	}
+
+	return render(request, 'dashboard/move_out_reasons_drillthrough.html', context)
+
+
+@login_required
 def occupancy_drillthrough_export(request):
 	"""CSV export for occupancy drill-through."""
 	query_info = _prepare_occupancy_drill_query(request)
@@ -3284,6 +3518,119 @@ def occupancy_drillthrough_export(request):
 	filter_clauses = query_info['filter_clauses']
 	filter_params = query_info['filter_params']
 	display_columns = query_info['display_columns']
+
+
+@login_required
+def move_out_reasons_drillthrough_export(request):
+	"""CSV export for Move-Out Reasons drill-through."""
+	from django.db import connection
+	import csv
+	from django.utils import timezone
+
+	# Read filters from request (same as the drill view)
+	community = request.GET.get('community', '')
+	regional_vp = request.GET.get('regional_vp', '')
+	regional_manager = request.GET.get('regional_manager', '')
+	start_date = request.GET.get('start_date', '')
+	end_date = request.GET.get('end_date', '')
+
+	filter_clauses = []
+	params = []
+	if community:
+		filter_clauses.append('community = %s')
+		params.append(community)
+	if regional_vp:
+		filter_clauses.append('"Regional VP  | Sr. VP" = %s')
+		params.append(regional_vp)
+	if regional_manager:
+		filter_clauses.append('regional_area_manager = %s')
+		params.append(regional_manager)
+	if start_date:
+		filter_clauses.append('"Move-Out Date" >= %s')
+		params.append(start_date)
+	if end_date:
+		filter_clauses.append('"Move-Out Date" <= %s')
+		params.append(end_date)
+
+	# Exclude records without a Move-Out Date — this drill-through only shows move-outs
+	filter_clauses.append('"Move-Out Date" IS NOT NULL')
+
+	where_sql = (' WHERE ' + ' AND '.join(filter_clauses)) if filter_clauses else ''
+
+	data_sql = f'''
+		SELECT property_name, community, "Regional VP  | Sr. VP", regional_area_manager,
+			   "Lease ID", unit, "Beds/Baths", "Lease Rent", "Lease Term",
+			   "Move-In Date", "Move-Out Date", "Move-Out Category", "Move-Out Reason", "OneSiteID-Property-Unit"
+		FROM "web_ai"."move_out_reasons_drill_through"
+		{where_sql}
+		ORDER BY "Move-Out Date" DESC
+	'''
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, params)
+			rows = cur.fetchall()
+	except Exception as exc:
+		print('Move-out drill-through export failed:', exc)
+		return HttpResponse('Failed to export data.', status=500)
+
+	# Header labels (match table_columns in the drill view)
+	header = [
+		'Property Name', 'Community', 'Regional VP', 'Regional Manager', 'Lease ID', 'Unit',
+		'Beds/Baths', 'Lease Rent', 'Lease Term', 'Move-In Date', 'Move-Out Date',
+		'Move-Out Category', 'Move-Out Reason', 'OneSiteID',
+	]
+
+	# reuse formatting logic from the drill view
+	from decimal import Decimal
+
+	def _format_money_field(v):
+		if v is None:
+			return ''
+		try:
+			if isinstance(v, Decimal):
+				num = float(v)
+			elif isinstance(v, (int, float)):
+				num = float(v)
+			else:
+				s = str(v).strip()
+				s = s.replace('$', '').replace(',', '').replace('\u00A0', '')
+				if s.startswith('(') and s.endswith(')'):
+					s = '-' + s[1:-1]
+				s = s.strip()
+				num = float(s)
+		except Exception:
+			return str(v)
+		return f"${num:,.2f}"
+
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"move_out_reasons_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+	writer = csv.writer(response)
+	writer.writerow(header)
+	for r in rows:
+		row = [
+			r[0] or '',
+			r[1] or '',
+			r[2] or '',
+			r[3] or '',
+			r[4] or '',
+			r[5] or '',
+			r[6] or '',
+			_format_money_field(r[7]),
+			(str(r[8]) if r[8] is not None else ''),
+			(r[9].strftime('%Y-%m-%d') if hasattr(r[9], 'strftime') else (str(r[9]) if r[9] else '')),
+			(r[10].strftime('%Y-%m-%d') if hasattr(r[10], 'strftime') else (str(r[10]) if r[10] else '')),
+			r[11] or '',
+			r[12] or '',
+			r[13] or '',
+		]
+		writer.writerow(row)
+
+	return response
 
 	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
@@ -5747,6 +6094,418 @@ def avg_turn_time_drillthrough_csv(request):
 	return response
 
 
+# ============================================================================
+# Trade Out Drill-Through Views
+# ============================================================================
+
+def _format_trade_out_value(index, value):
+	"""Format trade-out drill-through values for display.
+	
+	Args:
+		index: Column index (0-11)
+		value: Raw value from database
+		
+	Returns:
+		Formatted string for display
+	"""
+	from datetime import datetime, date
+	from decimal import Decimal
+	
+	# Column indices: 0=property_name, 1=unit, 2=floor_plan, 3=renewal_new_lease,
+	# 4=current_lease_start_date, 5=trade_out_dollar, 6=current_lease_effective_rent,
+	# 7=previous_lease_effective_rent, 8=current_lease_term, 9=previous_lease_term,
+	# 10=community, 11=investor
+	
+	if value is None:
+		return '-'
+	
+	# Date field (index 4)
+	if index == 4:
+		if isinstance(value, (datetime, date)):
+			return value.strftime('%Y-%m-%d')
+		try:
+			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
+			return parsed.strftime('%Y-%m-%d')
+		except Exception:
+			return str(value)
+	
+	# Currency fields (indices 5, 6, 7)
+	if index in [5, 6, 7]:
+		try:
+			if isinstance(value, Decimal):
+				value = float(value)
+			num_val = float(value)
+			return f'${num_val:,.2f}'
+		except Exception:
+			return str(value)
+	
+	# Text fields - just return as string
+	text = str(value).strip()
+	return text if text else '-'
+
+
+@login_required
+def trade_out_drillthrough_view(request):
+	"""View for trade-out drill-through page showing renewal vs new lease trade-out analysis."""
+	from django.db import connection
+	from decimal import Decimal
+	from datetime import date
+	from dateutil.relativedelta import relativedelta
+	
+	# Get filter parameters
+	community = request.GET.get('community', '')
+	regional_vp = request.GET.get('regional_vp', '')
+	regional_manager = request.GET.get('regional_manager', '')
+	investor = request.GET.get('investor', '')
+	start_date = request.GET.get('start_date', '')
+	end_date = request.GET.get('end_date', '')
+	criteria = request.GET.get('criteria', 'start')  # 'start' or 'signed'
+	
+	# Default to previous month if no dates provided
+	if not start_date and not end_date:
+		today = date.today()
+		# Calculate first and last day of previous month
+		first_of_current_month = date(today.year, today.month, 1)
+		last_of_previous_month = first_of_current_month - relativedelta(days=1)
+		first_of_previous_month = date(last_of_previous_month.year, last_of_previous_month.month, 1)
+		start_date = first_of_previous_month.isoformat()
+		end_date = last_of_previous_month.isoformat()
+	
+	# Build WHERE clause
+	where_clauses = []
+	params = []
+	
+	if community:
+		where_clauses.append('community = %s')
+		params.append(community)
+	if regional_vp:
+		where_clauses.append('"Regional VP  | Sr. VP" = %s')
+		params.append(regional_vp)
+	if regional_manager:
+		where_clauses.append('regional_area_manager = %s')
+		params.append(regional_manager)
+	if investor:
+		where_clauses.append('investor = %s')
+		params.append(investor)
+	
+	# Apply date filter based on criteria
+	# 'start' = Current Lease Start Date, 'signed' = Current_lease_App_Signed Date
+	date_field = '"Current Lease Start Date"' if criteria == 'start' else '"Current_lease_App_Signed Date"'
+	if start_date:
+		where_clauses.append(f'{date_field} >= %s')
+		params.append(start_date)
+	if end_date:
+		where_clauses.append(f'{date_field} <= %s')
+		params.append(end_date)
+	
+	where_sql = ' WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''
+	
+	# Calculate metrics using raw SQL
+	with connection.cursor() as cursor:
+		# Renewal metrics
+		renewal_where = where_sql
+		renewal_params = params.copy()
+		if where_sql:
+			renewal_where += ' AND "Renewal/New Lease" = %s'
+		else:
+			renewal_where = ' WHERE "Renewal/New Lease" = %s'
+		renewal_params.append('Renewal')
+		
+		# Get renewal metrics (Trade Out % column is corrupted in the materialized view, skip it)
+		cursor.execute(f'SELECT COUNT(*) FROM web_ai.trade_out_drill_through {renewal_where}', renewal_params)
+		renewal_count = cursor.fetchone()[0] or 0
+		
+		cursor.execute(f'SELECT AVG("Trade Out $") FROM web_ai.trade_out_drill_through {renewal_where}', renewal_params)
+		renewal_trade_out_avg_dollar = Decimal(str(cursor.fetchone()[0] or 0))
+		
+		# Set Trade Out % to 0 since the column is corrupted in the materialized view
+		renewal_trade_out_avg_percent = Decimal('0')
+		
+		# New lease metrics
+		new_lease_where = where_sql
+		new_lease_params = params.copy()
+		if where_sql:
+			new_lease_where += ' AND "Renewal/New Lease" = %s'
+		else:
+			new_lease_where = ' WHERE "Renewal/New Lease" = %s'
+		new_lease_params.append('New')
+		
+		# Get new lease metrics (Trade Out % column is corrupted in the materialized view, skip it)
+		cursor.execute(f'SELECT COUNT(*) FROM web_ai.trade_out_drill_through {new_lease_where}', new_lease_params)
+		new_lease_count = cursor.fetchone()[0] or 0
+		
+		cursor.execute(f'SELECT AVG("Trade Out $") FROM web_ai.trade_out_drill_through {new_lease_where}', new_lease_params)
+		new_lease_trade_out_avg_dollar = Decimal(str(cursor.fetchone()[0] or 0))
+		
+		# Set Trade Out % to 0 since the column is corrupted in the materialized view
+		new_lease_trade_out_avg_percent = Decimal('0')
+		
+		# Calculate renewal percentage
+		total_leases = renewal_count + new_lease_count
+		renewal_percentage = (renewal_count / total_leases * 100) if total_leases > 0 else 0
+		
+		# Get distinct values for dropdowns
+		cursor.execute('SELECT DISTINCT community FROM web_ai.trade_out_drill_through WHERE community IS NOT NULL ORDER BY community')
+		communities = [row[0] for row in cursor.fetchall()]
+		
+		cursor.execute('SELECT DISTINCT "Regional VP  | Sr. VP" FROM web_ai.trade_out_drill_through WHERE "Regional VP  | Sr. VP" IS NOT NULL ORDER BY "Regional VP  | Sr. VP"')
+		regional_vps = [row[0] for row in cursor.fetchall()]
+		
+		cursor.execute('SELECT DISTINCT regional_area_manager FROM web_ai.trade_out_drill_through WHERE regional_area_manager IS NOT NULL ORDER BY regional_area_manager')
+		regional_managers = [row[0] for row in cursor.fetchall()]
+		
+		cursor.execute('SELECT DISTINCT investor FROM web_ai.trade_out_drill_through WHERE investor IS NOT NULL ORDER BY investor')
+		investors = [row[0] for row in cursor.fetchall()]
+		
+		# Get total count for pagination
+		count_sql = f'SELECT COUNT(*) FROM web_ai.trade_out_drill_through{where_sql}'
+		cursor.execute(count_sql, params)
+		total_records = cursor.fetchone()[0]
+		
+		# Get paginated data
+		page_size = 100
+		page = int(request.GET.get('page', 1))
+		offset = (page - 1) * page_size
+		total_pages = (total_records + page_size - 1) // page_size
+		
+		data_sql = f'''
+			SELECT 
+				property_name, unit, "Floor Plan", "Renewal/New Lease",
+				"Current Lease Start Date", "Trade Out $",
+				"Current Lease Effective Rent", "Previous Lease Effective Rent",
+				"Current Lease Term", "Previous Lease Term", community, investor
+			FROM web_ai.trade_out_drill_through
+			{where_sql}
+			ORDER BY "Current Lease Start Date" DESC
+			LIMIT %s OFFSET %s
+		'''
+		cursor.execute(data_sql, params + [page_size, offset])
+		
+		raw_rows = cursor.fetchall()
+		
+		# Format each row for display
+		table_rows = []
+		for raw_row in raw_rows:
+			formatted_row = [_format_trade_out_value(idx, val) for idx, val in enumerate(raw_row)]
+			table_rows.append(formatted_row)
+	
+	# Define table columns for display
+	table_columns = [
+		{'label': 'Property Name'},
+		{'label': 'Unit'},
+		{'label': 'Floor Plan'},
+		{'label': 'Renewal/New Lease'},
+		{'label': 'Current Lease Start Date'},
+		{'label': 'Trade Out $'},
+		{'label': 'Current Lease Effective Rent'},
+		{'label': 'Previous Lease Effective Rent'},
+		{'label': 'Current Lease Term'},
+		{'label': 'Previous Lease Term'},
+		{'label': 'Community'},
+		{'label': 'Investor'},
+	]
+	
+	# Build pagination URLs
+	base_query_pairs = []
+	for key in ['community', 'regional_vp', 'regional_manager', 'investor', 'criteria', 'start_date', 'end_date', 'return_url']:
+		value = request.GET.get(key)
+		if value:
+			base_query_pairs.append((key, value))
+	
+	base_drill_url = reverse('trade_out_drillthrough')
+	
+	def _build_page_url(target_page):
+		pairs = list(base_query_pairs)
+		if target_page > 1:
+			pairs.append(('page', target_page))
+		query = urlencode(pairs, doseq=True)
+		return f"{base_drill_url}?{query}" if query else base_drill_url
+	
+	start_index = offset + 1 if total_records and table_rows else 0
+	end_index = offset + len(table_rows)
+	if total_records and end_index > total_records:
+		end_index = total_records
+	
+	pagination = {
+		'page': page,
+		'page_size': page_size,
+		'total_pages': total_pages,
+		'has_prev': page > 1,
+		'has_next': bool(total_records and page < total_pages),
+		'prev_url': _build_page_url(page - 1) if page > 1 else '',
+		'next_url': _build_page_url(page + 1) if total_records and page < total_pages else '',
+		'start_index': start_index,
+		'end_index': end_index,
+		'total_count': total_records,
+	}
+	
+	# Build export URL
+	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
+	export_base = reverse('trade_out_drillthrough_export')
+	export_query = urlencode(export_pairs, doseq=True)
+	export_url = f"{export_base}?{export_query}" if export_query else export_base
+	
+	context = {
+		'page_title': 'Trade Out Drill-Through',
+		'metrics': {
+			'renewals': renewal_count,
+			'renewal_percentage': renewal_percentage,
+			'renewal_trade_out_avg_dollar': renewal_trade_out_avg_dollar,
+			'renewal_trade_out_avg_percent': renewal_trade_out_avg_percent * 100,  # Convert to percentage
+			'new_leases': new_lease_count,
+			'new_lease_trade_out_avg_dollar': new_lease_trade_out_avg_dollar,
+			'new_lease_trade_out_avg_percent': new_lease_trade_out_avg_percent * 100,  # Convert to percentage
+		},
+		'filters': {
+			'community': community,
+			'regional_vp': regional_vp,
+			'regional_manager': regional_manager,
+			'investor': investor,
+			'start_date': start_date,
+			'end_date': end_date,
+			'criteria': criteria,
+		},
+		'communities': communities,
+		'regional_vps': regional_vps,
+		'regional_managers': regional_managers,
+		'investors': investors,
+		'table_rows': table_rows,
+		'table_columns': table_columns,
+		'pagination': pagination,
+		'export_url': export_url,
+		'dashboard_return_url': request.GET.get('return_url', reverse('dashboard')),
+		'drill_reset_url': request.path,
+		'filter_blocks': [
+			{
+				'key': 'community',
+				'label': 'Community',
+				'options': communities,
+				'selected': community,
+			},
+			{
+				'key': 'regional_vp',
+				'label': 'Regional VP',
+				'options': regional_vps,
+				'selected': regional_vp,
+			},
+			{
+				'key': 'regional_manager',
+				'label': 'Regional Manager',
+				'options': regional_managers,
+				'selected': regional_manager,
+			},
+			{
+				'key': 'investor',
+				'label': 'Investor',
+				'options': investors,
+				'selected': investor,
+			},
+		],
+	}
+	
+	return render(request, 'dashboard/trade_out_drillthrough.html', context)
+
+
+@login_required
+def trade_out_drillthrough_export(request):
+	"""CSV export for trade-out drill-through."""
+	from django.db import connection
+	import csv
+	from django.utils import timezone
+	
+	# Get filter parameters
+	community = request.GET.get('community', '')
+	regional_vp = request.GET.get('regional_vp', '')
+	regional_manager = request.GET.get('regional_manager', '')
+	investor = request.GET.get('investor', '')
+	start_date = request.GET.get('start_date', '')
+	end_date = request.GET.get('end_date', '')
+
+	# Use same criteria semantics as the drill view ('start' or 'signed')
+	# default to 'start' so the date field maps to Current Lease Start Date
+	criteria = request.GET.get('criteria', 'start')
+	# Default to previous month if no dates provided (match drill view behaviour)
+	if not start_date and not end_date:
+		from datetime import date
+		from dateutil.relativedelta import relativedelta
+		today = date.today()
+		first_of_current_month = date(today.year, today.month, 1)
+		last_of_previous_month = first_of_current_month - relativedelta(days=1)
+		first_of_previous_month = date(last_of_previous_month.year, last_of_previous_month.month, 1)
+		start_date = first_of_previous_month.isoformat()
+		end_date = last_of_previous_month.isoformat()
+
+	# Build WHERE clause
+	where_clauses = []
+	params = []
+	
+	if community:
+		where_clauses.append('community = %s')
+		params.append(community)
+	if regional_vp:
+		where_clauses.append('"Regional VP  | Sr. VP" = %s')
+		params.append(regional_vp)
+	if regional_manager:
+		where_clauses.append('regional_area_manager = %s')
+		params.append(regional_manager)
+	if investor:
+		where_clauses.append('investor = %s')
+		params.append(investor)
+
+	# Map criteria values to the same date field names used by the view
+	# 'start' -> Current Lease Start Date, 'signed' -> Current_lease_App_Signed Date
+	date_field = '"Current Lease Start Date"' if criteria == 'start' else '"Current_lease_App_Signed Date"'
+	if start_date:
+		where_clauses.append(f'{date_field} >= %s')
+		params.append(start_date)
+	if end_date:
+		where_clauses.append(f'{date_field} <= %s')
+		params.append(end_date)
+	
+	where_sql = ' WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''
+	
+	# Get data using raw SQL (excluding Trade Out % due to database corruption)
+	with connection.cursor() as cursor:
+		data_sql = f'''
+			SELECT 
+				property_name, unit, "Floor Plan", "Renewal/New Lease",
+				"Current Lease Start Date", "Current Lease End Date",
+				"Trade Out $",
+				"Current Lease Effective Rent", "Previous Lease Effective Rent",
+				"Current Lease Term", "Previous Lease Term",
+				"Current Lease Type", community, "Regional VP  | Sr. VP",
+				regional_area_manager, investor
+			FROM web_ai.trade_out_drill_through
+			{where_sql}
+			ORDER BY "Current Lease Start Date" DESC
+			LIMIT 10000
+		'''
+		cursor.execute(data_sql, params)
+		records = cursor.fetchall()
+	
+	# Create CSV response
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"trade_out_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+	
+	writer = csv.writer(response)
+	writer.writerow([
+		'Property Name', 'Unit', 'Floor Plan', 'Renewal/New Lease',
+		'Current Lease Start Date', 'Current Lease End Date',
+		'Trade Out $',
+		'Current Lease Effective Rent', 'Previous Lease Effective Rent',
+		'Current Lease Term', 'Previous Lease Term',
+		'Current Lease Type', 'Community', 'Regional VP',
+		'Regional Manager', 'Investor'
+	])
+	
+	for record in records:
+		writer.writerow(record)
+	
+	return response
+
+
 @login_required
 def dashboard(request):
 	user = request.user
@@ -6870,7 +7629,8 @@ def occupancy_eom_drillthrough_view(request):
 		'regional_vps': regional_vps,
 		'regional_managers': regional_managers,
 		'total_properties': len(property_rows),
-		'total_periods': len(sorted_periods)
+		'total_periods': len(sorted_periods),
+		'dashboard_return_url': reverse('dashboard')
 	}
 	
 	return render(request, 'dashboard/occupancy_eom_drillthrough.html', context)
