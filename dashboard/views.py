@@ -2371,6 +2371,12 @@ def _fetch_finance_scorecard_metrics_sql(request, params, svc_ctx):
 	sql = f"SELECT {select_clause} FROM web_ai.finance_kpi_scorecard"
 	filter_clauses = []
 	filter_params = []
+	
+	# Add data quality filter: exclude extreme NOI outliers (>100% or <-100%)
+	# that indicate data issues (negative/zero revenue). Normal NOI ranges 30-80%.
+	noi_col = _find_column_by_keywords(columns, ['noi', 'revenue'])
+	if noi_col:
+		filter_clauses.append(f"({_quote_ident(noi_col)} BETWEEN -100 AND 100 OR {_quote_ident(noi_col)} IS NULL)")
 
 	investor_col = _find_exact_column(columns, 'investor') or _find_column_by_keywords(columns, ['investor'])
 	manager_col = _find_exact_column(columns, 'regional_area_manager') or _find_column_by_keywords(columns, ['regional', 'manager'])
@@ -2464,6 +2470,23 @@ def _fetch_finance_scorecard_metrics_sql(request, params, svc_ctx):
 	if date_params:
 		sql_params.extend(date_params)
 
+	# Business rule: exclude BLACKSTONE/LIVCOR for periods after June 2025
+	# unless explicitly selected by the user via investor filter
+	if investor_col and month_starts:
+		# Check if any selected month is after June 2025
+		jun_2025 = date(2025, 6, 1)
+		has_post_june = any(ms > jun_2025 for ms in month_starts)
+		
+		if has_post_june:
+			# Check if LivCor is explicitly selected
+			inv_values_upper = [str(v).upper() for v in inv_values] if inv_values else []
+			livcor_selected = any(x in inv_values_upper for x in ['BLACKSTONE/LIVCOR', 'LIVCOR'])
+			
+			if not livcor_selected:
+				# Exclude LivCor properties
+				where_clauses.append(f"({_quote_ident(investor_col)} NOT ILIKE %s AND {_quote_ident(investor_col)} NOT ILIKE %s)")
+				sql_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
+
 	if where_clauses:
 		sql += ' WHERE ' + ' AND '.join(where_clauses)
 
@@ -2498,8 +2521,15 @@ def fetch_finance_scorecard_metrics(request, params, svc_ctx):
 	return _fetch_finance_scorecard_metrics_sql(request, params, svc_ctx)
 
 
-def format_finance_kpi_values(raw_values):
-	"""Return display-ready strings for finance KPIs."""
+def format_finance_kpi_values(raw_values, request=None, params=None, svc_ctx=None):
+	"""Return display-ready strings for finance KPIs.
+
+	DAX rule for NOI: return 'N/A' when the selected period includes the
+	current month OR when the NOI value is blank/None.
+	
+	Note: All percentage values from finance_kpi_scorecard are already stored
+	as percentages (e.g., 61.5 means 61.5%, not 0.615), so we do NOT multiply by 100.
+	"""
 	def fmt_percent(val):
 		if val is None:
 			return '--'
@@ -2507,8 +2537,7 @@ def format_finance_kpi_values(raw_values):
 			val = float(val)
 		except Exception:
 			return '--'
-		if abs(val) <= 1:
-			val *= 100
+		# Values are already stored as percentages, so no multiplication needed
 		return f"{val:.2f}%"
 
 	def fmt_currency(val):
@@ -2520,11 +2549,31 @@ def format_finance_kpi_values(raw_values):
 			return '--'
 		return f"${val:,.2f}"
 
+	# Determine whether NOI should be displayed as 'N/A' per DAX rule.
+	noi_raw = raw_values.get('noi_percent_revenue')
+	noi_na = False
+	if noi_raw is None:
+		noi_na = True
+	else:
+		# If caller passed enough context, check whether selected period
+		# includes the current month. If so, return 'N/A'.
+		try:
+			if request is not None and (params is not None or svc_ctx is not None):
+				month_starts = _resolve_selected_month_starts(request, params, svc_ctx)
+				if month_starts:
+					today_month_start = date.today().replace(day=1)
+					# If any selected month equals current month, hide NOI
+					if any(ms == today_month_start for ms in month_starts):
+						noi_na = True
+		except Exception:
+			# Be conservative: do not fail the whole formatting if resolution fails
+			noi_na = noi_na or False
+
 	return {
 		'in_place_rent_per_sqft': fmt_currency(raw_values.get('in_place_rent_per_sqft')),
 		'yoy_change_operating_revenue': fmt_percent(raw_values.get('yoy_change_operating_revenue')),
 		'yoy_change_expense': fmt_percent(raw_values.get('yoy_change_expense')),
-		'noi_percent_revenue': fmt_percent(raw_values.get('noi_percent_revenue')),
+		'noi_percent_revenue': 'N/A' if noi_na else fmt_percent(raw_values.get('noi_percent_revenue')),
 		'executed_rent_yoy': fmt_percent(raw_values.get('executed_rent_yoy')),
 	}
 
@@ -6214,12 +6263,30 @@ def trade_out_drillthrough_view(request):
 		# Get renewal metrics (Trade Out % column is corrupted in the materialized view, skip it)
 		cursor.execute(f'SELECT COUNT(*) FROM web_ai.trade_out_drill_through {renewal_where}', renewal_params)
 		renewal_count = cursor.fetchone()[0] or 0
-		
+
 		cursor.execute(f'SELECT AVG("Trade Out $") FROM web_ai.trade_out_drill_through {renewal_where}', renewal_params)
 		renewal_trade_out_avg_dollar = Decimal(str(cursor.fetchone()[0] or 0))
-		
-		# Set Trade Out % to 0 since the column is corrupted in the materialized view
-		renewal_trade_out_avg_percent = Decimal('0')
+
+		# Compute Avg Trade Out % for Renewals using the DAX logic:
+		# (SUM(CurrentLeaseEffRent for renewals with previous>0) - SUM(PreviousLeaseEffRent for same)) /
+		# NULLIF(SUM(PreviousLeaseEffRent for same), 0)
+		try:
+			# Add condition for previous rent > 0 (cast money to numeric for comparison)
+			renewal_sum_where = renewal_where + ' AND ("Previous Lease Effective Rent")::numeric > 0'
+			cursor.execute(f'SELECT SUM(("Current Lease Effective Rent")::numeric), SUM(("Previous Lease Effective Rent")::numeric) FROM web_ai.trade_out_drill_through {renewal_sum_where}', renewal_params)
+			_sums = cursor.fetchone()
+			sum_cur = Decimal(str(_sums[0] or 0))
+			sum_prev = Decimal(str(_sums[1] or 0))
+			if sum_prev and sum_prev != 0:
+				frac = (sum_cur - sum_prev) / sum_prev
+				# round to 4 decimal places like DAX then store as fraction (not percent)
+				from decimal import ROUND_HALF_UP
+				renewal_trade_out_avg_percent = frac.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+			else:
+				renewal_trade_out_avg_percent = Decimal('0')
+		except Exception:
+			# fallback to 0 on any error
+			renewal_trade_out_avg_percent = Decimal('0')
 		
 		# New lease metrics
 		new_lease_where = where_sql
@@ -6234,11 +6301,32 @@ def trade_out_drillthrough_view(request):
 		cursor.execute(f'SELECT COUNT(*) FROM web_ai.trade_out_drill_through {new_lease_where}', new_lease_params)
 		new_lease_count = cursor.fetchone()[0] or 0
 		
-		cursor.execute(f'SELECT AVG("Trade Out $") FROM web_ai.trade_out_drill_through {new_lease_where}', new_lease_params)
-		new_lease_trade_out_avg_dollar = Decimal(str(cursor.fetchone()[0] or 0))
+		# Compute Avg Trade Out $ for New leases using DAX logic:
+		# avg(CASE WHEN Current_Lease_Rate_Type = 'New' AND Previous_Lease_Eff_Rent > 0 THEN trade_out_dollar END)
+		try:
+			cursor.execute(f'SELECT AVG((trade_out_dollar)::numeric) FROM web_ai.trade_out_drill_through {new_lease_where} AND ("Previous Lease Effective Rent")::numeric > 0', new_lease_params)
+			new_lease_trade_out_avg_dollar = Decimal(str(cursor.fetchone()[0] or 0))
+		except Exception:
+			# fallback to previous simple average if something fails
+			cursor.execute(f'SELECT AVG(("Trade Out $")::numeric) FROM web_ai.trade_out_drill_through {new_lease_where}', new_lease_params)
+			new_lease_trade_out_avg_dollar = Decimal(str(cursor.fetchone()[0] or 0))
 		
-		# Set Trade Out % to 0 since the column is corrupted in the materialized view
-		new_lease_trade_out_avg_percent = Decimal('0')
+		# Compute Avg Trade Out % for New leases using the DAX logic (same as Renewals but for 'New')
+		try:
+			# Add condition for previous rent > 0 and cast money to numeric
+			new_sum_where = new_lease_where + ' AND ("Previous Lease Effective Rent")::numeric > 0'
+			cursor.execute(f'SELECT SUM(("Current Lease Effective Rent")::numeric), SUM(("Previous Lease Effective Rent")::numeric) FROM web_ai.trade_out_drill_through {new_sum_where}', new_lease_params)
+			_nsum = cursor.fetchone()
+			nsum_cur = Decimal(str(_nsum[0] or 0))
+			nsum_prev = Decimal(str(_nsum[1] or 0))
+			if nsum_prev and nsum_prev != 0:
+				nfrac = (nsum_cur - nsum_prev) / nsum_prev
+				from decimal import ROUND_HALF_UP
+				new_lease_trade_out_avg_percent = nfrac.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+			else:
+				new_lease_trade_out_avg_percent = Decimal('0')
+		except Exception:
+			new_lease_trade_out_avg_percent = Decimal('0')
 		
 		# Calculate renewal percentage
 		total_leases = renewal_count + new_lease_count
@@ -6506,6 +6594,100 @@ def trade_out_drillthrough_export(request):
 	return response
 
 
+def _calculate_avg_turn_time_from_drill_through(request, params, selected_months):
+	"""
+	Calculate avg_turn_time KPI from unit-level drill-through data instead of
+	property-level aggregates. This fixes data quality issues in olympus_lease_kpis_trend_monthly
+	where average_turn_time values are incorrect.
+	
+	Args:
+		request: HttpRequest object
+		params: Query parameters dict
+		selected_months: List of selected month start dates
+	
+	Returns:
+		float: Rounded average turn time in days, or None if no data
+	"""
+	from django.db import connection
+	from datetime import datetime, timedelta
+	
+	# Extract filters
+	inv_list = request.GET.getlist('investor') if request.GET.getlist('investor') else ([params.get('investor')] if params.get('investor') else [])
+	regional_list = request.GET.getlist('regional_manager') if request.GET.getlist('regional_manager') else ([params.get('regional_manager')] if params.get('regional_manager') else [])
+	community_list = request.GET.getlist('community') if request.GET.getlist('community') else ([params.get('community')] if params.get('community') else [])
+	
+	# Build WHERE clauses
+	where_clauses = []
+	sql_params = []
+	
+	# Date filter - use "Previous Lease Move Out" column which represents when the unit became vacant
+	if selected_months:
+		# Build date ranges for all selected months
+		month_ranges = []
+		for month_start in selected_months:
+			if isinstance(month_start, str):
+				month_start = datetime.strptime(month_start, '%Y-%m-%d').date()
+			
+			# Calculate last day of month
+			if month_start.month == 12:
+				next_month = month_start.replace(year=month_start.year + 1, month=1, day=1)
+			else:
+				next_month = month_start.replace(month=month_start.month + 1, day=1)
+			
+			month_ranges.append((month_start, next_month))
+		
+		# Create OR condition for all month ranges
+		if len(month_ranges) == 1:
+			where_clauses.append('"Previous Lease Move Out" >= %s AND "Previous Lease Move Out" < %s')
+			sql_params.extend([month_ranges[0][0], month_ranges[0][1]])
+		else:
+			month_conditions = []
+			for start, end in month_ranges:
+				month_conditions.append('("Previous Lease Move Out" >= %s AND "Previous Lease Move Out" < %s)')
+				sql_params.extend([start, end])
+			where_clauses.append(f'({" OR ".join(month_conditions)})')
+	
+	# Apply filters
+	if inv_list and inv_list[0]:
+		placeholders = ','.join(['%s'] * len(inv_list))
+		where_clauses.append(f'investor IN ({placeholders})')
+		sql_params.extend(inv_list)
+	
+	if regional_list and regional_list[0]:
+		placeholders = ','.join(['%s'] * len(regional_list))
+		where_clauses.append(f'regional_area_manager IN ({placeholders})')
+		sql_params.extend(regional_list)
+	
+	if community_list and community_list[0]:
+		placeholders = ','.join(['%s'] * len(community_list))
+		where_clauses.append(f'property_name IN ({placeholders})')
+		sql_params.extend(community_list)
+	
+	where_sql = ' WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''
+	
+	# Query drill-through table for average turn time
+	with connection.cursor() as cursor:
+		sql = f'''
+			SELECT 
+				AVG(turn_time_measure_second) as avg_turn_time,
+				COUNT(*) as unit_count
+			FROM web_ai.avg_turn_time_drill_through
+			{where_sql}
+			AND turn_time_measure_second IS NOT NULL
+		'''
+		cursor.execute(sql, sql_params)
+		row = cursor.fetchone()
+		
+		if row and row[0] is not None:
+			avg_turn = float(row[0])
+			unit_count = row[1]
+			# Log for debugging
+			print(f"[AVG_TURN_TIME] Calculated from drill-through: {avg_turn:.2f} days ({unit_count} units)")
+			return round(avg_turn, 1)
+	
+	return None
+
+
 @login_required
 def dashboard(request):
 	user = request.user
@@ -6597,7 +6779,11 @@ def dashboard(request):
 	svc_ctx = svc.get_context()
 
 	finance_kpi_raw = fetch_finance_scorecard_metrics(request, params, svc_ctx)
-	finance_kpi_display = format_finance_kpi_values(finance_kpi_raw) if finance_kpi_raw else format_finance_kpi_values({})
+	finance_kpi_display = (
+		format_finance_kpi_values(finance_kpi_raw, request=request, params=params, svc_ctx=svc_ctx)
+		if finance_kpi_raw
+		else format_finance_kpi_values({}, request=request, params=params, svc_ctx=svc_ctx)
+	)
 
 	# Option B: keep KPIs/charts filtered by user selection but present an unfiltered
 	# properties list for the table/modals so the client-managed table doesn't get
@@ -6957,8 +7143,18 @@ def dashboard(request):
 			print(f"del_den (count): {del_den}")
 			print(f"Result (del_num/del_den) * 100: {kpi_overrides['delinquency']}")
 			print(f"{'*'*60}\n")
-		if turn_den:
+		
+		# FIX: Calculate avg_turn_time from unit-level drill-through data instead of
+		# property-level aggregates which have data quality issues.
+		# Convert selected_months to date objects for the drill-through query
+		month_starts = _resolve_selected_month_starts(request, params, svc_ctx)
+		avg_turn_from_drill = _calculate_avg_turn_time_from_drill_through(request, params, month_starts)
+		if avg_turn_from_drill is not None:
+			kpi_overrides['avg_turn_time'] = avg_turn_from_drill
+		elif turn_den:
+			# Fallback to old calculation if drill-through data not available
 			kpi_overrides['avg_turn_time'] = round(turn_num / turn_den, 1)
+		
 		if rc_den:
 			# Renewal conversion is stored as decimal in DB (0.85), convert to percentage (85%)
 			kpi_overrides['renewal_conversion'] = round((rc_num / rc_den) * 100, 1)
