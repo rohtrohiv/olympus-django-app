@@ -1887,7 +1887,23 @@ def _format_total_unit_value(alias, value):
 		try:
 			return f"${float(value):,.2f}"
 		except Exception:
-			return f"${value}"
+			# Value may already be formatted (e.g. "$1,771.00") coming from the view.
+			# Avoid prefixing another dollar sign — normalize sensible cases.
+			s = str(value).strip()
+			# If value already contains a dollar sign, assume it's formatted correctly.
+			if '$' in s:
+				return s
+			# Try stripping commas/non-breaking spaces and format if numeric-like
+			try:
+				s2 = s.replace(',', '').replace('\u00A0', '')
+				# Handle parentheses negative format
+				if s2.startswith('(') and s2.endswith(')'):
+					s2 = '-' + s2[1:-1]
+				num = float(s2)
+				return f"${num:,.2f}"
+			except Exception:
+				# Fallback: return the raw string (no extra $ prefix)
+				return s
 	if alias in TOTAL_UNIT_DATE_FIELDS:
 		try:
 			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
@@ -2751,7 +2767,18 @@ def _format_occupancy_value(alias, value):
 		try:
 			return f"${float(value):,.2f}"
 		except Exception:
-			return f"${value}"
+			# Avoid double-dollar when DB already returns formatted string
+			s = str(value).strip()
+			if '$' in s:
+				return s
+			try:
+				s2 = s.replace(',', '').replace('\u00A0', '')
+				if s2.startswith('(') and s2.endswith(')'):
+					s2 = '-' + s2[1:-1]
+				num = float(s2)
+				return f"${num:,.2f}"
+			except Exception:
+				return s
 	if alias in OCCUPANCY_DATE_FIELDS:
 		try:
 			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
@@ -3809,7 +3836,18 @@ def _format_exposure_value(alias, value):
 		try:
 			return f"${float(value):,.2f}"
 		except Exception:
-			return f"${value}"
+			# Avoid double-dollar when DB already returns formatted string
+			s = str(value).strip()
+			if '$' in s:
+				return s
+			try:
+				s2 = s.replace(',', '').replace('\u00A0', '')
+				if s2.startswith('(') and s2.endswith(')'):
+					s2 = '-' + s2[1:-1]
+				num = float(s2)
+				return f"${num:,.2f}"
+			except Exception:
+				return s
 	if alias in EXPOSURE_PERCENTAGE_FIELDS:
 		try:
 			return f"{float(value):.2f}%"
@@ -4395,7 +4433,18 @@ def _format_delinquency_value(alias, value):
 		try:
 			return f"${float(value):,.2f}"
 		except Exception:
-			return f"${value}"
+			# Avoid double-dollar when DB already returns formatted string
+			s = str(value).strip()
+			if '$' in s:
+				return s
+			try:
+				s2 = s.replace(',', '').replace('\u00A0', '')
+				if s2.startswith('(') and s2.endswith(')'):
+					s2 = '-' + s2[1:-1]
+				num = float(s2)
+				return f"${num:,.2f}"
+			except Exception:
+				return s
 	if alias in DELINQUENCY_DATE_FIELDS:
 		try:
 			parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
