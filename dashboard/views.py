@@ -22,6 +22,7 @@ import re
 from decimal import Decimal
 import csv
 from urllib.parse import urlencode
+from django.utils.safestring import mark_safe
 
 
 def sample_page(request):
@@ -78,69 +79,14 @@ def financial_reporting(request):
 		for year_str in selected_years:
 			try:
 				target_year = int(year_str)
-				for month in range(1, 13):
-					target_dates.append({
-						'year': target_year,
-						'month': month,
-						'label': year_str,
-						'is_aggregate': True
-					})
-				if year_str not in period_labels:
-					period_labels.append(year_str)
 			except Exception:
-				pass
-	elif selected_quarters:
-		# Quarters: e.g., "Q1-2025" -> expand to all months in Q1
-		for quarter_str in selected_quarters:
-			try:
-				match = re.match(r'Q(\d)-(\d{4})', quarter_str)
-				if match:
-					quarter_num, year = match.groups()
-					target_year = int(year)
-					quarter_months = {
-						'1': [1, 2, 3],
-						'2': [4, 5, 6],
-						'3': [7, 8, 9],
-						'4': [10, 11, 12]
-					}
-					for month in quarter_months[quarter_num]:
-						target_dates.append({
-							'year': target_year,
-							'month': month,
-							'label': quarter_str,
-							'is_aggregate': True
-						})
-					if quarter_str not in period_labels:
-						period_labels.append(quarter_str)
-			except Exception:
-				pass
-	elif selected_months:
-		# Individual months
-		for month_str in selected_months:
-			try:
-				match = re.match(r'([A-Za-z]{3})-(\d{4})', month_str)
-				if match:
-					month_abbr, year = match.groups()
-					target_month = datetime.strptime(month_abbr, '%b').month
-					target_year = int(year)
-					target_dates.append({
-						'year': target_year,
-						'month': target_month,
-						'label': month_str,
-						'is_aggregate': False
-					})
-					if month_str not in period_labels:
-						period_labels.append(month_str)
-			except Exception:
-				pass
-	
-	# Reverse period_labels to show chronologically (earliest first)
-	# This way Oct-2024 comes before Nov-2024 before Dec-2024
-	period_labels.reverse()
-	target_dates.reverse()
-	
-	# Calculate previous period for first period variance comparison
-	# Only fetch if it's not already in the selected periods
+				# Skip invalid year strings
+				continue
+			for month in range(1, 13):
+				label = datetime(target_year, month, 1).strftime('%b-%Y')
+				target_dates.append({'year': target_year, 'month': month, 'label': label})
+				period_labels.append(label)
+
 	previous_period_info = None
 	if target_dates and period_labels:
 		first_target = target_dates[0]
@@ -2279,6 +2225,7 @@ def _build_total_unit_drill_context(request):
 		'start_index': start_index,
 		'end_index': end_index,
 		'total_results': total_units,
+		'total_count': total_units,
 	}
 
 	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
@@ -2640,6 +2587,8 @@ def total_units_drillthrough_export(request):
 	filter_params = query_info['filter_params']
 	display_columns = query_info['display_columns']
 
+	from django.utils import timezone
+	# Build SQL and fetch all filtered rows (no pagination)
 	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
 	data_sql = f"SELECT {', '.join(select_parts)} FROM {TOTAL_UNIT_DRILL_VIEW}{where_sql}"
@@ -2652,7 +2601,7 @@ def total_units_drillthrough_export(request):
 			cur.execute(data_sql, list(filter_params))
 			rows = cur.fetchall()
 	except Exception as exc:
-		print('Total unit drill-through export failed:', exc)
+		print('Occupancy drill-through export failed:', exc)
 		return HttpResponse('Failed to export data.', status=500)
 
 	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
@@ -2667,6 +2616,7 @@ def total_units_drillthrough_export(request):
 		writer.writerow([_format_total_unit_value(alias, row_dict.get(alias)) for alias in alias_order])
 
 	return response
+
 
 
 # ============================================================================
@@ -3132,7 +3082,21 @@ def _build_occupancy_drill_context(request):
 	
 	for raw in result:
 		row_dict = dict(zip(alias_order, raw))
-		ordered_values = [_format_occupancy_value(alias, row_dict.get(alias)) for alias in alias_order]
+		ordered_values = []
+		# Inline SVGs for icons (avoid external static dependencies)
+		check_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'
+		flag_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V6"/><path d="M4 6c4 0 6-2 10-2s6 2 6 2-2 4-6 4-6-2-10-2"/></svg>'
+		for alias in alias_order:
+			# Special-case: show icons for Not Ready / Past Dates based on mr_day_variance
+			if alias == 'not_ready_past_dates':
+				mr_val = row_dict.get('mr_day_variance')
+				# Treat any non-empty value as presence of MR Day Variance
+				if mr_val is not None and str(mr_val).strip() not in ('', 'None'):
+					ordered_values.append(mark_safe(flag_svg))
+				else:
+					ordered_values.append(mark_safe(check_svg))
+			else:
+				ordered_values.append(_format_occupancy_value(alias, row_dict.get(alias)))
 		rows.append(ordered_values)
 
 	start_index = offset + 1 if total_units and rows else 0
@@ -3169,6 +3133,7 @@ def _build_occupancy_drill_context(request):
 		'start_index': start_index,
 		'end_index': end_index,
 		'total_results': total_units,
+		'total_count': total_units,
 	}
 
 	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
@@ -3595,6 +3560,59 @@ def occupancy_drillthrough_export(request):
 	filter_params = query_info['filter_params']
 	display_columns = query_info['display_columns']
 
+	from django.utils import timezone
+	# Build SQL and fetch all filtered rows (no pagination)
+	# NOTE: the UI summary intentionally counts total units excluding the
+	# base "unit_condition IS NOT NULL" clause so the header shows the
+	# full dataset size. To make the CSV match the header (and the
+	# dashboard expectation), reconstruct the WHERE clause for export by
+	# skipping the base unit_condition filter if present.
+	export_clauses = []
+	export_params = []
+	param_idx = 0
+	for clause in filter_clauses:
+		# Skip the base unit_condition filter which was added by
+		# _prepare_occupancy_drill_query to restrict rows for the table view.
+		if 'unit_condition' in clause.replace('"', '').lower():
+			# consume param placeholders for this clause
+			param_count = clause.count('%s')
+			param_idx += param_count
+			continue
+		# keep this clause and its params
+		export_clauses.append(clause)
+		param_count = clause.count('%s')
+		if param_count:
+			export_params.extend(filter_params[param_idx:param_idx + param_count])
+		param_idx += param_count
+
+	where_sql = ' WHERE ' + ' AND '.join(export_clauses) if export_clauses else ''
+	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
+	data_sql = f"SELECT {', '.join(select_parts)} FROM {OCCUPANCY_DRILL_VIEW}{where_sql}"
+	if order_alias:
+		data_sql += f" ORDER BY {order_alias} NULLS LAST"
+
+	rows = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(data_sql, export_params)
+			rows = cur.fetchall()
+	except Exception as exc:
+		print('Occupancy drill-through export failed:', exc)
+		return HttpResponse('Failed to export data.', status=500)
+
+	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+	filename = f"occupancy_drillthrough_{timestamp}.csv"
+	response = HttpResponse(content_type='text/csv')
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+	writer = csv.writer(response)
+	writer.writerow([col['label'] for col in display_columns])
+	for raw in rows:
+		row_dict = dict(zip(alias_order, raw))
+		writer.writerow([_format_occupancy_value(alias, row_dict.get(alias)) for alias in alias_order])
+
+	return response
+
 
 @login_required
 def move_out_reasons_drillthrough_export(request):
@@ -3708,33 +3726,6 @@ def move_out_reasons_drillthrough_export(request):
 
 	return response
 
-	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
-	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
-	data_sql = f"SELECT {', '.join(select_parts)} FROM {OCCUPANCY_DRILL_VIEW}{where_sql}"
-	if order_alias:
-		data_sql += f" ORDER BY {order_alias} NULLS LAST"
-
-	rows = []
-	try:
-		with connection.cursor() as cur:
-			cur.execute(data_sql, list(filter_params))
-			rows = cur.fetchall()
-	except Exception as exc:
-		print('Occupancy drill-through export failed:', exc)
-		return HttpResponse('Failed to export data.', status=500)
-
-	timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-	filename = f"occupancy_drillthrough_{timestamp}.csv"
-	response = HttpResponse(content_type='text/csv')
-	response['Content-Disposition'] = f'attachment; filename="{filename}"'
-
-	writer = csv.writer(response)
-	writer.writerow([col['label'] for col in display_columns])
-	for raw in rows:
-		row_dict = dict(zip(alias_order, raw))
-		writer.writerow([_format_occupancy_value(alias, row_dict.get(alias)) for alias in alias_order])
-
-	return response
 
 
 # ============================================================================
@@ -4753,6 +4744,23 @@ def _prepare_delinquency_drill_query(request):
 				filter_params.append(f"%{val}%")
 		if clause_parts:
 			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+			# If user filtered by fiscal month-year, also constrain the
+			# scorecard-derived delinquent_as_of_date to the same month to
+			# avoid the materialized view's cross-month join multiplying rows.
+			if field.get('exact') and field['key'] == 'fiscal_as_of_month_year':
+				ds_col = (
+					_find_exact_column(columns, 'delinquent_as_of_date')
+					or _find_exact_column(columns, 'delinquent_as_of')
+				)
+				if ds_col:
+					ds_clause_parts = []
+					for val in clean:
+						parsed = _parse_fiscal_to_date(val)
+						if parsed:
+							ds_clause_parts.append(f"DATE_TRUNC('month', {_quote_ident(ds_col)})::date = %s")
+							filter_params.append(parsed)
+					if ds_clause_parts:
+						filter_clauses.append('(' + ' OR '.join(ds_clause_parts) + ')')
 
 	return {
 		'error': False,
@@ -4831,6 +4839,20 @@ def _build_delinquency_drill_context(request):
 					filter_clauses.append(f"{_quote_ident(fcol)} = %s")
 					filter_params.append(match)
 					active_filters[fiscal_key] = match
+					# Also constrain the delinquent-as-of date produced by the scorecard
+					# so the materialized view's join (which multiplies rows by
+					# month) does not return repeated rows across all months. If we
+					# can parse the fiscal match into a month date, add a month-level
+					# filter on the delinquent_as_of_date column (from the scorecard).
+					ds_col = (
+						_find_exact_column(columns, 'delinquent_as_of_date')
+						or _find_exact_column(columns, 'delinquent_as_of')
+					)
+					if ds_col:
+						parsed = _parse_fiscal_to_date(match)
+						if parsed:
+							filter_clauses.append(f"DATE_TRUNC('month', {_quote_ident(ds_col)})::date = %s")
+							filter_params.append(parsed)
 
 	# Compute summary AFTER applying any default fiscal filter
 	summary = _fetch_delinquency_summary(filter_clauses, filter_params, columns)
@@ -4936,6 +4958,136 @@ def _build_delinquency_drill_context(request):
 			'selected': active_filters.get(key, ''),
 		})
 
+	# Build chart data: delinquency trend (monthly) and aged receivables breakdown
+	try:
+		# Find suitable date and amount columns. Prefer the actual
+		# `delinquent_as_of_date` (represents when the receivable is
+		# delinquent) so the trend reflects delinquent-as-of totals rather
+		# than fiscal-assigned months which can inflate sums.
+		date_col = (
+			_find_exact_column(columns, 'delinquent_as_of_date')
+			or _find_exact_column(columns, 'delinquent_as_of')
+			or _find_exact_column(columns, 'fiscal_as_of_month_year')
+			or _find_column_by_keywords(columns, ['delinquent', 'as', 'of'])
+			or _find_column_by_keywords(columns, ['fiscal', 'as', 'of'])
+		)
+		total_col = _find_column_by_keywords(columns, ['total', 'delinquent'])
+		# Build trend SQL: sum total_delinquent by month
+		trend = {'labels': [], 'values': []}
+		if date_col and total_col:
+			# Trend should show the portfolio-level last 6 months and NOT be
+			# filtered by user selections. The underlying materialized view
+			# can contain repeated rows per property-month; to avoid inflated
+			# totals, first reduce to one row per property+month using the
+			# view's scorecard column `total_delinquent_as_of_date` when present.
+			amt_as_of_col = _find_exact_column(columns, 'total_delinquent_as_of_date')
+			if amt_as_of_col:
+				# Use DISTINCT ON to pick one scorecard total per property/month,
+				# then aggregate those per month.
+				trend_sql = (
+					"SELECT month_start, SUM(total_sum) AS total_sum FROM ("
+					f" SELECT DISTINCT ON (property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date) "
+					f" property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date AS month_start, "
+					f" (NULLIF(REGEXP_REPLACE({_quote_ident(amt_as_of_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS total_sum "
+					f" FROM {DELINQUENCY_DRILL_VIEW} WHERE {_quote_ident(date_col)} IS NOT NULL "
+					f" ORDER BY property_name, month_start DESC) s "
+					f"GROUP BY month_start ORDER BY month_start DESC LIMIT 6")
+			else:
+				# Fallback: dedupe by property + month using the primary total column
+				trend_sql = (
+					"SELECT month_start, SUM(total_sum) AS total_sum FROM ("
+					f" SELECT DISTINCT ON (property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date) "
+					f" property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date AS month_start, "
+					f" (NULLIF(REGEXP_REPLACE({_quote_ident(total_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS total_sum "
+					f" FROM {DELINQUENCY_DRILL_VIEW} WHERE {_quote_ident(date_col)} IS NOT NULL "
+					f" ORDER BY property_name, month_start DESC) s "
+					f"GROUP BY month_start ORDER BY month_start DESC LIMIT 6")
+			try:
+				with connection.cursor() as cur:
+					cur.execute(trend_sql)
+					trend_rows = cur.fetchall()
+					# trend_rows are newest-first; reverse for chronological order
+					trend_rows = list(trend_rows)[::-1]
+					for r in trend_rows:
+						m = r[0]
+						val = r[1] or 0
+						trend['labels'].append(m.strftime('%b-%Y') if hasattr(m, 'strftime') else str(m))
+						trend['values'].append(float(val))
+			except Exception as exc:
+				print('Delinquency trend query failed:', exc)
+		# Aged receivables: dedupe by property and use filtered data
+		# Find bucket columns - use exact names with spaces as they appear in the view
+		days_0_30_col = _find_exact_column(columns, '0-30 Days')
+		days_30_60_col = _find_exact_column(columns, '30-60 Days')
+		days_60_90_col = _find_exact_column(columns, '60-90 Days')
+		amt_as_of_col = _find_exact_column(columns, 'total_delinquent_as_of_date')
+		
+		aged = {'labels': [], 'values': [], 'total': 0, 'month': ''}
+		if date_col and amt_as_of_col and days_0_30_col and days_30_60_col and days_60_90_col:
+			# Build deduped aged query for the filtered data
+			where_clause = ''
+			if filter_clauses:
+				where_clause = ' AND ' + ' AND '.join(filter_clauses)
+			
+			aged_sql = (
+				"SELECT "
+				"  SUM(total_delinquent) AS total_delinquent, "
+				"  SUM(days_0_30) AS days_0_30, "
+				"  SUM(days_30_60) AS days_30_60, "
+				"  SUM(days_60_90) AS days_60_90 "
+				"FROM ( "
+				f"  SELECT DISTINCT ON (property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date) "
+				f"    property_name, "
+				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(amt_as_of_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS total_delinquent, "
+				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(days_0_30_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS days_0_30, "
+				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(days_30_60_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS days_30_60, "
+				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(days_60_90_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS days_60_90 "
+				f"  FROM {DELINQUENCY_DRILL_VIEW} "
+				f"  WHERE {_quote_ident(date_col)} IS NOT NULL{where_clause} "
+				f"  ORDER BY property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date DESC "
+				") s"
+			)
+			try:
+				with connection.cursor() as cur:
+					cur.execute(aged_sql, filter_params)
+					aged_row = cur.fetchone()
+					if aged_row:
+						total_del, d_0_30, d_30_60, d_60_90 = aged_row
+						aged['month'] = active_filters.get('fiscal_as_of_month_year') or summary.get('delinquency_as_of') or 'Latest'
+						aged['total'] = float(total_del or 0)
+						aged['labels'] = ['Total Delinquent', '0-30 Days', '30-60 Days', '60-90 Days']
+						aged['values'] = [
+							float(total_del or 0),
+							float(d_0_30 or 0),
+							float(d_30_60 or 0),
+							float(d_60_90 or 0)
+						]
+			except Exception as exc:
+				print('Delinquency aged receivables query failed:', exc)
+				import traceback
+				traceback.print_exc()
+		else:
+			# Fallback to summary if columns not found
+			aged = {
+				'labels': ['Total Delinquent', '0-30 Days', '30-60 Days', '60-90 Days'],
+				'values': [
+					float(summary.get('total_delinquent') or 0),
+					float(summary.get('days_0_30') or 0),
+					float(summary.get('days_30_60') or 0),
+					float(summary.get('days_60_90') or 0),
+				],
+				'total': float(summary.get('total_delinquent') or 0),
+				'month': active_filters.get('fiscal_as_of_month_year') or summary.get('delinquency_as_of') or ''
+			}
+		chart_payload = {
+			'trend': trend,
+			'aged': aged,
+			'label': active_filters.get('fiscal_as_of_month_year') or summary.get('delinquency_as_of') or ''
+		}
+		chart_data = json.dumps(chart_payload)
+	except Exception:
+		chart_data = json.dumps({'trend': {'labels': [], 'values': []}, 'aged': {'labels': [], 'values': [], 'total': 0}, 'label': ''})
+
 	return {
 		'table_columns': display_columns,
 		'table_rows': rows,
@@ -4957,6 +5109,7 @@ def _build_delinquency_drill_context(request):
 		'dashboard_return_url': dashboard_return_url,
 		'drill_reset_url': drill_reset_url,
 		'export_url': export_url,
+		'chart_data': chart_data,
 	}
 
 

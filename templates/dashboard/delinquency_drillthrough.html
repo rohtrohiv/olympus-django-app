@@ -24,6 +24,175 @@
   <small>Current snapshot date</small>
 </article>
 {% endblock %}
-{% block charts_section %}{% endblock %}
+{% block charts_section %}
+{% if chart_data %}
+<section class="charts-grid">
+  <article class="chart-card">
+    <h3>Delinquency Trend</h3>
+    <div class="chart-container">
+      <canvas id="delinquencyTrendChart"></canvas>
+    </div>
+  </article>
+  <article class="chart-card">
+    <h3>Aged Receivables</h3>
+    <div class="chart-container">
+      <canvas id="agedReceivablesChart"></canvas>
+    </div>
+  </article>
+</section>
+{% endif %}
+{% endblock %}
 
-{% block extra_drillthrough_scripts %}{% endblock %}
+{% block extra_drillthrough_scripts %}
+{% if chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  const payload = JSON.parse('{{ chart_data|escapejs }}');
+
+  // Delinquency Trend (line) — ensure chronological order and last 6 months
+  const trendCtx = document.getElementById('delinquencyTrendChart');
+  if(trendCtx && payload.trend && payload.trend.labels && payload.trend.labels.length){
+    // Normalize labels to dates for sorting. Labels expected like 'Jan-2025'.
+    const pairs = payload.trend.labels.map((lab, i) => {
+      // try parsing 'Mon-YYYY' or ISO date
+      let d = null;
+      try {
+        // Accept formats like 'Jan-2025' or '2025-01-01'
+        if (/^[A-Za-z]{3}-\d{4}$/.test(lab)) {
+          d = new Date(lab.replace(/-(\d{4})$/, ' 01, $1'));
+        } else {
+          d = new Date(lab);
+        }
+      } catch(e){ d = new Date(lab); }
+      return { d: d instanceof Date && !isNaN(d) ? d : null, label: lab, value: payload.trend.values[i] || 0 };
+    }).filter(p => p.d);
+    // Sort ascending
+    pairs.sort((a,b) => a.d - b.d);
+    // Keep only last 6 months
+    const sliced = pairs.slice(-6);
+    const labels = sliced.map(p => p.label);
+    const values = sliced.map(p => p.value);
+
+    new Chart(trendCtx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Total Delinquent',
+          data: values,
+          borderColor: '#06b6d4',
+          backgroundColor: 'rgba(6,182,212,0.08)',
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#06b6d4',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(val){
+                const v = Number(val);
+                if (v >= 1000000) return (v/1000000).toFixed(2) + 'M';
+                if (v >= 1000) return (v/1000).toFixed(0) + 'K';
+                return v.toLocaleString();
+              }
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(context){
+                const v = Number(context.parsed.y || 0);
+                return context.dataset.label + ': $' + v.toLocaleString();
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Aged Receivables (side-by-side bars)
+  const agedCtx = document.getElementById('agedReceivablesChart');
+  if(agedCtx && payload.aged && payload.aged.values && payload.aged.values.length >= 4){
+    const labels = ['Total Delinquent', '0-30 Days', '30-60 Days', '60-90 Days'];
+    const data = [
+      payload.aged.values[0] || 0,
+      payload.aged.values[1] || 0,
+      payload.aged.values[2] || 0,
+      payload.aged.values[3] || 0
+    ];
+    const colors = ['#22d3ee', '#06b6d4', '#0891b2', '#0e7490'];
+
+    const valuePlugin = {
+      id: 'valueLabel',
+      afterDatasetsDraw: function(chart){
+        const ctx = chart.ctx;
+        chart.data.datasets[0].data.forEach(function(val, i){
+          const meta = chart.getDatasetMeta(0);
+          const bar = meta.data[i];
+          const x = bar.x;
+          const y = bar.y - 8;
+          ctx.save();
+          ctx.fillStyle = '#111827';
+          ctx.font = '600 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('$' + (val ? val.toLocaleString(undefined, {maximumFractionDigits:0}) : '0'), x, y);
+          ctx.restore();
+        });
+      }
+    };
+
+    new Chart(agedCtx, {
+      type: 'bar',
+      data: { 
+        labels: labels, 
+        datasets: [{
+          label: payload.aged.month || 'Latest',
+          data: data,
+          backgroundColor: colors
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { grid: { display: false } },
+          y: { 
+            beginAtZero: true, 
+            ticks: { 
+              callback: function(v){ 
+                if (v>=1000000) return (v/1000000).toFixed(2) + 'M'; 
+                if (v>=1000) return (v/1000).toFixed(0) + 'K'; 
+                return v.toLocaleString(); 
+              } 
+            } 
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { 
+            callbacks: { 
+              label: function(ctx){ 
+                return ctx.label + ': $' + (Number(ctx.parsed.y || 0)).toLocaleString(); 
+              } 
+            } 
+          }
+        }
+      },
+      plugins: [valuePlugin]
+    });
+  }
+});
+</script>
+{% endif %}
+{% endblock %}
