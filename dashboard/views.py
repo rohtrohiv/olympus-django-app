@@ -6450,7 +6450,9 @@ def trade_out_drillthrough_view(request):
 		params.append(end_date)
 	
 	where_sql = ' WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''
-	
+
+	trade_out_chart = {'labels': [], 'values': [], 'iso_dates': []}
+
 	# Calculate metrics using raw SQL
 	with connection.cursor() as cursor:
 		# Renewal metrics
@@ -6570,9 +6572,32 @@ def trade_out_drillthrough_view(request):
 			LIMIT %s OFFSET %s
 		'''
 		cursor.execute(data_sql, params + [page_size, offset])
-		
+
 		raw_rows = cursor.fetchall()
-		
+
+		# Build trade-out trend data grouped by selected date field
+		chart_where_sql = where_sql
+		chart_params = list(params)
+		if chart_where_sql:
+			chart_where_sql += f' AND {date_field} IS NOT NULL'
+		else:
+			chart_where_sql = f' WHERE {date_field} IS NOT NULL'
+		chart_sql = f'''
+			SELECT DATE_TRUNC('day', {date_field})::date AS chart_date,
+				AVG(("Trade Out $")::numeric) AS avg_trade_out
+			FROM web_ai.trade_out_drill_through
+			{chart_where_sql}
+			GROUP BY chart_date
+			ORDER BY chart_date
+		'''
+		cursor.execute(chart_sql, chart_params)
+		for chart_date, avg_trade_out in cursor.fetchall():
+			if not chart_date:
+				continue
+			trade_out_chart['iso_dates'].append(chart_date.isoformat())
+			trade_out_chart['labels'].append(chart_date.strftime('%b %d'))
+			trade_out_chart['values'].append(float(avg_trade_out or 0))
+
 		# Format each row for display
 		table_rows = []
 		for raw_row in raw_rows:
@@ -6628,6 +6653,8 @@ def trade_out_drillthrough_view(request):
 		'end_index': end_index,
 		'total_count': total_records,
 	}
+
+	trade_out_axis_label = 'Current Lease Signed Date' if criteria == 'signed' else 'Current Lease Start Date'
 	
 	# Build export URL
 	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
@@ -6646,6 +6673,10 @@ def trade_out_drillthrough_view(request):
 			'new_lease_trade_out_avg_dollar': new_lease_trade_out_avg_dollar,
 			'new_lease_trade_out_avg_percent': new_lease_trade_out_avg_percent * 100,  # Convert to percentage
 		},
+		'trade_out_chart': json.dumps(trade_out_chart),
+		'trade_out_chart_has_data': bool(trade_out_chart['labels']),
+		'trade_out_axis_label': trade_out_axis_label,
+		'trade_out_chart_series_label': 'Trade Out $',
 		'filters': {
 			'community': community,
 			'regional_vp': regional_vp,

@@ -39,6 +39,19 @@
 </article>
 {% endblock %}
 
+{% block charts_section %}
+{% if trade_out_chart_has_data %}
+<section class="charts-grid">
+  <article class="chart-card">
+    <h3>TradeOut $</h3>
+    <div class="chart-container">
+      <canvas id="tradeOutChart"></canvas>
+    </div>
+  </article>
+</section>
+{% endif %}
+{% endblock %}
+
 {% block filter_panel_extra_fields %}
 <!-- Criteria and dates are handled by the visible inputs below with form="drillthroughFilterForm" -->
 {% endblock %}
@@ -100,4 +113,91 @@ document.addEventListener('DOMContentLoaded', function() {
   color: #28a745;
 }
 </style>
+{% endblock %}
+
+{% block extra_drillthrough_scripts %}
+{% if trade_out_chart_has_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+let tradeOutChartInstance = null;
+
+document.addEventListener('DOMContentLoaded', function(){
+  const chartElement = document.getElementById('tradeOutChart');
+  if (!chartElement) {
+    return;
+  }
+
+  const payload = JSON.parse('{{ trade_out_chart|escapejs }}');
+  if (!payload.labels || payload.labels.length === 0) {
+    return;
+  }
+
+  if (tradeOutChartInstance) {
+    tradeOutChartInstance.destroy();
+  }
+
+  const seriesLabel = '{{ trade_out_chart_series_label }}';
+  const axisLabel = '{{ trade_out_axis_label }}';
+
+  tradeOutChartInstance = new Chart(chartElement, {
+    type: 'line',
+    data: {
+      labels: payload.labels,
+      datasets: [{
+        label: seriesLabel,
+        data: payload.values,
+        tension: 0.35,
+        borderColor: '#22d3ee',
+        backgroundColor: 'rgba(34, 211, 238, 0.18)',
+        borderWidth: 3,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#0ea5e9',
+        fill: false,
+        clip: 10
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          title: { display: true, text: axisLabel },
+          ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+          grid: { color: 'rgba(148, 163, 184, 0.2)' }
+        },
+        y: {
+          title: { display: true, text: seriesLabel },
+          ticks: {
+            callback: function(value){
+              if (typeof value !== 'number') { return value; }
+              const absVal = Math.abs(value);
+              if (absVal >= 1000000) {
+                return '$' + (value/1000000).toFixed(1) + 'M';
+              }
+              if (absVal >= 1000) {
+                return '$' + Math.round(value/1000) + 'K';
+              }
+              return '$' + value.toLocaleString();
+            }
+          },
+          grid: { color: 'rgba(203, 213, 225, 0.25)' }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(context){
+              const value = Number(context.parsed.y || 0);
+              return seriesLabel + ': $' + value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+            }
+          }
+        }
+      }
+    }
+  });
+});
+</script>
+{% endif %}
 {% endblock %}
