@@ -4972,39 +4972,56 @@ def _build_delinquency_drill_context(request):
 			or _find_column_by_keywords(columns, ['fiscal', 'as', 'of'])
 		)
 		total_col = _find_column_by_keywords(columns, ['total', 'delinquent'])
-		# Build trend SQL: sum total_delinquent by month
+		# Build trend SQL: sum total_delinquent by month, respecting active filters
 		trend = {'labels': [], 'values': []}
 		if date_col and total_col:
-			# Trend should show the portfolio-level last 6 months and NOT be
-			# filtered by user selections. The underlying materialized view
-			# can contain repeated rows per property-month; to avoid inflated
-			# totals, first reduce to one row per property+month using the
-			# view's scorecard column `total_delinquent_as_of_date` when present.
+			# The underlying materialized view can contain repeated rows per
+			# property-month; to avoid inflated totals, first reduce to one row
+			# per property+month using the view's scorecard column
+			# `total_delinquent_as_of_date` when present, then aggregate. For the
+			# trend we honour property/region filters but ignore the selected
+			# fiscal month so that the chart always shows the latest six months.
 			amt_as_of_col = _find_exact_column(columns, 'total_delinquent_as_of_date')
+			trend_clauses = []
+			trend_params = []
+			param_idx = 0
+			for clause in filter_clauses:
+				placeholder_count = clause.count('%s')
+				params_slice = filter_params[param_idx:param_idx + placeholder_count]
+				param_idx += placeholder_count
+				clause_lower = clause.lower()
+				if 'fiscal as of month year' in clause_lower or 'date_trunc(' in clause_lower:
+					continue
+				trend_clauses.append(clause)
+				trend_params.extend(params_slice)
+			current_today = datetime.now().date()
+			current_month_start = date(current_today.year, current_today.month, 1)
+			trend_clauses.append(f"DATE_TRUNC('month', {_quote_ident(date_col)})::date < %s")
+			trend_params.append(current_month_start)
+			trend_where = f" WHERE {_quote_ident(date_col)} IS NOT NULL"
+			if trend_clauses:
+				trend_where += ' AND ' + ' AND '.join(trend_clauses)
 			if amt_as_of_col:
-				# Use DISTINCT ON to pick one scorecard total per property/month,
-				# then aggregate those per month.
 				trend_sql = (
 					"SELECT month_start, SUM(total_sum) AS total_sum FROM ("
 					f" SELECT DISTINCT ON (property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date) "
 					f" property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date AS month_start, "
 					f" (NULLIF(REGEXP_REPLACE({_quote_ident(amt_as_of_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS total_sum "
-					f" FROM {DELINQUENCY_DRILL_VIEW} WHERE {_quote_ident(date_col)} IS NOT NULL "
+					f" FROM {DELINQUENCY_DRILL_VIEW}{trend_where} "
 					f" ORDER BY property_name, month_start DESC) s "
 					f"GROUP BY month_start ORDER BY month_start DESC LIMIT 6")
 			else:
-				# Fallback: dedupe by property + month using the primary total column
 				trend_sql = (
 					"SELECT month_start, SUM(total_sum) AS total_sum FROM ("
 					f" SELECT DISTINCT ON (property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date) "
 					f" property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date AS month_start, "
 					f" (NULLIF(REGEXP_REPLACE({_quote_ident(total_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS total_sum "
-					f" FROM {DELINQUENCY_DRILL_VIEW} WHERE {_quote_ident(date_col)} IS NOT NULL "
+					f" FROM {DELINQUENCY_DRILL_VIEW}{trend_where} "
 					f" ORDER BY property_name, month_start DESC) s "
 					f"GROUP BY month_start ORDER BY month_start DESC LIMIT 6")
 			try:
 				with connection.cursor() as cur:
-					cur.execute(trend_sql)
+					cur.execute(trend_sql, trend_params)
 					trend_rows = cur.fetchall()
 					# trend_rows are newest-first; reverse for chronological order
 					trend_rows = list(trend_rows)[::-1]
@@ -5028,32 +5045,29 @@ def _build_delinquency_drill_context(request):
 			where_clause = ''
 			if filter_clauses:
 				where_clause = ' AND ' + ' AND '.join(filter_clauses)
-			
+			total_col = _find_exact_column(columns, 'total_delinquent') or _find_exact_column(columns, 'total_delinquent_as_of_date')
+			total_expr = f"(NULLIF(REGEXP_REPLACE({_quote_ident(total_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric" if total_col else '0'
 			aged_sql = (
 				"SELECT "
-				"  SUM(total_delinquent) AS total_delinquent, "
-				"  SUM(days_0_30) AS days_0_30, "
-				"  SUM(days_30_60) AS days_30_60, "
-				"  SUM(days_60_90) AS days_60_90 "
-				"FROM ( "
-				f"  SELECT DISTINCT ON (property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date) "
-				f"    property_name, "
-				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(amt_as_of_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS total_delinquent, "
-				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(days_0_30_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS days_0_30, "
-				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(days_30_60_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS days_30_60, "
-				f"    (NULLIF(REGEXP_REPLACE({_quote_ident(days_60_90_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric AS days_60_90 "
-				f"  FROM {DELINQUENCY_DRILL_VIEW} "
-				f"  WHERE {_quote_ident(date_col)} IS NOT NULL{where_clause} "
-				f"  ORDER BY property_name, DATE_TRUNC('month', {_quote_ident(date_col)})::date DESC "
-				") s"
+				f"  MAX(DATE_TRUNC('month', {_quote_ident(date_col)})::date) AS month_start, "
+				f"  SUM({total_expr}) AS total_delinquent, "
+				f"  SUM((NULLIF(REGEXP_REPLACE({_quote_ident(days_0_30_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric) AS days_0_30, "
+				f"  SUM((NULLIF(REGEXP_REPLACE({_quote_ident(days_30_60_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric) AS days_30_60, "
+				f"  SUM((NULLIF(REGEXP_REPLACE({_quote_ident(days_60_90_col)}::text, '[^0-9.\\-]', '', 'g'), ''))::numeric) AS days_60_90 "
+				f"FROM {DELINQUENCY_DRILL_VIEW} "
+				f"WHERE {_quote_ident(date_col)} IS NOT NULL{where_clause}"
 			)
 			try:
 				with connection.cursor() as cur:
 					cur.execute(aged_sql, filter_params)
 					aged_row = cur.fetchone()
 					if aged_row:
-						total_del, d_0_30, d_30_60, d_60_90 = aged_row
-						aged['month'] = active_filters.get('fiscal_as_of_month_year') or summary.get('delinquency_as_of') or 'Latest'
+						month_start, total_del, d_0_30, d_30_60, d_60_90 = aged_row
+						aged['month'] = (
+							month_start.strftime('%b-%Y') if hasattr(month_start, 'strftime') else str(month_start)
+						) if month_start else (
+							active_filters.get('fiscal_as_of_month_year') or summary.get('delinquency_as_of') or 'Latest'
+						)
 						aged['total'] = float(total_del or 0)
 						aged['labels'] = ['Total Delinquent', '0-30 Days', '30-60 Days', '60-90 Days']
 						aged['values'] = [
