@@ -36,6 +36,25 @@
 </article>
 {% endblock %}
 
+{% block charts_section %}
+{% if chart_has_data %}
+<section class="charts-grid">
+  <article class="chart-card">
+    <h3>Turn Costs</h3>
+    <div class="chart-container">
+      <canvas id="turnCostChart"></canvas>
+    </div>
+  </article>
+  <article class="chart-card">
+    <h3>Percentage of Turns Completed in <=7 Days</h3>
+    <div class="chart-container">
+      <canvas id="turnCompletionChart"></canvas>
+    </div>
+  </article>
+</section>
+{% endif %}
+{% endblock %}
+
 {% block criteria_date_filters %}
 <!-- Date Range Filters -->
 <div class="criteria-date-filters">
@@ -53,4 +72,177 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_drillthrough_scripts %}
+{% if chart_has_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var rawPayload = '{{ chart_data|escapejs }}';
+  var payload = {};
+  try {
+    payload = JSON.parse(rawPayload);
+  } catch (e) {
+    payload = {};
+  }
+
+  function formatCurrency(value){
+    var v = Number(value) || 0;
+    var abs = Math.abs(v);
+    if(abs >= 1000000){
+      return (v / 1000000).toFixed(1) + 'M';
+    }
+    if(abs >= 1000){
+      return Math.round(v / 1000) + 'K';
+    }
+    return v.toLocaleString();
+  }
+
+  var costCtx = document.getElementById('turnCostChart');
+  var costData = payload.turn_costs || {};
+  if(costCtx && Array.isArray(costData.labels) && costData.labels.length){
+    var baseStyles = {
+      'Total Turns': {color: '#06b6d4', background: 'rgba(6,182,212,0.18)', axis: 'yCount'},
+      'Standard Expense': {color: '#facc15', background: 'rgba(250,204,21,0.22)', axis: 'yCurrency'},
+      'CapEx Expense': {color: '#f97316', background: 'rgba(249,115,22,0.20)', axis: 'yCurrency'},
+      'Rehab Expense': {color: '#a855f7', background: 'rgba(168,85,247,0.20)', axis: 'yCurrency'}
+    };
+    var fallback = {
+      count: {color: '#06b6d4', background: 'rgba(6,182,212,0.18)', axis: 'yCount'},
+      currency: {color: '#0ea5e9', background: 'rgba(14,165,233,0.18)', axis: 'yCurrency'}
+    };
+
+    var datasets = (costData.datasets || []).map(function(ds){
+      var style = baseStyles[ds.label] || fallback[ds.series_type] || fallback.currency;
+      return {
+        label: ds.label,
+        data: Array.isArray(ds.data) ? ds.data : [],
+        borderColor: style.color,
+        backgroundColor: style.background,
+        tension: 0.35,
+        fill: false,
+        pointRadius: 4,
+        pointBackgroundColor: style.color,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2,
+        yAxisID: style.axis
+      };
+    });
+
+    new Chart(costCtx, {
+      type: 'line',
+      data: {
+        labels: costData.labels,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          yCurrency: {
+            type: 'linear',
+            position: 'left',
+            beginAtZero: true,
+            ticks: {
+              callback: function(value){
+                return '$' + formatCurrency(value);
+              }
+            }
+          },
+          yCount: {
+            type: 'linear',
+            position: 'right',
+            beginAtZero: true,
+            grid: {
+              drawOnChartArea: false
+            },
+            ticks: {
+              callback: function(value){
+                var v = Number(value) || 0;
+                return v.toLocaleString();
+              }
+            }
+          }
+        },
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context){
+                var label = context.dataset.label || '';
+                var val = Number(context.parsed.y || 0);
+                if(context.dataset.yAxisID === 'yCurrency'){
+                  return label + ': $' + val.toLocaleString();
+                }
+                return label + ': ' + val.toLocaleString();
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  var completionCtx = document.getElementById('turnCompletionChart');
+  var completionData = payload.completion || {};
+  if(completionCtx && Array.isArray(completionData.labels) && completionData.labels.length){
+    new Chart(completionCtx, {
+      type: 'line',
+      data: {
+        labels: completionData.labels,
+        datasets: [{
+          label: '% of Turns <=7 Days',
+          data: Array.isArray(completionData.percentages) ? completionData.percentages : [],
+          borderColor: '#14b8a6',
+          backgroundColor: 'rgba(20,184,166,0.20)',
+          tension: 0.35,
+          fill: false,
+          pointRadius: 4,
+          pointBackgroundColor: '#14b8a6',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            suggestedMax: 100,
+            ticks: {
+              callback: function(value){
+                var v = Number(value) || 0;
+                return v + '%';
+              }
+            }
+          }
+        },
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context){
+                var val = Number(context.parsed.y || 0);
+                return val.toFixed(2) + '%';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+});
+</script>
+{% endif %}
 {% endblock %}

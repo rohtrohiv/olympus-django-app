@@ -5887,7 +5887,7 @@ def _format_avg_turn_time_value(alias, val):
 	return str(val)
 
 
-def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns):
+def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns, dedup_source_sql=None):
 	"""Calculate summary metrics for avg turn time drill-through."""
 	summary = {
 		'apartment_homes': 0,
@@ -5949,6 +5949,22 @@ def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns):
 	standard_col = _find_column_by_keywords(columns, ['standard', 'expense'])
 	property_col = _find_column_by_keywords(columns, ['property', 'name'])
 
+	# Build list of columns required for deduplication to ensure totals use unique rows
+	dedup_columns = []
+	dedup_seen = set()
+	for col in [turn_time_col, capx_col, rehab_col, standard_col, property_col]:
+		if col and col not in dedup_seen:
+			dedup_columns.append(col)
+			dedup_seen.add(col)
+	one_site_col = _find_exact_column(columns, 'OneSiteID-Property-Unit')
+	if one_site_col and one_site_col not in dedup_seen:
+		dedup_columns.append(one_site_col)
+		dedup_seen.add(one_site_col)
+	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
+	if make_ready_col and make_ready_col not in dedup_seen:
+		dedup_columns.append(make_ready_col)
+		dedup_seen.add(make_ready_col)
+
 	sql_parts = [
 		'COUNT(*) as total_turns',
 		f'COUNT(DISTINCT {_quote_ident(property_col)}) as apartment_homes' if property_col else 'COUNT(DISTINCT 1) as apartment_homes'
@@ -5973,9 +5989,19 @@ def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns):
 	if not sql_parts:
 		return summary
 
-	sql = f"SELECT {', '.join(sql_parts)} FROM {AVG_TURN_TIME_DRILL_VIEW}"
-	if local_clauses:
-		sql += ' WHERE ' + ' AND '.join(local_clauses)
+	# Build source SQL with distinct rows to avoid duplicate inflation
+	if dedup_source_sql:
+		source_sql = dedup_source_sql
+	else:
+		if dedup_columns:
+			column_sql = ', '.join(_quote_ident(col) for col in dedup_columns)
+		else:
+			column_sql = '*'
+		source_sql = f"SELECT DISTINCT {column_sql} FROM {AVG_TURN_TIME_DRILL_VIEW}"
+		if local_clauses:
+			source_sql += ' WHERE ' + ' AND '.join(local_clauses)
+
+	sql = f"SELECT {', '.join(sql_parts)} FROM ({source_sql}) dedup"
 
 	try:
 		with connection.cursor() as cur:
@@ -6001,6 +6027,110 @@ def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns):
 	summary['avg_turn_cost'] = round(data.get('avg_cost') or 0, 2)
 
 	return summary
+
+
+def _fetch_avg_turn_time_chart_data(columns, filter_clauses, filter_params, dedup_source_sql=None):
+	"""Build chart payload for avg turn time drill-through charts."""
+	chart_payload = {
+		'turn_costs': {
+			'labels': [],
+			'datasets': []
+		},
+		'completion': {
+			'labels': [],
+			'percentages': [],
+			'total_turns': []
+		}
+	}
+	labels = []
+	total_turns_series = []
+	standard_series = []
+	capx_series = []
+	rehab_series = []
+	percent_series = []
+
+	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
+	standard_col = _find_column_by_keywords(columns, ['standard', 'expense'])
+	capx_col = _find_column_by_keywords(columns, ['capx', 'expense'])
+	rehab_col = _find_column_by_keywords(columns, ['rehab', 'expense'])
+	turn_time_col = _find_column_by_keywords(columns, ['turn', 'time', 'measure'])
+
+	if not (make_ready_col and standard_col and capx_col and rehab_col and turn_time_col):
+		return json.dumps(chart_payload), False
+
+	date_ident = _quote_ident(make_ready_col)
+	base_sql = dedup_source_sql
+	if not base_sql:
+		base_sql = f"SELECT * FROM {AVG_TURN_TIME_DRILL_VIEW}"
+		if filter_clauses:
+			base_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+	month_expr = f"DATE_TRUNC('month', {date_ident})::date"
+	standard_expr = _clean_numeric_expr(standard_col)
+	capx_expr = _clean_numeric_expr(capx_col)
+	rehab_expr = _clean_numeric_expr(rehab_col)
+	turn_expr = _clean_numeric_expr(turn_time_col)
+
+	subquery = (
+		"SELECT "
+		f"{month_expr} AS month_bucket, "
+		f"{standard_expr} AS standard_val, "
+		f"{capx_expr} AS capx_val, "
+		f"{rehab_expr} AS rehab_val, "
+		f"{turn_expr} AS turn_days "
+		f"FROM ({base_sql}) filtered "
+		f"WHERE {date_ident} IS NOT NULL"
+	)
+
+	chart_sql = (
+		"SELECT month_bucket, "
+		"COUNT(*) AS total_turns, "
+		"SUM(COALESCE(standard_val, 0)) AS standard_expense, "
+		"SUM(COALESCE(capx_val, 0)) AS capx_expense, "
+		"SUM(COALESCE(rehab_val, 0)) AS rehab_expense, "
+		"SUM(CASE WHEN turn_days < 7 THEN 1 ELSE 0 END) AS under_7_days "
+		f"FROM ({subquery}) s "
+		"GROUP BY month_bucket "
+		"ORDER BY month_bucket DESC "
+		"LIMIT 12"
+	)
+
+	try:
+		with connection.cursor() as cur:
+			cur.execute(chart_sql, filter_params)
+			rows = list(cur.fetchall())
+	except Exception as exc:
+		print('Avg turn time chart query failed:', exc)
+		rows = []
+
+	rows = rows[::-1]
+	for row in rows:
+		month_bucket, total_turns, standard_expense, capx_expense, rehab_expense, under_7_days = row
+		label = month_bucket.strftime('%b-%Y') if hasattr(month_bucket, 'strftime') else str(month_bucket)
+		labels.append(label)
+		total_turns_series.append(int(total_turns or 0))
+		standard_series.append(float(standard_expense or 0))
+		capx_series.append(float(capx_expense or 0))
+		rehab_series.append(float(rehab_expense or 0))
+		total_turns_val = float(total_turns or 0)
+		under_7_val = float(under_7_days or 0)
+		percent = (under_7_val / total_turns_val * 100) if total_turns_val else 0
+		percent_series.append(round(percent, 2))
+
+	chart_payload['turn_costs']['labels'] = labels
+	chart_payload['completion']['labels'] = labels
+	chart_payload['completion']['percentages'] = percent_series
+	chart_payload['completion']['total_turns'] = total_turns_series
+
+	if labels:
+		chart_payload['turn_costs']['datasets'] = [
+			{'label': 'Total Turns', 'data': total_turns_series, 'series_type': 'count'},
+			{'label': 'Standard Expense', 'data': standard_series, 'series_type': 'currency'},
+			{'label': 'CapEx Expense', 'data': capx_series, 'series_type': 'currency'},
+			{'label': 'Rehab Expense', 'data': rehab_series, 'series_type': 'currency'},
+		]
+
+	return json.dumps(chart_payload), bool(labels)
 
 
 def _prepare_avg_turn_time_drill_query(request):
@@ -6054,6 +6184,27 @@ def _prepare_avg_turn_time_drill_query(request):
 			},
 		}
 
+	# Determine columns used for deduplication to avoid duplicate rows in downstream queries
+	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
+	turn_time_col = _find_column_by_keywords(columns, ['turn', 'time', 'measure'])
+	capx_col = _find_column_by_keywords(columns, ['capx', 'expense'])
+	rehab_col = _find_column_by_keywords(columns, ['rehab', 'expense'])
+	standard_col = _find_column_by_keywords(columns, ['standard', 'expense'])
+	one_site_col = _find_exact_column(columns, 'OneSiteID-Property-Unit')
+
+	dedup_columns = []
+	dedup_seen = set()
+	for alias in alias_order:
+		src = alias_to_source.get(alias)
+		if src and src not in dedup_seen:
+			dedup_columns.append(src)
+			dedup_seen.add(src)
+
+	for extra in [make_ready_col, turn_time_col, capx_col, rehab_col, standard_col, one_site_col]:
+		if extra and extra not in dedup_seen:
+			dedup_columns.append(extra)
+			dedup_seen.add(extra)
+
 	filter_clauses = []
 	filter_params = []
 	active_filters = {}
@@ -6068,8 +6219,6 @@ def _prepare_avg_turn_time_drill_query(request):
 	# Handle date range filters (Make Ready Date)
 	start_date = request.GET.get('start_date', '').strip()
 	end_date = request.GET.get('end_date', '').strip()
-
-	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
 
 	if make_ready_col:
 		# If no dates provided, default to current month's data up to latest available date
@@ -6152,6 +6301,7 @@ def _prepare_avg_turn_time_drill_query(request):
 		'display_columns': display_columns,
 		'alias_order': alias_order,
 		'alias_to_source': alias_to_source,
+		'dedup_columns': dedup_columns,
 		'select_parts': select_parts,
 		'filter_clauses': filter_clauses,
 		'filter_params': filter_params,
@@ -6174,13 +6324,23 @@ def _build_avg_turn_time_drill_context(request):
 	filter_params = query_info['filter_params']
 	active_filters = query_info['active_filters']
 	filter_options = query_info['filter_options']
+	dedup_columns = query_info.get('dedup_columns', [])
 
-	summary = _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns)
+	distinct_column_idents = [_quote_ident(col) for col in dedup_columns if col]
+	if distinct_column_idents:
+		dedup_source_sql = (
+			f"SELECT DISTINCT {', '.join(distinct_column_idents)} FROM {AVG_TURN_TIME_DRILL_VIEW}"
+		)
+	else:
+		dedup_source_sql = f"SELECT DISTINCT * FROM {AVG_TURN_TIME_DRILL_VIEW}"
+	if filter_clauses:
+		dedup_source_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+	summary = _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns, dedup_source_sql)
+	chart_data, chart_has_data = _fetch_avg_turn_time_chart_data(columns, filter_clauses, filter_params, dedup_source_sql)
 
 	# Count total matching records for pagination
-	count_sql = f"SELECT COUNT(*) FROM {AVG_TURN_TIME_DRILL_VIEW}"
-	if filter_clauses:
-		count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+	count_sql = f"SELECT COUNT(*) FROM ({dedup_source_sql}) distinct_rows"
 
 	try:
 		with connection.cursor() as cur:
@@ -6206,9 +6366,8 @@ def _build_avg_turn_time_drill_context(request):
 		page = 1
 	offset = (page - 1) * page_size if total_records else 0
 
-	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'make_ready_date' if 'make_ready_date' in alias_order else (alias_order[0] if alias_order else None)
-	data_sql = f"SELECT {', '.join(select_parts)} FROM {AVG_TURN_TIME_DRILL_VIEW}{where_sql}"
+	data_sql = f"SELECT {', '.join(select_parts)} FROM ({dedup_source_sql}) distinct_rows"
 	if order_alias:
 		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
 	data_sql += " LIMIT %s OFFSET %s"
@@ -6288,6 +6447,8 @@ def _build_avg_turn_time_drill_context(request):
 		},
 		'filter_options': filter_options,
 		'filter_blocks': filter_blocks,
+		'chart_data': chart_data,
+		'chart_has_data': chart_has_data,
 		'columns': columns,
 		'pagination': {
 			'page': page,
@@ -6326,10 +6487,20 @@ def avg_turn_time_drillthrough_csv(request):
 	select_parts = query_info['select_parts']
 	filter_clauses = query_info['filter_clauses']
 	filter_params = query_info['filter_params']
+	dedup_columns = query_info.get('dedup_columns', [])
 
-	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'make_ready_date' if 'make_ready_date' in alias_order else (alias_order[0] if alias_order else None)
-	data_sql = f"SELECT {', '.join(select_parts)} FROM {AVG_TURN_TIME_DRILL_VIEW}{where_sql}"
+	distinct_column_idents = [_quote_ident(col) for col in dedup_columns if col]
+	if distinct_column_idents:
+		dedup_source_sql = (
+			f"SELECT DISTINCT {', '.join(distinct_column_idents)} FROM {AVG_TURN_TIME_DRILL_VIEW}"
+		)
+	else:
+		dedup_source_sql = f"SELECT DISTINCT * FROM {AVG_TURN_TIME_DRILL_VIEW}"
+	if filter_clauses:
+		dedup_source_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+	data_sql = f"SELECT {', '.join(select_parts)} FROM ({dedup_source_sql}) distinct_rows"
 	if order_alias:
 		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
 	data_sql += " LIMIT 10000"
