@@ -2083,6 +2083,7 @@ def _prepare_total_unit_drill_query(request):
 		display_columns.append({'key': alias, 'label': field['label']})
 		select_parts.append(f"{_quote_ident(col)} AS {alias}")
 
+	dedup_columns = list(alias_to_source.values())
 	filter_options = _fetch_total_unit_filter_options(columns)
 
 	if not select_parts:
@@ -2123,6 +2124,7 @@ def _prepare_total_unit_drill_query(request):
 		'display_columns': display_columns,
 		'alias_order': alias_order,
 		'alias_to_source': alias_to_source,
+		'dedup_columns': dedup_columns,
 		'select_parts': select_parts,
 		'filter_clauses': filter_clauses,
 		'filter_params': filter_params,
@@ -2968,6 +2970,7 @@ def _prepare_occupancy_drill_query(request):
 		display_columns.append({'key': alias, 'label': field['label']})
 		select_parts.append(f"{_quote_ident(col)} AS {alias}")
 
+	dedup_columns = list(alias_to_source.values())
 	filter_options = _fetch_occupancy_filter_options(columns)
 
 	if not select_parts:
@@ -3021,6 +3024,7 @@ def _prepare_occupancy_drill_query(request):
 		'display_columns': display_columns,
 		'alias_order': alias_order,
 		'alias_to_source': alias_to_source,
+		'dedup_columns': dedup_columns,
 		'select_parts': select_parts,
 		'filter_clauses': filter_clauses,
 		'filter_params': filter_params,
@@ -4696,6 +4700,7 @@ def _prepare_delinquency_drill_query(request):
 		quoted_alias = _quote_ident(alias) if alias and alias[0].isdigit() else alias
 		select_parts.append(f"{_quote_ident(col)} AS {quoted_alias}")
 
+	dedup_columns = list(alias_to_source.values())
 	filter_options = _fetch_delinquency_filter_options(columns)
 
 	if not select_parts:
@@ -4768,6 +4773,7 @@ def _prepare_delinquency_drill_query(request):
 		'display_columns': display_columns,
 		'alias_order': alias_order,
 		'alias_to_source': alias_to_source,
+		'dedup_columns': dedup_columns,
 		'select_parts': select_parts,
 		'filter_clauses': filter_clauses,
 		'filter_params': filter_params,
@@ -5309,7 +5315,7 @@ def _fetch_service_request_filter_options(columns):
 	return options
 
 
-def _fetch_service_request_summary(filter_clauses, filter_params, columns):
+def _fetch_service_request_summary(filter_clauses, filter_params, columns, dedup_source_sql=None):
 	"""Calculate summary metrics for service request drill-through."""
 	summary = {
 		'total_requests': 0,
@@ -5321,6 +5327,13 @@ def _fetch_service_request_summary(filter_clauses, filter_params, columns):
 	# Create local copies of filter clauses and params for use throughout function
 	local_clauses = list(filter_clauses) if filter_clauses else []
 	local_params = list(filter_params) if filter_params else []
+
+	if dedup_source_sql:
+		source_sql = dedup_source_sql
+	else:
+		source_sql = f"SELECT DISTINCT * FROM {SERVICE_REQUEST_DRILL_VIEW}"
+		if local_clauses:
+			source_sql += ' WHERE ' + ' AND '.join(local_clauses)
 
 	# Find relevant columns
 	status_col = _find_column_by_keywords(columns, ['status'])
@@ -5346,9 +5359,7 @@ def _fetch_service_request_summary(filter_clauses, filter_params, columns):
 
 	if sql_parts:
 
-		sql = f"SELECT {', '.join(sql_parts)} FROM {SERVICE_REQUEST_DRILL_VIEW}"
-		if local_clauses:
-			sql += ' WHERE ' + ' AND '.join(local_clauses)
+		sql = f"SELECT {', '.join(sql_parts)} FROM ({source_sql}) sr"
 
 		try:
 			with connection.cursor() as cur:
@@ -5383,10 +5394,8 @@ def _fetch_service_request_summary(filter_clauses, filter_params, columns):
 					WHEN LOWER({_quote_ident(completing_system_col)}::text) LIKE '%%facilities plus%%' 
 					THEN {_quote_ident(unique_key_col)} 
 				END) as mobile_unique
-			FROM {SERVICE_REQUEST_DRILL_VIEW}
+			FROM ({source_sql}) sr
 		"""
-		if local_clauses:
-			mobile_sql += ' WHERE ' + ' AND '.join(local_clauses)
 		
 		try:
 			with connection.cursor() as cur:
@@ -5402,6 +5411,91 @@ def _fetch_service_request_summary(filter_clauses, filter_params, columns):
 		summary['completed_mobile_percentage'] = 0
 
 	return summary
+
+
+def _fetch_service_request_chart_data(columns, filter_clauses, filter_params, dedup_source_sql=None):
+		"""Assemble chart payload for service request drill-through charts."""
+		chart_payload = {
+			'category_breakdown': {
+				'labels': [],
+				'values': []
+			},
+			'move_in_within_five_days': {
+				'labels': [],
+				'values': []
+			}
+		}
+		category_col = _find_column_by_keywords(columns, ['category'])
+		created_col = _find_column_by_keywords(columns, ['created', 'date']) or _find_column_by_keywords(columns, ['created'])
+		move_in_col = (
+			_find_column_by_keywords(columns, ['move', 'in', 'date'])
+			or _find_exact_column(columns, 'Move In Date')
+			or _find_exact_column(columns, 'Move-In Date')
+			or _find_exact_column(columns, 'Move-in Date')
+			or _find_exact_column(columns, 'move_in_date')
+			or _find_exact_column(columns, 'Move In Date Time')
+			or _find_exact_column(columns, 'move_in_date_time')
+			or _find_column_by_keywords(columns, ['move', 'in'])
+		)
+
+		if dedup_source_sql:
+			base_sql = dedup_source_sql
+		else:
+			base_sql = f"SELECT DISTINCT * FROM {SERVICE_REQUEST_DRILL_VIEW}"
+			if filter_clauses:
+				base_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+
+		has_data = False
+
+		if category_col:
+			cat_ident = _quote_ident(category_col)
+			category_sql = (
+				"SELECT "
+				f"{cat_ident} AS category_label, COUNT(*)::bigint AS total_count "
+				f"FROM ({base_sql}) sr "
+				f"WHERE {cat_ident} IS NOT NULL AND TRIM({cat_ident}::text) <> '' "
+				f"GROUP BY {cat_ident} "
+				"ORDER BY total_count DESC LIMIT 12"
+			)
+			try:
+				with connection.cursor() as cur:
+					cur.execute(category_sql, filter_params)
+					rows = cur.fetchall()
+					for label, total in rows:
+						chart_payload['category_breakdown']['labels'].append(str(label))
+						chart_payload['category_breakdown']['values'].append(float(total or 0))
+					if rows:
+						has_data = True
+			except Exception as exc:
+				print('Service request category chart query failed:', exc)
+
+		if category_col and created_col and move_in_col:
+			cat_ident = _quote_ident(category_col)
+			created_ident = _quote_ident(created_col)
+			move_in_ident = _quote_ident(move_in_col)
+			move_sql = (
+				"SELECT "
+				f"{cat_ident} AS category_label, COUNT(*)::bigint AS total_count "
+				f"FROM ({base_sql}) sr "
+				f"WHERE {cat_ident} IS NOT NULL AND TRIM({cat_ident}::text) <> '' "
+				f"AND {created_ident} IS NOT NULL AND {move_in_ident} IS NOT NULL "
+				f"AND ABS(({created_ident}::date - {move_in_ident}::date)) <= 5 "
+				f"GROUP BY {cat_ident} "
+				"ORDER BY total_count DESC LIMIT 12"
+			)
+			try:
+				with connection.cursor() as cur:
+					cur.execute(move_sql, filter_params)
+					rows = cur.fetchall()
+					for label, total in rows:
+						chart_payload['move_in_within_five_days']['labels'].append(str(label))
+						chart_payload['move_in_within_five_days']['values'].append(float(total or 0))
+					if rows:
+						has_data = True
+			except Exception as exc:
+				print('Service request move-in chart query failed:', exc)
+
+		return json.dumps(chart_payload), has_data
 
 
 def _prepare_service_request_drill_query(request):
@@ -5456,12 +5550,52 @@ def _prepare_service_request_drill_query(request):
 			},
 		}
 
+	dedup_columns = []
+	dedup_seen = set()
+	for src in alias_to_source.values():
+		if src and src not in dedup_seen:
+			dedup_columns.append(src)
+			dedup_seen.add(src)
+
+	request_number_col = _find_column_by_keywords(columns, ['request', 'number'])
+	unique_key_col = _find_column_by_keywords(columns, ['unique', 'key'])
+	category_col = _find_column_by_keywords(columns, ['category'])
+	item_col = _find_column_by_keywords(columns, ['item'])
+	created_col = _find_column_by_keywords(columns, ['created', 'date']) or _find_column_by_keywords(columns, ['created'])
+	completed_col = _find_column_by_keywords(columns, ['completed', 'date']) or _find_column_by_keywords(columns, ['completed'])
+	move_in_col = (_find_column_by_keywords(columns, ['move', 'in', 'date'])
+		or _find_exact_column(columns, 'Move In Date')
+		or _find_exact_column(columns, 'Move-In Date')
+		or _find_exact_column(columns, 'Move-in Date')
+		or _find_exact_column(columns, 'move_in_date')
+		or _find_exact_column(columns, 'Move In Date Time')
+		or _find_exact_column(columns, 'move_in_date_time')
+		or _find_column_by_keywords(columns, ['move', 'in']))
+	avg_time_spent_col = _find_column_by_keywords(columns, ['avg', 'time', 'spent'])
+	completing_system_col = _find_column_by_keywords(columns, ['completing', 'system'])
+	investor_col = _find_column_by_keywords(columns, ['investor'])
+
+	for extra in [
+		request_number_col,
+		unique_key_col,
+		category_col,
+		item_col,
+		created_col,
+		completed_col,
+		move_in_col,
+		avg_time_spent_col,
+		completing_system_col,
+		investor_col,
+	]:
+		if extra and extra not in dedup_seen:
+			dedup_columns.append(extra)
+			dedup_seen.add(extra)
+
 	filter_clauses = []
 	filter_params = []
 	active_filters = {}
 	
 	# Exclude Livcor properties
-	investor_col = _find_column_by_keywords(columns, ['investor'])
 	if investor_col:
 		investor_ident = _quote_ident(investor_col)
 		filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
@@ -5547,6 +5681,15 @@ def _prepare_service_request_drill_query(request):
 			filter_params.append(f"%{val}%")
 		if clause_parts:
 			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
+	
+	# Handle drill_category filter for table filtering
+	drill_category = request.GET.get('drill_category', '').strip()
+	if drill_category:
+		category_col = _find_column_by_keywords(columns, ['category'])
+		if category_col:
+			filter_clauses.append(f"{_quote_ident(category_col)} ILIKE %s")
+			filter_params.append(f"%{drill_category}%")
+			active_filters['drill_category'] = drill_category
 
 	return {
 		'error': False,
@@ -5554,6 +5697,7 @@ def _prepare_service_request_drill_query(request):
 		'display_columns': display_columns,
 		'alias_order': alias_order,
 		'alias_to_source': alias_to_source,
+		'dedup_columns': dedup_columns,
 		'select_parts': select_parts,
 		'filter_clauses': filter_clauses,
 		'filter_params': filter_params,
@@ -5576,13 +5720,22 @@ def _build_service_request_drill_context(request):
 	filter_params = query_info['filter_params']
 	active_filters = query_info['active_filters']
 	filter_options = query_info['filter_options']
+	dedup_columns = query_info.get('dedup_columns', [])
+	distinct_column_idents = [_quote_ident(col) for col in dedup_columns if col]
+	if distinct_column_idents:
+		dedup_source_sql = (
+			f"SELECT DISTINCT {', '.join(distinct_column_idents)} FROM {SERVICE_REQUEST_DRILL_VIEW}"
+		)
+	else:
+		dedup_source_sql = f"SELECT DISTINCT * FROM {SERVICE_REQUEST_DRILL_VIEW}"
+	if filter_clauses:
+		dedup_source_sql += ' WHERE ' + ' AND '.join(filter_clauses)
 
-	summary = _fetch_service_request_summary(filter_clauses, filter_params, columns)
+	summary = _fetch_service_request_summary(filter_clauses, filter_params, columns, dedup_source_sql)
+	chart_data, chart_has_data = _fetch_service_request_chart_data(columns, filter_clauses, filter_params, dedup_source_sql)
 	
 	# Count total matching records for pagination
-	count_sql = f"SELECT COUNT(*) FROM {SERVICE_REQUEST_DRILL_VIEW}"
-	if filter_clauses:
-		count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+	count_sql = f"SELECT COUNT(*) FROM ({dedup_source_sql}) distinct_rows"
 	
 	try:
 		with connection.cursor() as cur:
@@ -5608,9 +5761,8 @@ def _build_service_request_drill_context(request):
 		page = 1
 	offset = (page - 1) * page_size if total_records else 0
 
-	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'created_date' if 'created_date' in alias_order else (alias_order[0] if alias_order else None)
-	data_sql = f"SELECT {', '.join(select_parts)} FROM {SERVICE_REQUEST_DRILL_VIEW}{where_sql}"
+	data_sql = f"SELECT {', '.join(select_parts)} FROM ({dedup_source_sql}) distinct_rows"
 	if order_alias:
 		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
 	data_sql += " LIMIT %s OFFSET %s"
@@ -5695,6 +5847,9 @@ def _build_service_request_drill_context(request):
 		},
 		'filter_options': filter_options,
 		'filter_blocks': filter_blocks,
+		'chart_data': chart_data,
+		'chart_has_data': chart_has_data,
+		'columns': columns,
 		'pagination': {
 			'page': page,
 			'total_pages': total_pages,
@@ -5726,6 +5881,118 @@ def service_request_drillthrough(request):
 
 
 @login_required
+def service_request_drill_data(request):
+	"""Return drill-down chart data for a specific category (JSON endpoint)."""
+	drill_category = request.GET.get('drill_category', '').strip()
+	if not drill_category:
+		return JsonResponse({'error': 'No category specified'}, status=400)
+	
+	# Get base query info with all filters
+	query_info = _prepare_service_request_drill_query(request)
+	if query_info.get('error'):
+		return JsonResponse({'error': 'Failed to prepare query'}, status=500)
+	
+	columns = query_info['columns']
+	filter_clauses = list(query_info['filter_clauses'])
+	filter_params = list(query_info['filter_params'])
+	dedup_columns = query_info.get('dedup_columns', [])
+	
+	# Add category filter for drill-down
+	category_col = _find_column_by_keywords(columns, ['category'])
+	if category_col:
+		filter_clauses.append(f"{_quote_ident(category_col)} ILIKE %s")
+		filter_params.append(f"%{drill_category}%")
+	
+	# Build deduped base query with category filter
+	distinct_column_idents = [_quote_ident(col) for col in dedup_columns if col]
+	if distinct_column_idents:
+		dedup_source_sql = f"SELECT DISTINCT {', '.join(distinct_column_idents)} FROM {SERVICE_REQUEST_DRILL_VIEW}"
+	else:
+		dedup_source_sql = f"SELECT DISTINCT * FROM {SERVICE_REQUEST_DRILL_VIEW}"
+	if filter_clauses:
+		dedup_source_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+	
+	# Fetch drill-down chart data (item-level breakdown)
+	chart_data = _fetch_service_request_drill_chart_data(columns, filter_clauses, filter_params, dedup_source_sql)
+	
+	return JsonResponse(chart_data)
+
+
+def _fetch_service_request_drill_chart_data(columns, filter_clauses, filter_params, dedup_source_sql=None):
+	"""Fetch item-level breakdown for drilled category."""
+	chart_payload = {
+		'category_breakdown': {'labels': [], 'values': []},
+		'move_in_within_five_days': {'labels': [], 'values': []}
+	}
+	
+	item_col = _find_column_by_keywords(columns, ['item'])
+	created_col = _find_column_by_keywords(columns, ['created', 'date']) or _find_column_by_keywords(columns, ['created'])
+	move_in_col = (
+		_find_column_by_keywords(columns, ['move', 'in', 'date'])
+		or _find_exact_column(columns, 'Move In Date')
+		or _find_exact_column(columns, 'Move-In Date')
+		or _find_exact_column(columns, 'Move-in Date')
+		or _find_exact_column(columns, 'move_in_date')
+		or _find_exact_column(columns, 'Move In Date Time')
+		or _find_exact_column(columns, 'move_in_date_time')
+		or _find_column_by_keywords(columns, ['move', 'in'])
+	)
+	
+	if dedup_source_sql:
+		base_sql = dedup_source_sql
+	else:
+		base_sql = f"SELECT DISTINCT * FROM {SERVICE_REQUEST_DRILL_VIEW}"
+		if filter_clauses:
+			base_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+	
+	# Item breakdown for category chart
+	if item_col:
+		item_ident = _quote_ident(item_col)
+		item_sql = (
+			f"SELECT {item_ident} AS item_label, COUNT(*)::bigint AS total_count "
+			f"FROM ({base_sql}) sr "
+			f"WHERE {item_ident} IS NOT NULL AND TRIM({item_ident}::text) <> '' "
+			f"GROUP BY {item_ident} "
+			"ORDER BY total_count DESC LIMIT 12"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(item_sql, filter_params)
+				rows = cur.fetchall()
+				for label, total in rows:
+					chart_payload['category_breakdown']['labels'].append(str(label))
+					chart_payload['category_breakdown']['values'].append(float(total or 0))
+		except Exception as exc:
+			print('Service request item drill chart query failed:', exc)
+	
+	# Move-in chart with item breakdown
+	if item_col and created_col and move_in_col:
+		item_ident = _quote_ident(item_col)
+		created_ident = _quote_ident(created_col)
+		move_in_ident = _quote_ident(move_in_col)
+		move_sql = (
+			f"SELECT {item_ident} AS item_label, COUNT(*)::bigint AS total_count "
+			f"FROM ({base_sql}) sr "
+			f"WHERE {item_ident} IS NOT NULL AND TRIM({item_ident}::text) <> '' "
+			f"AND {created_ident} IS NOT NULL AND {move_in_ident} IS NOT NULL "
+			f"AND ABS(({created_ident}::date - {move_in_ident}::date)) <= 5 "
+			f"GROUP BY {item_ident} "
+			"ORDER BY total_count DESC LIMIT 12"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(move_sql, filter_params)
+				rows = cur.fetchall()
+				for label, total in rows:
+					chart_payload['move_in_within_five_days']['labels'].append(str(label))
+					chart_payload['move_in_within_five_days']['values'].append(float(total or 0))
+		except Exception as exc:
+			print('Service request move-in drill chart query failed:', exc)
+	
+	return chart_payload
+
+
+@login_required
 def service_request_drillthrough_export(request):
 	"""CSV export for service request drill-through."""
 	query_info = _prepare_service_request_drill_query(request)
@@ -5741,10 +6008,19 @@ def service_request_drillthrough_export(request):
 	filter_clauses = query_info['filter_clauses']
 	filter_params = query_info['filter_params']
 	display_columns = query_info['display_columns']
+	dedup_columns = query_info.get('dedup_columns', [])
+	distinct_column_idents = [_quote_ident(col) for col in dedup_columns if col]
+	if distinct_column_idents:
+		dedup_source_sql = (
+			f"SELECT DISTINCT {', '.join(distinct_column_idents)} FROM {SERVICE_REQUEST_DRILL_VIEW}"
+		)
+	else:
+		dedup_source_sql = f"SELECT DISTINCT * FROM {SERVICE_REQUEST_DRILL_VIEW}"
+	if filter_clauses:
+		dedup_source_sql += ' WHERE ' + ' AND '.join(filter_clauses)
 
-	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'created_date' if 'created_date' in alias_order else (alias_order[0] if alias_order else None)
-	data_sql = f"SELECT {', '.join(select_parts)} FROM {SERVICE_REQUEST_DRILL_VIEW}{where_sql}"
+	data_sql = f"SELECT {', '.join(select_parts)} FROM ({dedup_source_sql}) distinct_rows"
 	if order_alias:
 		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
 

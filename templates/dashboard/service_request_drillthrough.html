@@ -26,6 +26,25 @@
 </article>
 {% endblock %}
 
+{% block charts_section %}
+{% if chart_has_data %}
+<section class="charts-grid">
+  <article class="chart-card">
+    <h3>Top Request Types By Category</h3>
+    <div class="chart-container">
+      <canvas id="serviceCategoryChart"></canvas>
+    </div>
+  </article>
+  <article class="chart-card">
+    <h3>Top Service Requests Within 5 Days Of Move In</h3>
+    <div class="chart-container">
+      <canvas id="serviceMoveInChart"></canvas>
+    </div>
+  </article>
+</section>
+{% endif %}
+{% endblock %}
+
 {% block criteria_date_filters %}
 <div class="criteria-date-filters">
   <div class="criteria-filter-box">
@@ -52,4 +71,40 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_drillthrough_scripts %}
+{{ block.super }}
+{% if chart_has_data %}
+{% load static %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="{% static 'dashboard/service_request_drilldown.js' %}?v=8"></script>
+<script>
+console.log('Script loaded, checking ServiceRequestDrillHandler:', typeof ServiceRequestDrillHandler);
+document.addEventListener('DOMContentLoaded', function(){
+  console.log('DOMContentLoaded, ServiceRequestDrillHandler:', typeof ServiceRequestDrillHandler);
+  var rawPayload = '{{ chart_data|escapejs }}';
+  var payload;
+  try {
+    payload = JSON.parse(rawPayload);
+  } catch (err) {
+    console.error('Failed to parse chart data:', err);
+    payload = {};
+  }
+
+  // Initialize drill-down handler
+  if (typeof ServiceRequestDrillHandler !== 'undefined') {
+    var drillHandler = new ServiceRequestDrillHandler(
+      'serviceCategoryChart',
+      'serviceMoveInChart',
+      payload
+    );
+    
+    drillHandler.initialize();
+  } else {
+    console.error('ServiceRequestDrillHandler class not found. Check if service_request_drilldown.js loaded correctly.');
+  }
+});
+</script>
+{% endif %}
 {% endblock %}

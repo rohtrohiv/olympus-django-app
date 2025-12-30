@@ -346,6 +346,10 @@ class ServiceRequestDrillThrough(models.Model):
 	
 	Represents service request data including work orders, maintenance requests,
 	and their completion status across properties.
+	
+	Note: unique_key is constructed as: site_id_property_unit_number + "-" + request_number
+	Chart logic filters for records where move_in_date is not blank and calculates
+	requests created within 5 days of move-in date.
 	"""
 	property_name = models.CharField(max_length=80, blank=True, null=True)
 	request_number = models.CharField(max_length=20, primary_key=True)
@@ -365,6 +369,7 @@ class ServiceRequestDrillThrough(models.Model):
 	avg_time_spent = models.IntegerField(blank=True, null=True)
 	completing_system = models.CharField(max_length=100, blank=True, null=True)
 	floor_plan = models.CharField(max_length=30, blank=True, null=True)
+	move_in_date = models.DateField(blank=True, null=True)
 	community = models.TextField(blank=True, null=True)
 	regional_vp = models.CharField(max_length=100, blank=True, null=True, db_column='Regional VP  | Sr. VP')
 	regional_area_manager = models.CharField(max_length=100, blank=True, null=True)

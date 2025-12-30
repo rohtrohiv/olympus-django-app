@@ -17,6 +17,7 @@ urlpatterns = [
     path('drillthrough/delinquency/', views.delinquency_drillthrough, name='delinquency_drillthrough'),
     path('drillthrough/delinquency/export/', views.delinquency_drillthrough_export, name='delinquency_drillthrough_export'),
     path('drillthrough/service-request/', views.service_request_drillthrough, name='service_request_drillthrough'),
+    path('drillthrough/service-request/drill-data/', views.service_request_drill_data, name='service_request_drill_data'),
     path('drillthrough/service-request/export/', views.service_request_drillthrough_export, name='service_request_drillthrough_export'),
     path('drillthrough/avg-turn-time/', views.avg_turn_time_drillthrough_view, name='avg_turn_time_drillthrough'),
     path('drillthrough/avg-turn-time/export/', views.avg_turn_time_drillthrough_csv, name='avg_turn_time_drillthrough_export'),
