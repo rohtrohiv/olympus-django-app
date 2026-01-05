@@ -466,6 +466,46 @@ class TradeOutDrillThrough(models.Model):
 		db_table = '"web_ai"."trade_out_drill_through"'
 
 
+class UnitLevelDrillThrough(models.Model):
+	"""Unmanaged model for the unit_level_drill_through materialized view."""
+	site_id_property_unit_number = models.CharField(max_length=50, primary_key=True)
+	lease_id = models.CharField(max_length=20, blank=True, null=True, db_column='Lease ID')
+	move_in_date = models.DateField(blank=True, null=True, db_column='Move_In_Date')
+	lease_start_date = models.DateField(blank=True, null=True, db_column='LeaseStartDate')
+	actual_lease_end = models.DateField(blank=True, null=True, db_column='ActualLeaseEnd')
+	lease_term = models.IntegerField(blank=True, null=True, db_column='Lease Term')
+	previous_term = models.IntegerField(blank=True, null=True)
+	effective_rent = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True, db_column='EffRent')
+	previous_lease_effective_rent = models.DecimalField(max_digits=19, decimal_places=2, blank=True, null=True, db_column='Previous Lease Effetive Rent')
+	trade_out_dollars = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+	trade_out_pct = models.DecimalField(max_digits=20, decimal_places=18, blank=True, null=True)
+	move_out_notice_date = models.DateField(blank=True, null=True, db_column='MoveOutNoticeDate')
+	actual_move_out_date = models.DateField(blank=True, null=True, db_column='ActualMoveOutDate')
+	rate_type = models.CharField(max_length=20, blank=True, null=True, db_column='RateType')
+	move_out_reason = models.CharField(max_length=120, blank=True, null=True, db_column='move_out_reason')
+	days_occupied = models.IntegerField(blank=True, null=True, db_column='days_occupied')
+	is_employee_lease = models.BooleanField(blank=True, null=True, db_column='is_employee_lease')
+	bedrooms_bathrooms = models.TextField(blank=True, null=True, db_column='bedrooms_bathrooms')
+	unit_number = models.CharField(max_length=30, blank=True, null=True, db_column='unit_number')
+	request_number = models.CharField(max_length=20, blank=True, null=True, db_column='request_number')
+	item = models.CharField(max_length=256, blank=True, null=True, db_column='item')
+	created_date_time = models.DateTimeField(blank=True, null=True, db_column='created_date_time')
+	completed_date_time = models.DateTimeField(blank=True, null=True, db_column='completed_date_time')
+	status = models.CharField(max_length=20, blank=True, null=True, db_column='status')
+	amenity = models.CharField(max_length=100, blank=True, null=True, db_column='Amenity')
+	amenity_level = models.CharField(max_length=30, blank=True, null=True, db_column='amenity_level')
+	amenity_type = models.CharField(max_length=20, blank=True, null=True, db_column='amenity_type')
+	amenity_cost = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, db_column='amenity_cost')
+	scheduled_lease_end = models.DateField(blank=True, null=True, db_column='ScheduledLeaseEnd')
+	effective_lease_start_date = models.DateField(blank=True, null=True, db_column='effective_lease_start_date')
+	total_days_since_unit_acquired = models.IntegerField(blank=True, null=True, db_column='total_days_since_unit_acquired')
+	effective_days_occupied = models.IntegerField(blank=True, null=True, db_column='effective_days_occupied')
+
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."unit_level_drill_through"'
+
+
 class MoveOutReasonsDrillThrough(models.Model):
 	"""Unmanaged model for the `web_ai.move_out_reasons_drill_through` materialized view.
 

@@ -4,7 +4,7 @@ from django.db import connection
 from django.db.models import Max, Sum, Avg, Count, Q, F
 from django.urls import reverse
 from .models import (OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly, 
-					 FinanceKpiScorecard, DelinquencyDrillThrough)
+					 FinanceKpiScorecard, DelinquencyDrillThrough, UnitLevelDrillThrough)
 from datetime import datetime, date, timedelta
 from django.db.models.functions import ExtractYear, ExtractMonth
 from .services import DashboardService
@@ -23,6 +23,7 @@ from decimal import Decimal
 import csv
 from urllib.parse import urlencode
 from django.utils.safestring import mark_safe
+from collections import OrderedDict
 
 
 def sample_page(request):
@@ -1709,6 +1710,17 @@ def _find_column_by_keywords(columns, keywords):
 	return None
 
 
+def _find_column_by_keywords_excluding(columns, keywords, exclude=None):
+	exclude_set = set(exclude or [])
+	for col in columns:
+		if not col or col in exclude_set:
+			continue
+		name = (col or '').lower()
+		if all(_keyword_matches_column(name, keyword) for keyword in keywords):
+			return col
+	return None
+
+
 def _find_exact_column(columns, target):
 	for col in columns:
 		if col and col.lower() == target.lower():
@@ -1882,6 +1894,42 @@ def _fetch_total_unit_filter_options(columns):
 			vals = []
 		options[field['key']] = [str(v).strip() for v in vals if v]
 	return options
+
+
+def _get_trade_out_columns():
+	columns = []
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT column_name
+				FROM information_schema.columns
+				WHERE table_schema = %s AND table_name = %s
+				ORDER BY ordinal_position
+				""",
+				['web_ai', 'trade_out_drill_through']
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Trade out drill-through column introspection failed:', exc)
+	if columns:
+		return columns
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT attname
+				FROM pg_attribute
+				WHERE attrelid = 'web_ai.trade_out_drill_through'::regclass
+				  AND attnum > 0
+				  AND NOT attisdropped
+				ORDER BY attnum
+				"""
+			)
+			columns = [row[0] for row in cur.fetchall()]
+	except Exception as exc:
+		print('Trade out drill-through pg_attribute introspection failed:', exc)
+	return columns
 
 
 def _fetch_total_unit_summary(filter_clauses, filter_params, metric_columns):
@@ -2192,7 +2240,26 @@ def _build_total_unit_drill_context(request):
 	for raw in result:
 		row_dict = dict(zip(alias_order, raw))
 		ordered_values = [_format_total_unit_value(alias, row_dict.get(alias)) for alias in alias_order]
-		rows.append(ordered_values)
+		detail_url = ''
+		unit_identifier = row_dict.get('site_unit_id') or row_dict.get('unit_identifier') or row_dict.get('unit')
+		if unit_identifier:
+			try:
+				detail_path = reverse('total_unit_detail', kwargs={'unit_token': unit_identifier})
+			except Exception:
+				detail_path = ''
+			if detail_path:
+				query_pairs = []
+				property_name_value = row_dict.get('property_name')
+				if property_name_value:
+					query_pairs.append(('property', property_name_value))
+				return_param = request.get_full_path() if hasattr(request, 'get_full_path') else ''
+				if return_param:
+					query_pairs.append(('return_url', return_param))
+				if query_pairs:
+					detail_url = f"{detail_path}?{urlencode(query_pairs, doseq=True)}"
+				else:
+					detail_url = detail_path
+		rows.append({'values': ordered_values, 'detail_url': detail_url})
 
 	start_index = offset + 1 if total_units and rows else 0
 	end_index = offset + len(rows)
@@ -2620,6 +2687,949 @@ def total_units_drillthrough_export(request):
 	return response
 
 
+@login_required
+def total_unit_detail(request, unit_token):
+	"""Render a unit-level detail page with lease history and related activity."""
+	columns = _get_total_unit_drill_columns()
+	return_url = request.GET.get('return_url') or reverse('total_units_drillthrough')
+	unit_token = (unit_token or '').strip()
+	if not columns or not unit_token:
+		context = {
+			'error': 'No unit identifier was provided or the dataset is unavailable.',
+			'return_url': return_url,
+			'page_title': 'Unit Detail',
+		}
+		return render(request, 'dashboard/unit_detail.html', context)
+
+	property_filter = (request.GET.get('property') or '').strip()
+	unit_id_col = _find_column_by_keywords(columns, ['site', 'unit', 'id']) or _find_column_by_keywords(columns, ['unit'])
+	if not unit_id_col:
+		context = {
+			'error': 'The unit detail view could not locate the unit identifier column.',
+			'return_url': return_url,
+			'page_title': 'Unit Detail',
+		}
+		return render(request, 'dashboard/unit_detail.html', context)
+
+	property_col = _find_column_by_keywords(columns, ['property', 'name'])
+
+	select_specs = [
+		{'key': 'property_name', 'keywords': ['property', 'name'], 'unique': True},
+		{'key': 'community', 'keywords': ['community'], 'unique': True},
+		{'key': 'unit_identifier', 'exact': 'unit_identifier', 'keywords': ['unit'], 'unique': True},
+		{'key': 'site_unit_id', 'keywords': ['site', 'unit', 'id'], 'unique': True},
+		{'key': 'floor_plan', 'keywords': ['floor', 'plan'], 'unique': True},
+		{'key': 'beds_baths', 'keywords': ['bed', 'bath'], 'unique': True},
+		{'key': 'unit_status', 'keywords': ['status'], 'unique': True},
+		{'key': 'availability_date', 'keywords': ['available', 'date'], 'unique': True},
+		{'key': 'move_in_date', 'keywords': ['move', 'in'], 'unique': True},
+		{'key': 'lease_start', 'keywords': ['lease', 'start'], 'unique': True},
+		{'key': 'lease_end', 'keywords': ['lease', 'end'], 'unique': True},
+		{'key': 'lease_term', 'keywords': ['lease', 'term'], 'unique': True},
+		{'key': 'previous_lease_term', 'keywords': ['previous', 'lease', 'term'], 'unique': True},
+		{'key': 'resident_name', 'keywords': ['resident', 'name'], 'unique': True},
+		{'key': 'effective_rent', 'keywords': ['effective', 'rent'], 'unique': True},
+		{'key': 'market_rent', 'keywords': ['market', 'rent'], 'unique': True},
+		{'key': 'occupancy_pct', 'keywords': ['occupancy'], 'unique': True},
+		{'key': 'lease_id', 'keywords': ['lease', 'id'], 'unique': True},
+		{'key': 'move_out_date', 'keywords': ['move', 'out'], 'unique': True},
+		{'key': 'move_out_reason', 'keywords': ['move', 'out', 'reason'], 'unique': True},
+		{'key': 'notice_for_date', 'keywords': ['notice'], 'unique': True},
+		{'key': 'days_occupied', 'keywords': ['days', 'occupied'], 'unique': True},
+		{'key': 'amenity_value', 'keywords': ['amenity', 'value'], 'unique': True},
+	]
+
+	used_columns = set()
+	select_parts = []
+	select_aliases = []
+	for spec in select_specs:
+		col = None
+		exact = spec.get('exact')
+		if exact:
+			col = _find_exact_column(columns, exact)
+		if not col and spec.get('keywords'):
+			exclude = used_columns if spec.get('unique', True) else None
+			col = _find_column_by_keywords_excluding(columns, spec['keywords'], exclude)
+		if not col:
+			continue
+		alias = spec['key']
+		select_aliases.append(alias)
+		select_parts.append(f"{_quote_ident(col)} AS {alias}")
+		if spec.get('unique', True):
+			used_columns.add(col)
+
+	if not select_parts:
+		context = {
+			'error': 'No readable columns were found for the unit detail view.',
+			'return_url': return_url,
+			'page_title': 'Unit Detail',
+		}
+		return render(request, 'dashboard/unit_detail.html', context)
+
+	identifier_columns = []
+	seen_columns = set()
+	if unit_id_col:
+		ident = _quote_ident(unit_id_col)
+		identifier_columns.append(ident)
+		seen_columns.add(unit_id_col)
+	unit_alias_col = _find_column_by_keywords(columns, ['unit'])
+	if unit_alias_col and unit_alias_col not in seen_columns:
+		identifier_columns.append(_quote_ident(unit_alias_col))
+		seen_columns.add(unit_alias_col)
+	onesite_alias_col = _find_column_by_keywords(columns, ['onesite', 'property'])
+	if onesite_alias_col and onesite_alias_col not in seen_columns:
+		identifier_columns.append(_quote_ident(onesite_alias_col))
+
+	token_candidates = []
+	seen_tokens = set()
+	for candidate in [unit_token, request.GET.get('fallback_site_id', ''), request.GET.get('fallback_onesite_id', ''), request.GET.get('fallback_unit', '')]:
+		value = (candidate or '').strip()
+		if value and value not in seen_tokens:
+			token_candidates.append(value)
+			seen_tokens.add(value)
+
+	order_clause = ''
+	if 'lease_start' in select_aliases:
+		order_clause = ' ORDER BY lease_start DESC NULLS LAST'
+	elif 'move_in_date' in select_aliases:
+		order_clause = ' ORDER BY move_in_date DESC NULLS LAST'
+	else:
+		order_clause = f" ORDER BY {select_aliases[0]} ASC"
+
+	unit_records = []
+	for ident in identifier_columns:
+		for token_value in token_candidates:
+			where_parts = [f"{ident} = %s"]
+			params = [token_value]
+			if property_filter and property_col:
+				where_parts.append(f"{_quote_ident(property_col)} = %s")
+				params.append(property_filter)
+			where_sql = ' WHERE ' + ' AND '.join(where_parts)
+			data_sql = f"SELECT {', '.join(select_parts)} FROM {TOTAL_UNIT_DRILL_VIEW}{where_sql}{order_clause} LIMIT 200"
+			try:
+				with connection.cursor() as cur:
+					cur.execute(data_sql, params)
+					rows = cur.fetchall()
+			except Exception as exc:
+				print('Unit detail query failed:', exc)
+				rows = []
+			if rows:
+				for raw in rows:
+					unit_records.append(dict(zip(select_aliases, raw)))
+				break
+		if unit_records:
+			break
+
+	date_extra_fields = {
+		'availability_date', 'notice_for_date', 'move_out_date', 'current_lease_start_date', 'current_lease_end_date'
+	}
+	currency_extra_fields = {
+		'trade_out_dollar', 'current_lease_effective_rent', 'previous_lease_effective_rent'
+	}
+	percent_fields = {'occupancy_pct', 'trade_out_pct'}
+	integer_fields = {'lease_term', 'previous_lease_term', 'days_occupied'}
+
+	def format_value(key, value):
+		if value is None:
+			return '--'
+		if key in TOTAL_UNIT_CURRENCY_FIELDS or key in TOTAL_UNIT_DATE_FIELDS:
+			return _format_total_unit_value(key, value)
+		if key in {'lease_term', 'previous_lease_term', 'resident_name', 'property_name', 'unit_identifier', 'site_unit_id', 'floor_plan', 'beds_baths', 'lease_id', 'move_out_reason', 'unit_status', 'community'}:
+			return _format_total_unit_value(key, value)
+		if isinstance(value, (datetime, date)):
+			return value.strftime('%b %d, %Y')
+		if key in date_extra_fields:
+			s = str(value).strip()
+			if not s:
+				return '--'
+			try:
+				parsed = datetime.strptime(s[:10], '%Y-%m-%d').date()
+				return parsed.strftime('%b %d, %Y')
+			except Exception:
+				return s
+		if key in currency_extra_fields:
+			s = str(value).strip()
+			try:
+				if isinstance(value, Decimal):
+					num = float(value)
+				else:
+					s_clean = s.replace('$', '').replace(',', '').replace('\u00A0', '')
+					if s_clean.startswith('(') and s_clean.endswith(')'):
+						s_clean = '-' + s_clean[1:-1]
+					num = float(s_clean)
+			except Exception:
+				return s or '--'
+			return f"${num:,.2f}"
+		if key in percent_fields:
+			try:
+				num = float(value)
+				if abs(num) <= 1:
+					num *= 100
+				return f"{num:.1f}%"
+			except Exception:
+				s = str(value).strip()
+				if s.endswith('%'):
+					return s
+				return s or '--'
+		if key in integer_fields:
+			try:
+				num = int(round(float(value)))
+				return str(num)
+			except Exception:
+				return str(value)
+		s = str(value).strip()
+		return s or '--'
+
+	primary_row = unit_records[0] if unit_records else {}
+	property_name_raw = primary_row.get('property_name') or property_filter
+	property_name_filter = str(property_name_raw).strip() if property_name_raw else ''
+	unit_identifier_raw = primary_row.get('unit_identifier') or primary_row.get('site_unit_id') or unit_token
+	unit_identifier_filter = str(unit_identifier_raw).strip() if unit_identifier_raw else ''
+
+	unit_profile = {
+		'property_name': property_name_filter or '--',
+		'community': primary_row.get('community') or '--',
+		'unit_identifier': unit_identifier_filter or '--',
+		'site_unit_id': primary_row.get('site_unit_id') or unit_token,
+		'floor_plan': primary_row.get('floor_plan') or '--',
+		'beds_baths': primary_row.get('beds_baths') or '--',
+		'unit_status': format_value('unit_status', primary_row.get('unit_status')),
+		'amenity_value': format_value('amenity_value', primary_row.get('amenity_value')),
+		'resident_name': format_value('resident_name', primary_row.get('resident_name')),
+		'availability_date': format_value('availability_date', primary_row.get('availability_date')),
+		'lease_term': format_value('lease_term', primary_row.get('lease_term')),
+		'occupancy_pct': format_value('occupancy_pct', primary_row.get('occupancy_pct')),
+	}
+
+	fallback_values = {
+		'unit_identifier': (request.GET.get('fallback_unit') or '').strip(),
+		'floor_plan': (request.GET.get('fallback_floor_plan') or '').strip(),
+		'beds_baths': (request.GET.get('fallback_beds_baths') or '').strip(),
+		'unit_status': (request.GET.get('fallback_unit_status') or '').strip(),
+		'availability_date': (request.GET.get('fallback_availability_date') or '').strip(),
+		'amenity_value': (request.GET.get('fallback_amenity_value') or '').strip(),
+		'lease_term': (request.GET.get('fallback_lease_term') or '').strip(),
+	}
+
+	if unit_profile['unit_identifier'] in ('', '--'):
+		if fallback_values['unit_identifier']:
+			unit_profile['unit_identifier'] = fallback_values['unit_identifier']
+		elif unit_token:
+			unit_profile['unit_identifier'] = unit_token
+
+	if unit_profile.get('site_unit_id') in ('', '--', None) and unit_profile['unit_identifier'] not in ('', '--'):
+		unit_profile['site_unit_id'] = unit_profile['unit_identifier']
+
+	if unit_profile['floor_plan'] in ('', '--') and fallback_values['floor_plan']:
+		unit_profile['floor_plan'] = fallback_values['floor_plan']
+
+	if unit_profile['beds_baths'] in ('', '--'):
+		if fallback_values['beds_baths']:
+			unit_profile['beds_baths'] = fallback_values['beds_baths']
+
+	if unit_profile['unit_status'] in ('', '--') and fallback_values['unit_status']:
+		unit_profile['unit_status'] = format_value('unit_status', fallback_values['unit_status'])
+
+	if unit_profile['availability_date'] in ('', '--') and fallback_values['availability_date']:
+		unit_profile['availability_date'] = format_value('availability_date', fallback_values['availability_date'])
+
+	if unit_profile['amenity_value'] in ('', '--') and fallback_values['amenity_value']:
+		unit_profile['amenity_value'] = format_value('amenity_value', fallback_values['amenity_value'])
+
+	if unit_profile['lease_term'] in ('', '--') and fallback_values['lease_term']:
+		unit_profile['lease_term'] = format_value('lease_term', fallback_values['lease_term'])
+
+	if unit_profile['property_name'] in ('', '--') and property_filter:
+		unit_profile['property_name'] = property_filter
+
+	# Ensure we have a unit-level lookup identifier available for navigation and MV queries
+	unit_level_lookup = unit_profile.get('site_unit_id') or unit_token
+
+	prev_unit_token = None
+	next_unit_token = None
+	prev_unit_label = None
+	next_unit_label = None
+	unit_nav_identifier_col = _find_exact_column(columns, 'unit_identifier') or _find_column_by_keywords(columns, ['unit', 'identifier'])
+	unit_nav_list = []
+	if property_name_filter and property_col and unit_level_lookup:
+		unit_token_ident = _quote_ident(unit_id_col)
+		unit_label_ident = _quote_ident(unit_nav_identifier_col if unit_nav_identifier_col else unit_id_col)
+		property_ident = _quote_ident(property_col)
+		nav_sql = (
+			f"SELECT DISTINCT {unit_token_ident} AS unit_token, {unit_label_ident} AS unit_label "
+			f"FROM {TOTAL_UNIT_DRILL_VIEW} "
+			f"WHERE {property_ident} = %s "
+			f"AND {unit_token_ident} IS NOT NULL "
+			f"ORDER BY unit_label ASC LIMIT 1000"
+		)
+		try:
+			with connection.cursor() as cur:
+				cur.execute(nav_sql, [property_name_filter])
+				nav_rows = cur.fetchall()
+		except Exception as exc:
+			print('Unit navigation query failed:', exc)
+			nav_rows = []
+		for row in nav_rows:
+			token_raw = row[0] if len(row) > 0 else None
+			label_raw = row[1] if len(row) > 1 else token_raw
+			if token_raw in (None, ''):
+				continue
+			token_str = str(token_raw).strip()
+			if not token_str:
+				continue
+			label_str = str(label_raw).strip() if label_raw not in (None, '') else token_str
+			unit_nav_list.append((token_str, label_str))
+		current_token = str(unit_level_lookup or '').strip()
+		for idx, (token_str, label_str) in enumerate(unit_nav_list):
+			if token_str == current_token:
+				if idx > 0:
+					prev_unit_token, prev_unit_label = unit_nav_list[idx - 1]
+				if idx < len(unit_nav_list) - 1:
+					next_unit_token, next_unit_label = unit_nav_list[idx + 1]
+				break
+
+	renewal_count = 0
+	new_lease_count = 0
+	latest_trade_out_value = None
+	history_column_specs = [
+		{
+			'label': 'Lease ID',
+			'mv_keys': ['lease_id'],
+			'trade_keys': ['lease_id'],
+			'total_keys': ['lease_id'],
+		},
+		{
+			'label': 'Move-in Date',
+			'mv_keys': ['move_in_date'],
+			'trade_keys': ['move_in_date'],
+			'total_keys': ['move_in_date'],
+		},
+		{
+			'label': 'Lease Start Date',
+			'mv_keys': ['lease_start_date', 'effective_lease_start_date'],
+			'trade_keys': ['current_lease_start_date', 'lease_start_date'],
+			'total_keys': ['lease_start'],
+		},
+		{
+			'label': 'Lease End Date',
+			'mv_keys': ['actual_lease_end', 'scheduled_lease_end'],
+			'trade_keys': ['current_lease_end_date', 'lease_end', 'actual_lease_end'],
+			'total_keys': ['lease_end'],
+		},
+		{
+			'label': 'Lease Term',
+			'mv_keys': ['lease_term'],
+			'trade_keys': ['current_lease_term', 'lease_term'],
+			'total_keys': ['lease_term'],
+		},
+		{
+			'label': 'Previous Lease Term',
+			'mv_keys': ['previous_term', 'previous_lease_term'],
+			'trade_keys': ['previous_lease_term', 'previous_term'],
+			'total_keys': ['previous_lease_term'],
+		},
+		{
+			'label': 'Lease Effective Rent',
+			'mv_keys': ['effective_rent'],
+			'trade_keys': ['current_lease_effective_rent', 'effective_rent'],
+			'total_keys': ['effective_rent'],
+		},
+		{
+			'label': 'Previous Lease Effective Rent',
+			'mv_keys': ['previous_lease_effective_rent'],
+			'trade_keys': ['previous_lease_effective_rent'],
+			'total_keys': ['previous_lease_effective_rent'],
+		},
+		{
+			'label': 'Trade Out $',
+			'mv_keys': ['trade_out_dollars'],
+			'trade_keys': ['trade_out_dollar', 'trade_out_dollars'],
+			'total_keys': ['trade_out_dollar'],
+		},
+		{
+			'label': 'Trade Out %',
+			'mv_keys': ['trade_out_pct'],
+			'trade_keys': ['trade_out_pct'],
+			'total_keys': ['trade_out_pct'],
+		},
+		{
+			'label': 'Notice For Date',
+			'mv_keys': ['move_out_notice_date'],
+			'trade_keys': ['notice_for_date', 'move_out_notice_date'],
+			'total_keys': ['notice_for_date'],
+		},
+		{
+			'label': 'Moved Out Date',
+			'mv_keys': ['actual_move_out_date'],
+			'trade_keys': ['move_out_date', 'actual_move_out_date'],
+			'total_keys': ['move_out_date'],
+		},
+		{
+			'label': 'Lease Type',
+			'mv_keys': ['rate_type'],
+			'trade_keys': ['renewal_new_lease', 'rate_type'],
+			'total_keys': ['lease_type', 'rate_type'],
+		},
+		{
+			'label': 'Move Out Reason',
+			'mv_keys': ['move_out_reason'],
+			'trade_keys': ['move_out_reason'],
+			'total_keys': ['move_out_reason'],
+		},
+		{
+			'label': 'Days occupied',
+			'mv_keys': ['days_occupied', 'effective_days_occupied'],
+			'trade_keys': ['days_occupied'],
+			'total_keys': ['days_occupied'],
+		},
+		{
+			'label': 'Is Employee Lease',
+			'mv_keys': ['is_employee_lease'],
+			'trade_keys': ['is_employee_lease'],
+			'total_keys': ['is_employee_lease'],
+		},
+	]
+	history_columns = [{'key': spec['label'], 'label': spec['label']} for spec in history_column_specs]
+	history_rows = []
+	amenity_rows = []
+	amenity_total_display = '--'
+	amenity_columns = [
+		{'key': 'amenity_type', 'label': 'Amenity Type'},
+		{'key': 'amenity', 'label': 'Amenity'},
+		{'key': 'amenity_level', 'label': 'Amenity Level'},
+		{'key': 'amenity_cost', 'label': 'Amenity Cost'},
+	]
+	service_request_columns = []
+	service_request_rows = []
+	effective_days_occupied_total = 0.0
+	total_days_since_unit_acquired_value = None
+	occupancy_lease_ids = set()
+
+	unit_level_mv_records = []
+	if unit_level_lookup:
+		try:
+			unit_level_mv_records = list(UnitLevelDrillThrough.objects.filter(site_id_property_unit_number=unit_level_lookup))
+		except Exception as exc:
+			print('Unit level drill query failed:', exc)
+			unit_level_mv_records = []
+
+	if unit_level_mv_records:
+		mv_currency_fields = {'effective_rent', 'previous_lease_effective_rent', 'trade_out_dollars', 'amenity_cost'}
+		mv_percent_fields = {'trade_out_pct'}
+		mv_date_fields = {
+			'move_in_date', 'lease_start_date', 'effective_lease_start_date', 'scheduled_lease_end',
+			'actual_lease_end', 'move_out_notice_date', 'actual_move_out_date'
+		}
+		mv_datetime_fields = {'created_date_time', 'completed_date_time'}
+		mv_bool_fields = {'is_employee_lease'}
+
+		def format_unit_level_value(key, value):
+			if value is None:
+				return '--'
+			if key in mv_date_fields:
+				if isinstance(value, (datetime, date)):
+					return value.strftime('%b %d, %Y')
+				if isinstance(value, str):
+					s = value.strip()
+					if not s:
+						return '--'
+					for fmt in ('%Y-%m-%d', '%Y-%m-%d %H:%M:%S'):
+						try:
+							parsed = datetime.strptime(s[:len(fmt)], fmt)
+							return parsed.strftime('%b %d, %Y')
+						except Exception:
+							continue
+					return s
+			if key in mv_datetime_fields:
+				if isinstance(value, datetime):
+					return value.strftime('%b %d, %Y %I:%M %p')
+				if isinstance(value, date):
+					return value.strftime('%b %d, %Y')
+				if isinstance(value, str):
+					s = value.strip()
+					if not s:
+						return '--'
+					for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+						try:
+							parsed = datetime.strptime(s[:len(fmt)], fmt)
+							return parsed.strftime('%b %d, %Y %I:%M %p')
+						except Exception:
+							continue
+					return s
+			if key in mv_currency_fields:
+				try:
+					if isinstance(value, Decimal):
+						amount = float(value)
+					else:
+						s = str(value).strip()
+						s_clean = s.replace('$', '').replace(',', '').replace('\u00A0', '')
+						if s_clean.startswith('(') and s_clean.endswith(')'):
+							s_clean = '-' + s_clean[1:-1]
+						amount = float(s_clean)
+					return f"${amount:,.2f}"
+				except Exception:
+					s = str(value).strip()
+					return s or '--'
+			if key in mv_percent_fields:
+				try:
+					num = float(value)
+					if abs(num) <= 1:
+						num *= 100
+					return f"{num:.2f}%"
+				except Exception:
+					s = str(value).strip()
+					if s.endswith('%'):
+						return s
+					return s or '--'
+			if key in mv_bool_fields:
+				return 'Yes' if bool(value) else 'No'
+			if isinstance(value, (datetime, date)):
+				return value.strftime('%b %d, %Y')
+			s = str(value).strip()
+			return s or '--'
+
+		amenity_map = OrderedDict()
+		service_request_map = {}
+		history_map = OrderedDict()
+
+		for record in unit_level_mv_records:
+			if record is None:
+				continue
+			lease_identifier_raw = getattr(record, 'lease_id', None)
+			lease_identifier = str(lease_identifier_raw or '').strip()
+			has_lease = bool(lease_identifier)
+			if has_lease and lease_identifier not in occupancy_lease_ids:
+				occupancy_lease_ids.add(lease_identifier)
+				eff_days_val = getattr(record, 'effective_days_occupied', None)
+				if eff_days_val not in (None, ''):
+					try:
+						effective_days_occupied_total += float(eff_days_val)
+					except Exception:
+						pass
+				total_days_val = getattr(record, 'total_days_since_unit_acquired', None)
+				if total_days_val not in (None, ''):
+					try:
+						total_candidate = float(total_days_val)
+						if total_candidate > 0:
+							if total_days_since_unit_acquired_value is None or total_candidate > total_days_since_unit_acquired_value:
+								total_days_since_unit_acquired_value = total_candidate
+					except Exception:
+						pass
+			# Amenity aggregation
+			if record.amenity or record.amenity_type or record.amenity_level or record.amenity_cost is not None:
+				amenity_key = (
+					(str(record.amenity_type or '').strip()),
+					(str(record.amenity or '').strip()),
+					(str(record.amenity_level or '').strip()),
+				)
+				entry = amenity_map.get(amenity_key)
+				if not entry:
+					entry = {
+						'amenity_type': record.amenity_type,
+						'amenity': record.amenity,
+						'amenity_level': record.amenity_level,
+						'amenity_cost': record.amenity_cost,
+					}
+					amenity_map[amenity_key] = entry
+				else:
+					for field in ('amenity_type', 'amenity', 'amenity_level', 'amenity_cost'):
+						value = getattr(record, field, None)
+						if field == 'amenity_cost':
+							if entry.get(field) is None and value is not None:
+								entry[field] = value
+						else:
+							if (entry.get(field) in (None, '') and value not in (None, '')):
+								entry[field] = value
+
+			# Service request aggregation
+			if record.request_number:
+				sr_entry = service_request_map.get(record.request_number)
+				if not sr_entry:
+					sr_entry = {
+						'request_number': record.request_number,
+						'item': record.item,
+						'created_date_time': record.created_date_time,
+						'completed_date_time': record.completed_date_time,
+						'status': record.status,
+					}
+					service_request_map[record.request_number] = sr_entry
+				else:
+					for field in ('item', 'created_date_time', 'completed_date_time', 'status'):
+						value = getattr(record, field, None)
+						if sr_entry.get(field) in (None, '') and value not in (None, ''):
+							sr_entry[field] = value
+
+			# Lease history aggregation
+			lease_key = (
+				record.lease_id or '',
+				record.lease_start_date,
+				record.move_in_date,
+				record.actual_lease_end,
+			)
+			if any(lease_key):
+				history_entry = history_map.get(lease_key)
+				if not history_entry:
+					history_entry = {}
+					history_map[lease_key] = history_entry
+				for field in (
+					'lease_id', 'move_in_date', 'lease_start_date', 'effective_lease_start_date',
+					'scheduled_lease_end', 'actual_lease_end', 'rate_type', 'move_out_notice_date',
+					'actual_move_out_date', 'move_out_reason', 'days_occupied', 'effective_days_occupied',
+					'total_days_since_unit_acquired', 'is_employee_lease', 'effective_rent',
+					'previous_lease_effective_rent', 'trade_out_dollars', 'trade_out_pct',
+					'lease_term', 'previous_term'
+				):
+					value = getattr(record, field, None)
+					if history_entry.get(field) in (None, '') and value not in (None, ''):
+						history_entry[field] = value
+
+		# Build amenity rows and totals
+		if amenity_map:
+			amenity_total_raw = 0.0
+			for entry in amenity_map.values():
+				cost_val = entry.get('amenity_cost')
+				if cost_val not in (None, ''):
+					try:
+						amenity_total_raw += float(cost_val)
+					except Exception:
+						pass
+				amenity_rows.append([
+					format_unit_level_value('amenity_type', entry.get('amenity_type')),
+					format_unit_level_value('amenity', entry.get('amenity')),
+					format_unit_level_value('amenity_level', entry.get('amenity_level')),
+					format_unit_level_value('amenity_cost', entry.get('amenity_cost')),
+				])
+			amenity_total_display = format_unit_level_value('amenity_cost', amenity_total_raw)
+
+		# Build service request rows
+		if service_request_map:
+			service_request_columns = [
+				{'key': 'request_number', 'label': 'Request Number'},
+				{'key': 'item', 'label': 'Item'},
+				{'key': 'created_date_time', 'label': 'Created Date'},
+				{'key': 'completed_date_time', 'label': 'Completed Date'},
+				{'key': 'status', 'label': 'Status'},
+			]
+			def _sr_sort(entry):
+				val = entry.get('created_date_time')
+				if isinstance(val, datetime):
+					return val
+				if isinstance(val, date):
+					return datetime.combine(val, datetime.min.time())
+				return datetime.min
+			for entry in sorted(service_request_map.values(), key=_sr_sort, reverse=True):
+				service_request_rows.append([
+					entry.get('request_number') or '--',
+					format_unit_level_value('item', entry.get('item')),
+					format_unit_level_value('created_date_time', entry.get('created_date_time')),
+					format_unit_level_value('completed_date_time', entry.get('completed_date_time')),
+					format_unit_level_value('status', entry.get('status')),
+				])
+
+		# Build history rows from MV
+		if history_map:
+			def _history_sort(entry):
+				val = entry.get('lease_start_date') or entry.get('move_in_date') or entry.get('effective_lease_start_date')
+				if isinstance(val, (datetime, date)):
+					return val
+				if isinstance(val, str):
+					try:
+						return datetime.strptime(val[:10], '%Y-%m-%d')
+					except Exception:
+						return datetime.min
+				return datetime.min
+
+			for entry in sorted(history_map.values(), key=_history_sort, reverse=True):
+				rate_lower = str(entry.get('rate_type') or '').lower()
+				if 'renewal' in rate_lower:
+					renewal_count += 1
+				elif 'new' in rate_lower:
+					new_lease_count += 1
+				if latest_trade_out_value is None and entry.get('trade_out_dollars') is not None:
+					try:
+						latest_trade_out_value = float(entry['trade_out_dollars'])
+					except Exception:
+						latest_trade_out_value = entry['trade_out_dollars']
+				row_values = []
+				for spec in history_column_specs:
+					value_key = None
+					value = None
+					for candidate in spec['mv_keys']:
+						candidate_value = entry.get(candidate)
+						if candidate_value not in (None, ''):
+							value_key = candidate
+							value = candidate_value
+							break
+					if value_key is None:
+						row_values.append('--')
+					else:
+						row_values.append(format_unit_level_value(value_key, value))
+				history_rows.append(row_values)
+
+		primary_level_info = unit_level_mv_records[0]
+		if unit_profile['unit_identifier'] in ('', '--'):
+			alt_identifier = (
+				getattr(primary_level_info, 'site_id_property_unit_number', None)
+				or getattr(primary_level_info, 'unit_number', None)
+			)
+			if alt_identifier:
+				resolved = str(alt_identifier).strip()
+				if resolved:
+					unit_profile['unit_identifier'] = resolved
+					if unit_profile.get('site_unit_id') in ('', '--', None):
+						unit_profile['site_unit_id'] = resolved
+		if unit_profile['beds_baths'] in ('', '--'):
+			alt_beds = getattr(primary_level_info, 'bedrooms_bathrooms', None)
+			if alt_beds not in (None, ''):
+				unit_profile['beds_baths'] = str(alt_beds).strip()
+		if unit_profile['resident_name'] in ('', '--'):
+			alt_resident = getattr(primary_level_info, 'resident_name', None)
+			if alt_resident not in (None, ''):
+				unit_profile['resident_name'] = str(alt_resident).strip()
+
+	trade_columns = _get_trade_out_columns()
+	trade_rows = []
+	trade_aliases = []
+	trade_chart = {'labels': [], 'values': []}
+	trade_renewal_count = 0
+	trade_new_lease_count = 0
+
+	if trade_columns and unit_identifier_filter:
+		trade_specs = [
+			{'key': 'lease_id', 'exact': 'Lease ID'},
+			{'key': 'move_in_date', 'exact': 'Move-In Date'},
+			{'key': 'current_lease_start_date', 'exact': 'Current Lease Start Date'},
+			{'key': 'current_lease_end_date', 'exact': 'Current Lease End Date'},
+			{'key': 'trade_out_dollar', 'exact': 'Trade Out $', 'numeric': True},
+			{'key': 'trade_out_pct', 'exact': 'Trade Out %', 'numeric': True, 'keywords': ['trade', 'percent']},
+			{'key': 'current_lease_effective_rent', 'exact': 'Current Lease Effective Rent', 'numeric': True},
+			{'key': 'previous_lease_effective_rent', 'exact': 'Previous Lease Effective Rent', 'numeric': True},
+			{'key': 'current_lease_term', 'exact': 'Current Lease Term'},
+			{'key': 'previous_lease_term', 'exact': 'Previous Lease Term'},
+			{'key': 'renewal_new_lease', 'exact': 'Renewal/New Lease'},
+			{'key': 'notice_for_date', 'exact': 'Notice For Date'},
+			{'key': 'move_out_date', 'exact': 'Move-Out Date'},
+			{'key': 'move_out_reason', 'exact': 'Move-Out Reason'},
+			{'key': 'days_occupied', 'exact': 'Days Occupied'},
+		]
+		trade_select_parts = []
+		trade_aliases = []
+		for spec in trade_specs:
+			col = None
+			if spec.get('exact'):
+				col = _find_exact_column(trade_columns, spec['exact'])
+			if not col and spec.get('keywords'):
+				col = _find_column_by_keywords(trade_columns, spec['keywords'])
+			if not col:
+				continue
+			alias = spec['key']
+			if spec.get('numeric'):
+				expr = _clean_numeric_expr(col)
+				trade_select_parts.append(f"{expr} AS {alias}")
+			else:
+				trade_select_parts.append(f"{_quote_ident(col)} AS {alias}")
+			trade_aliases.append(alias)
+		unit_col = _find_exact_column(trade_columns, 'unit') or _find_column_by_keywords(trade_columns, ['unit'])
+		property_col_trade = _find_exact_column(trade_columns, 'property_name') or _find_column_by_keywords(trade_columns, ['property', 'name'])
+		if trade_select_parts and unit_col:
+			where_filters = [f"{_quote_ident(unit_col)} = %s"]
+			trade_params = [unit_identifier_filter]
+			if property_name_filter and property_col_trade:
+				where_filters.append(f"{_quote_ident(property_col_trade)} = %s")
+				trade_params.append(property_name_filter)
+			where_clause = ' WHERE ' + ' AND '.join(where_filters)
+			order_field = 'current_lease_start_date' if 'current_lease_start_date' in trade_aliases else trade_aliases[0]
+			trade_sql = f"SELECT {', '.join(trade_select_parts)} FROM web_ai.trade_out_drill_through{where_clause} ORDER BY {order_field} ASC LIMIT 300"
+			try:
+				with connection.cursor() as cur:
+					cur.execute(trade_sql, trade_params)
+					trade_raw = cur.fetchall()
+			except Exception as exc:
+				print('Unit detail trade-out query failed:', exc)
+				trade_raw = []
+			for raw in trade_raw:
+				row = dict(zip(trade_aliases, raw))
+				trade_rows.append(row)
+				start_date = row.get('current_lease_start_date')
+				parsed_date = None
+				if isinstance(start_date, (datetime, date)):
+					parsed_date = start_date
+				elif isinstance(start_date, str):
+					try:
+						parsed_date = datetime.strptime(start_date[:10], '%Y-%m-%d').date()
+					except Exception:
+						parsed_date = None
+				if parsed_date:
+					value = row.get('trade_out_dollar')
+					try:
+						float_val = float(value) if value is not None else 0.0
+					except Exception:
+						float_val = 0.0
+					trade_chart['labels'].append(parsed_date.strftime('%b %Y'))
+					trade_chart['values'].append(float_val)
+				if row.get('trade_out_dollar') is not None:
+					try:
+						latest_trade_out_value = float(row.get('trade_out_dollar'))
+					except Exception:
+						pass
+				type_val = str(row.get('renewal_new_lease') or '').lower()
+				if 'renewal' in type_val:
+					trade_renewal_count += 1
+				elif 'new' in type_val:
+					trade_new_lease_count += 1
+
+		if renewal_count == 0 and new_lease_count == 0:
+			renewal_count = trade_renewal_count
+			new_lease_count = trade_new_lease_count
+
+	if trade_rows:
+		def _trade_sort(row):
+			val = row.get('current_lease_start_date') or row.get('lease_start')
+			if isinstance(val, (datetime, date)):
+				return val
+			if isinstance(val, str):
+				try:
+					return datetime.strptime(val[:10], '%Y-%m-%d')
+				except Exception:
+					return datetime.min
+			return datetime.min
+		for row in sorted(trade_rows, key=_trade_sort, reverse=True):
+			row_values = []
+			for spec in history_column_specs:
+				value_key = None
+				value = None
+				for candidate in spec['trade_keys']:
+					if candidate in row and row[candidate] not in (None, ''):
+						value_key = candidate
+						value = row[candidate]
+						break
+				if value_key is None:
+					row_values.append('--')
+				else:
+					row_values.append(format_value(value_key, value))
+			history_rows.append(row_values)
+	elif unit_records:
+		for row in unit_records:
+			row_values = []
+			for spec in history_column_specs:
+				value_key = None
+				value = None
+				for candidate in spec['total_keys']:
+					if candidate in row and row[candidate] not in (None, ''):
+						value_key = candidate
+						value = row[candidate]
+						break
+				if value_key is None:
+					row_values.append('--')
+				else:
+					row_values.append(format_value(value_key, value))
+			history_rows.append(row_values)
+
+	if history_rows:
+		history_rows = [row for row in history_rows if row and str(row[0]).strip() not in ('', '--')]
+
+	if not service_request_rows:
+		sr_columns = _get_service_request_drill_columns()
+		if sr_columns and unit_identifier_filter:
+			sr_specs = [
+				{'key': 'request_number', 'label': 'Request #', 'keywords': ['request', 'number']},
+				{'key': 'item', 'label': 'Item', 'keywords': ['item']},
+				{'key': 'category', 'label': 'Category', 'keywords': ['category']},
+				{'key': 'status', 'label': 'Status', 'keywords': ['status']},
+				{'key': 'created_date', 'label': 'Created', 'keywords': ['created', 'date']},
+				{'key': 'completed_date_time', 'label': 'Completed', 'keywords': ['completed', 'date']},
+			]
+			used_sr_cols = set()
+			sr_select_parts = []
+			sr_aliases = []
+			sr_headers = []
+			for spec in sr_specs:
+				col = _find_column_by_keywords_excluding(sr_columns, spec.get('keywords', []), used_sr_cols)
+				if not col and spec.get('exact'):
+					col = _find_exact_column(sr_columns, spec['exact'])
+				if not col:
+					continue
+				used_sr_cols.add(col)
+				sr_select_parts.append(f"{_quote_ident(col)} AS {spec['key']}")
+				sr_aliases.append(spec['key'])
+				sr_headers.append({'key': spec['key'], 'label': spec['label']})
+			unit_col_sr = _find_column_by_keywords(sr_columns, ['unit', 'number']) or _find_column_by_keywords(sr_columns, ['unit'])
+			property_col_sr = _find_column_by_keywords(sr_columns, ['property', 'name']) or _find_column_by_keywords(sr_columns, ['community'])
+			if sr_select_parts and unit_col_sr:
+				where_segments = [f"{_quote_ident(unit_col_sr)} = %s"]
+				sr_params = [unit_identifier_filter]
+				if property_name_filter and property_col_sr:
+					where_segments.append(f"{_quote_ident(property_col_sr)} = %s")
+					sr_params.append(property_name_filter)
+				where_clause_sr = ' WHERE ' + ' AND '.join(where_segments)
+				order_field_sr = 'created_date' if 'created_date' in sr_aliases else sr_aliases[0]
+				sr_sql = f"SELECT {', '.join(sr_select_parts)} FROM {SERVICE_REQUEST_DRILL_VIEW}{where_clause_sr} ORDER BY {order_field_sr} DESC NULLS LAST LIMIT 50"
+				try:
+					with connection.cursor() as cur:
+						cur.execute(sr_sql, sr_params)
+						sr_raw = cur.fetchall()
+				except Exception as exc:
+					print('Unit detail service request query failed:', exc)
+					sr_raw = []
+				for raw in sr_raw:
+					row = dict(zip(sr_aliases, raw))
+					service_request_rows.append([_format_service_request_value(alias, row.get(alias)) for alias in sr_aliases])
+				service_request_columns = sr_headers
+
+	availability_display = unit_profile.get('availability_date')
+	if not availability_display or availability_display == '--':
+		availability_display = timezone.localdate().strftime('%b %d, %Y')
+
+	average_occupancy_display = '--'
+	if total_days_since_unit_acquired_value and total_days_since_unit_acquired_value > 0:
+		# Mirror the Power BI measure: SUM(effective_days_occupied) / total_days_since_unit_acquired
+		ratio = effective_days_occupied_total / total_days_since_unit_acquired_value
+		ratio = max(0.0, min(ratio, 1.0))
+		average_occupancy_display = f"{ratio * 100:.1f}%"
+	elif primary_row:
+		average_occupancy_display = format_value('occupancy_pct', primary_row.get('occupancy_pct'))
+
+	metrics = {
+		'availability_as_of': availability_display,
+		'average_occupancy': average_occupancy_display,
+		'new_leases_total': str(new_lease_count),
+		'renewal_total': str(renewal_count),
+		'latest_trade_out': format_value('trade_out_dollar', latest_trade_out_value) if latest_trade_out_value is not None else '--',
+		'beds_baths': unit_profile.get('beds_baths') or '--',
+	}
+
+	trade_chart_payload = {
+		'labels': trade_chart['labels'],
+		'values': [round(float(v), 2) for v in trade_chart['values']] if trade_chart['values'] else [],
+	}
+	has_trade_chart_data = bool(trade_chart_payload['values'])
+
+	context = {
+		'page_title': 'Unit Detail',
+		'unit_profile': unit_profile,
+		'unit_metrics': metrics,
+		'amenity_columns': amenity_columns,
+		'amenity_rows': amenity_rows,
+		'amenity_total_display': amenity_total_display,
+		'history_columns': history_columns,
+		'history_rows': history_rows,
+		'service_request_columns': service_request_columns,
+		'service_request_rows': service_request_rows,
+		'trade_chart_json': json.dumps(trade_chart_payload),
+		'has_trade_chart_data': has_trade_chart_data,
+		'property_name': unit_profile.get('property_name'),
+		'unit_identifier': unit_profile.get('unit_identifier'),
+		'property_filter_param': property_name_filter,
+		'prev_unit_token': prev_unit_token,
+		'prev_unit_label': prev_unit_label,
+		'next_unit_token': next_unit_token,
+		'next_unit_label': next_unit_label,
+		'return_url': return_url,
+		'error': '' if (unit_records or unit_level_mv_records) else 'No unit records were found for the selected filters.',
+	}
+
+	return render(request, 'dashboard/unit_detail.html', context)
+
 
 # ============================================================================
 # OCCUPANCY DRILL-THROUGH VIEWS
@@ -2959,6 +3969,7 @@ def _prepare_occupancy_drill_query(request):
 	display_columns = []
 	alias_order = []
 	alias_to_source = {}
+	detail_aliases = {}
 	
 	for field in OCCUPANCY_TABLE_FIELDS:
 		col = _find_column_by_keywords(columns, field['keywords'])
@@ -2969,6 +3980,18 @@ def _prepare_occupancy_drill_query(request):
 		alias_order.append(alias)
 		display_columns.append({'key': alias, 'label': field['label']})
 		select_parts.append(f"{_quote_ident(col)} AS {alias}")
+
+	site_token_col = _find_column_by_keywords(columns, ['site', 'unit', 'id'])
+	if site_token_col and 'site_unit_id' not in alias_order:
+		alias = '__detail_site_unit_id'
+		detail_aliases['site_unit_id'] = alias
+		select_parts.append(f"{_quote_ident(site_token_col)} AS {alias}")
+
+	onesite_token_col = _find_column_by_keywords(columns, ['onesite', 'property'])
+	if onesite_token_col and 'onesite_id' not in alias_order:
+		alias = '__detail_onesite_id'
+		detail_aliases['onesite_id'] = alias
+		select_parts.append(f"{_quote_ident(onesite_token_col)} AS {alias}")
 
 	dedup_columns = list(alias_to_source.values())
 	filter_options = _fetch_occupancy_filter_options(columns)
@@ -2990,18 +4013,6 @@ def _prepare_occupancy_drill_query(request):
 	filter_params = []
 	active_filters = {}
 	
-	# Add base filter: only show rows where unit_condition (snake_case) is not empty
-	# NOTE: Use snake_case 'unit_condition' which has: Leased, Non Revenue, On Notice, Vacant
-	# NOT title case 'Unit Condition' which has: Admin, Corporate, Down, Model, On Notice, Vacant
-	unit_condition_col = _find_exact_column(columns, 'unit_condition')
-	if not unit_condition_col:
-		# Fallback: try finding by keywords (may match wrong column)
-		unit_condition_col = _find_column_by_keywords(columns, ['unit', 'condition'])
-	
-	if unit_condition_col:
-		unit_condition_ident = _quote_ident(unit_condition_col)
-		filter_clauses.append(f"{unit_condition_ident} IS NOT NULL AND TRIM({unit_condition_ident}::text) <> ''")
-	
 	for field in OCCUPANCY_FILTER_FIELDS:
 		values = _extract_filter_list(request, request.GET, field['key'])
 		clean = [v.strip() for v in values if v and v.strip() and v.strip().lower() != 'all'] if values else []
@@ -3018,6 +4029,10 @@ def _prepare_occupancy_drill_query(request):
 		if clause_parts:
 			filter_clauses.append('(' + ' OR '.join(clause_parts) + ')')
 
+	unit_condition_col = _find_column_by_keywords(columns, ['unit', 'condition'])
+	if unit_condition_col:
+		filter_clauses.append(f"{_quote_ident(unit_condition_col)} IS NOT NULL")
+
 	return {
 		'error': False,
 		'columns': columns,
@@ -3026,6 +4041,7 @@ def _prepare_occupancy_drill_query(request):
 		'alias_to_source': alias_to_source,
 		'dedup_columns': dedup_columns,
 		'select_parts': select_parts,
+		'detail_aliases': detail_aliases,
 		'filter_clauses': filter_clauses,
 		'filter_params': filter_params,
 		'active_filters': active_filters,
@@ -3047,6 +4063,7 @@ def _build_occupancy_drill_context(request):
 	filter_params = query_info['filter_params']
 	active_filters = query_info['active_filters']
 	filter_options = query_info['filter_options']
+	detail_aliases = query_info.get('detail_aliases') or {}
 
 	summary = _fetch_occupancy_summary(filter_clauses, filter_params, columns)
 	total_units = summary.get('unit_count') or 0
@@ -3076,16 +4093,39 @@ def _build_occupancy_drill_context(request):
 	data_params = list(filter_params) + [page_size, offset]
 
 	rows = []
+	result_columns = None
 	try:
 		with connection.cursor() as cur:
 			cur.execute(data_sql, data_params)
 			result = cur.fetchall()
+			description = getattr(cur, 'description', None)
+			if description:
+				result_columns = [col[0] for col in description]
 	except Exception as exc:
 		print('Occupancy drill-through data query failed:', exc)
 		result = []
-	
+		result_columns = None
+
+	def _serialize_detail_param(value):
+		if value is None:
+			return ''
+		if isinstance(value, datetime):
+			return value.isoformat()
+		if isinstance(value, date):
+			return value.isoformat()
+		if isinstance(value, Decimal):
+			return format(value, 'f')
+		return str(value)
+
+	if result_columns is None:
+		result_columns = list(alias_order)
+		for extra_alias in detail_aliases.values():
+			if extra_alias not in result_columns:
+				result_columns.append(extra_alias)
+
 	for raw in result:
-		row_dict = dict(zip(alias_order, raw))
+		full_row = dict(zip(result_columns, raw))
+		row_dict = {alias: full_row.get(alias) for alias in alias_order}
 		ordered_values = []
 		# Inline SVGs for icons (avoid external static dependencies)
 		check_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'
@@ -3101,7 +4141,50 @@ def _build_occupancy_drill_context(request):
 					ordered_values.append(mark_safe(check_svg))
 			else:
 				ordered_values.append(_format_occupancy_value(alias, row_dict.get(alias)))
-		rows.append(ordered_values)
+		detail_url = ''
+		detail_values = {key: full_row.get(alias) for key, alias in detail_aliases.items()}
+		unit_token_candidate = (
+			detail_values.get('site_unit_id')
+			or detail_values.get('onesite_id')
+			or row_dict.get('unit_identifier')
+			or row_dict.get('unit')
+		)
+		if unit_token_candidate:
+			try:
+				detail_path = reverse('total_unit_detail', kwargs={'unit_token': unit_token_candidate})
+			except Exception:
+				detail_path = ''
+			if detail_path:
+				query_pairs = []
+				property_name_value = row_dict.get('property_name')
+				if property_name_value:
+					query_pairs.append(('property', property_name_value))
+				return_param = request.get_full_path() if hasattr(request, 'get_full_path') else ''
+				if return_param:
+					query_pairs.append(('return_url', return_param))
+				fallback_map = {
+					'fallback_site_id': detail_values.get('site_unit_id'),
+					'fallback_onesite_id': detail_values.get('onesite_id'),
+					'fallback_unit': row_dict.get('unit') or row_dict.get('unit_identifier') or detail_values.get('onesite_id'),
+					'fallback_floor_plan': row_dict.get('floor_plan'),
+					'fallback_beds_baths': row_dict.get('beds_baths'),
+					'fallback_unit_status': row_dict.get('status') or row_dict.get('leased_not_leased'),
+					'fallback_availability_date': row_dict.get('date_unit_available') or row_dict.get('move_in_date'),
+					'fallback_amenity_value': row_dict.get('amenity_value'),
+					'fallback_market_rent': row_dict.get('market_rent'),
+					'fallback_lease_rent': row_dict.get('lease_rent'),
+					'fallback_lease_term': row_dict.get('lease_term'),
+					'fallback_move_out_reason': row_dict.get('move_out_reason'),
+				}
+				for key, raw_value in fallback_map.items():
+					serialized = _serialize_detail_param(raw_value)
+					if serialized:
+						query_pairs.append((key, serialized))
+				if query_pairs:
+					detail_url = f"{detail_path}?{urlencode(query_pairs, doseq=True)}"
+				else:
+					detail_url = detail_path
+		rows.append({'values': ordered_values, 'detail_url': detail_url})
 
 	start_index = offset + 1 if total_units and rows else 0
 	end_index = offset + len(rows)

@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% load custom_filters %}
+{% block title %}Unit Detail · Olympus{% endblock %}
+{% block extra_head %}
+<style>
+.unit-detail-page{display:flex;flex-direction:column;gap:24px;padding-bottom:40px}
+.back-link{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;color:#127c8a;font-weight:600;text-decoration:none;font-size:13px;background:rgba(18,124,138,.08);padding:7px 12px;border-radius:999px;transition:background .2s ease}
+.back-link:hover{background:rgba(18,124,138,.18)}
+.unit-hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start;gap:20px;background:#0f172a;color:#f8fafc;border-radius:16px;padding:20px 24px;box-shadow:0 14px 28px rgba(15,23,42,.22)}
+.unit-hero-info{display:flex;flex-direction:column;gap:6px;min-width:200px}
+.unit-hero-info h1{margin:0;font-size:23px;font-weight:700}
+.unit-hero-info p{margin:0;font-size:13px;color:rgba(248,250,252,.78)}
+.unit-hero .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 16px;margin-top:0}
+.meta-chip{display:flex;flex-direction:column;background:rgba(15,23,42,.22);padding:10px 12px;border-radius:11px;gap:2px}
+.meta-chip span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(248,250,252,.62)}
+.meta-chip strong{font-size:14px;color:#f8fafc}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px}
+.metric-card{background:#fff;border-radius:14px;padding:16px 18px;box-shadow:0 12px 24px rgba(15,23,42,.1);display:flex;flex-direction:column;gap:5px}
+.metric-card span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}
+.metric-card strong{font-size:22px;font-weight:600;color:#0f172a}
+.metric-card small{color:#64748b;font-size:11px;line-height:1.4}
+.detail-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.detail-card{background:#fff;border-radius:16px;padding:18px 22px;box-shadow:0 16px 30px rgba(15,23,42,.08);display:flex;flex-direction:column;gap:16px}
+.detail-card h2{margin:0;font-size:17px;font-weight:600;color:#0f172a}
+.section-header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.section-header h2{margin:0;font-size:17px;font-weight:600;color:#0f172a}
+.export-button{background:#127c8a;color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 8px 16px rgba(18,124,138,.25);transition:background .2s ease,box-shadow .2s ease}
+.export-button:hover{background:#0f6474;box-shadow:0 10px 20px rgba(18,124,138,.35)}
+.export-button:disabled{background:#94a3b8;cursor:not-allowed;box-shadow:none}
+.unit-nav-controls{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:10px 0 6px}
+.nav-button{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12px;text-decoration:none;color:#0f172a;background:#e2e8f0;padding:8px 14px;border-radius:999px;transition:background .2s ease,transform .2s ease}
+.nav-button:hover{background:#cbd5f5;transform:translateY(-1px)}
+.nav-button.disabled,.nav-button.disabled:hover{background:#e2e8f0;color:#94a3b8;cursor:default;transform:none}
+.fact-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
+.fact-item{background:#f8fafc;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column}
+.fact-item span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}
+.fact-item strong{font-size:15px;color:#0f172a;margin-top:4px}
+.chart-card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 18px 34px rgba(15,23,42,.1)}
+.chart-card h2{margin:0 0 12px;font-size:18px;color:#0f172a;font-weight:600}
+.chart-container{position:relative;height:320px}
+.chart-empty{display:flex;align-items:center;justify-content:center;height:280px;font-weight:600;color:#64748b;background:#f8fafc;border-radius:12px}
+.table-scroll{max-height:420px;overflow:auto;border-radius:12px}
+.three-equal-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:stretch}
+.equal-panel{display:flex;flex-direction:column;height:100%;min-height:380px}
+.equal-panel .table-scroll{flex:1;overflow:auto}
+.table-scroll table{width:100%;border-collapse:collapse;font-size:13px}
+.table-scroll th{background:#f1f5f9;color:#334155;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.08em;padding:10px 14px;text-align:left}
+.table-scroll td{padding:11px 14px;border-bottom:1px solid #edf2f7;color:#0f172a}
+.table-scroll tr:nth-child(even) td{background:#f8fafc}
+.table-scroll .table-total-row td{font-weight:600;background:#f1f5f9;border-bottom:none}
+.empty-state{padding:18px 20px;background:#fff4f1;color:#b45309;border-radius:14px;font-weight:600}
+@media (max-width:1024px){.unit-hero{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}}
+@media (max-width:768px){.unit-hero{padding:18px 18px}.metrics-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
+</style>
+{% endblock %}
+
+{% block content %}
+{% url 'total_units_drillthrough' as total_units_url %}
+<div class="unit-detail-page">
+  <a class="back-link" href="{{ return_url|default:total_units_url }}">&#8592; Back</a>
+
+  {% if error %}
+    <div class="empty-state">{{ error }}</div>
+  {% else %}
+    <!-- Executive Hero Banner -->
+    <section class="unit-hero" style="grid-template-columns:1fr; padding:18px 28px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:20px">
+        <div>
+          <h1 style="color:#fff;margin:0;font-size:28px">Unit {{ unit_profile.unit_identifier }}</h1>
+          <div style="color:rgba(248,250,252,.9);margin-top:6px">{{ unit_profile.property_name }}{% if unit_profile.community and unit_profile.community != unit_profile.property_name %} · {{ unit_profile.community }}{% endif %}</div>
+          <div style="color:rgba(248,250,252,.75);margin-top:6px;font-size:13px">Resident: {{ unit_profile.resident_name }} · Floor Plan: {{ unit_profile.floor_plan }} · Acquired: {{ unit_profile.availability_date }}</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="unit-nav-controls">
+      {% if prev_unit_token %}
+        <a class="nav-button" href="{% url 'total_unit_detail' prev_unit_token %}{% if property_filter_param %}?property={{ property_filter_param|urlencode }}{% endif %}">&#8592; Previous {{ prev_unit_label }}</a>
+      {% else %}
+        <span class="nav-button disabled">&#8592; Previous</span>
+      {% endif %}
+      {% if next_unit_token %}
+        <a class="nav-button" href="{% url 'total_unit_detail' next_unit_token %}{% if property_filter_param %}?property={{ property_filter_param|urlencode }}{% endif %}">Next {{ next_unit_label }} &#8594;</a>
+      {% else %}
+        <span class="nav-button disabled">Next &#8594;</span>
+      {% endif %}
+    </div>
+
+    <!-- Full-width metrics row -->
+    <section class="metrics-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:12px 0 6px;">
+      {% for label, value in unit_metrics.items %}
+        <article class="metric-card" style="padding:12px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <span style="font-size:10px">{{ label|metric_label }}</span>
+          <strong style="font-size:20px">{{ value }}</strong>
+        </article>
+      {% endfor %}
+    </section>
+
+    <!-- Main content: Chart, Amenity, and Service side-by-side in a three-column first row -->
+    <div class="three-equal-row">
+      <section class="chart-card equal-panel">
+        <div class="section-header">
+          <h2>Trade Out $ History</h2>
+          <button type="button" class="export-button" data-export-type="chart" data-chart-key="tradeOut" data-filename="trade_out_history.csv" {% if not has_trade_chart_data %}disabled{% endif %}>Export CSV</button>
+        </div>
+        <div class="chart-container">
+          <canvas id="tradeOutChart"></canvas>
+          <div id="tradeOutChartEmpty" class="chart-empty" style="display:none;">No trade-out history available</div>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:12px;justify-content:flex-end;color:#64748b;font-size:13px">Latest Trade Out: {{ unit_metrics.latest_trade_out }} &nbsp; · &nbsp; Renewals: {{ unit_metrics.renewal_total }}</div>
+      </section>
+
+      <section class="detail-card equal-panel" style="overflow:hidden">
+        <div class="section-header">
+          <h2>Amenity Details</h2>
+          {% if amenity_rows %}
+            <button type="button" class="export-button" data-export-type="table" data-table-id="unit-amenities-table" data-filename="amenity_details.csv">Export CSV</button>
+          {% endif %}
+        </div>
+        {% if amenity_rows %}
+          <div class="table-scroll">
+            <table id="unit-amenities-table">
+              <thead>
+                <tr>
+                  {% for col in amenity_columns %}
+                    <th scope="col">{{ col.label }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in amenity_rows %}
+                  <tr>
+                    {% for value in row %}
+                      <td>{{ value }}</td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot>
+                <tr class="table-total-row">
+                  <td colspan="3">Total</td>
+                  <td>{{ amenity_total_display }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state">No amenity details were found for this unit.</div>
+        {% endif %}
+      </section>
+
+      <section class="detail-card equal-panel" style="overflow:hidden">
+        <div class="section-header">
+          <h2>Service Request History</h2>
+          {% if service_request_rows %}
+            <button type="button" class="export-button" data-export-type="table" data-table-id="service-requests-table" data-filename="service_request_history.csv">Export CSV</button>
+          {% endif %}
+        </div>
+        {% if service_request_rows %}
+          <div class="table-scroll">
+            <table id="service-requests-table">
+              <thead>
+                <tr>
+                  {% for col in service_request_columns %}
+                    <th scope="col">{{ col.label }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in service_request_rows %}
+                  <tr>
+                    {% for value in row %}
+                      <td>{{ value }}</td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state">No service requests were found for this unit.</div>
+        {% endif %}
+      </section>
+    </div>
+
+    <!-- Full width Unit History -->
+    <section style="margin-top:12px" class="detail-card">
+      <div class="section-header">
+        <h2>Unit History</h2>
+        {% if history_rows %}
+          <button type="button" class="export-button" data-export-type="table" data-table-id="unit-history-table" data-filename="unit_history.csv">Export CSV</button>
+        {% endif %}
+      </div>
+      {% if history_rows %}
+        <div class="table-scroll">
+          <table id="unit-history-table">
+            <thead>
+              <tr>
+                {% for col in history_columns %}
+                  <th scope="col">{{ col.label }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in history_rows %}
+                <tr>
+                  {% for value in row %}
+                    <td>{{ value }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">No lease history records matched the current filters.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  var chartPayload = {{ trade_chart_json|default:'{"labels":[],"values":[]}'|safe }};
+  window.tradeOutChartPayload = chartPayload;
+  var ctx = document.getElementById('tradeOutChart');
+  var emptyState = document.getElementById('tradeOutChartEmpty');
+  if(!ctx){return;}
+  if(!chartPayload.values || !chartPayload.values.length){
+    if(emptyState){emptyState.style.display = 'flex';}
+    ctx.style.display = 'none';
+    return;
+  }
+  if(emptyState){emptyState.style.display = 'none';}
+  var gradient = ctx.getContext('2d').createLinearGradient(0,0,0,320);
+  gradient.addColorStop(0,'rgba(18,124,138,0.35)');
+  gradient.addColorStop(1,'rgba(18,124,138,0)');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartPayload.labels,
+      datasets: [{
+        label: 'Trade Out $',
+        data: chartPayload.values,
+        borderColor: '#127c8a',
+        backgroundColor: gradient,
+        borderWidth: 2,
+        tension: 0.35,
+        pointRadius: 3,
+        pointBackgroundColor: '#127c8a'
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {legend: {display: false}},
+      scales: {
+        x: {grid: {display: false}},
+        y: {
+          ticks: {
+            callback: function(value){
+              var abs = Math.abs(value);
+              if(abs >= 1000){
+                return '$' + (value/1000).toFixed(1) + 'k';
+              }
+              return '$' + value.toFixed(0);
+            }
+          }
+        }
+      }
+    }
+  });
+})();
+
+function _escapeCsvValue(value){
+  var text = value == null ? '' : String(value);
+  if(text.search(/[",\n]/g) >= 0){
+    text = '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+function _downloadCsv(filename, rows){
+  if(!rows || !rows.length){return;}
+  var csvContent = rows.map(function(row){
+    return row.map(_escapeCsvValue).join(',');
+  }).join('\r\n');
+  var blob = new Blob([csvContent], {type: 'text/csv;charset=utf-8;'});
+  var link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.setAttribute('download', filename || 'export.csv');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function _exportTableCsv(tableId, filename){
+  var table = document.getElementById(tableId);
+  if(!table){return;}
+  var rows = [];
+  table.querySelectorAll('tr').forEach(function(tr){
+    var cells = Array.prototype.map.call(tr.querySelectorAll('th,td'), function(cell){
+      return cell.innerText.trim();
+    });
+    if(cells.length){rows.push(cells);}
+  });
+  _downloadCsv(filename, rows);
+}
+
+function _exportChartCsv(chartKey, filename){
+  if(chartKey === 'tradeOut'){
+    var payload = window.tradeOutChartPayload || {};
+    if(!payload.labels || !payload.labels.length){return;}
+    var rows = [['Lease Start Date', 'Trade Out $']];
+    payload.labels.forEach(function(label, idx){
+      rows.push([label, payload.values[idx]]);
+    });
+    _downloadCsv(filename, rows);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('[data-export-type="table"]').forEach(function(button){
+    button.addEventListener('click', function(){
+      _exportTableCsv(button.getAttribute('data-table-id'), button.getAttribute('data-filename'));
+    });
+  });
+  document.querySelectorAll('[data-export-type="chart"]').forEach(function(button){
+    button.addEventListener('click', function(){
+      _exportChartCsv(button.getAttribute('data-chart-key'), button.getAttribute('data-filename'));
+    });
+  });
+});
+</script>
+{% endblock %}

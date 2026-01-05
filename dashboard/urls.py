@@ -9,6 +9,7 @@ urlpatterns = [
     path('analytics/query/', views.analytics_query, name='analytics_query'),
     path('financial-reporting/', views.financial_reporting, name='financial_reporting'),
     path('drillthrough/units/', views.total_units_drillthrough, name='total_units_drillthrough'),
+    path('drillthrough/units/detail/<path:unit_token>/', views.total_unit_detail, name='total_unit_detail'),
     path('drillthrough/units/export/', views.total_units_drillthrough_export, name='total_units_drillthrough_export'),
     path('drillthrough/occupancy/', views.occupancy_drillthrough, name='occupancy_drillthrough'),
     path('drillthrough/occupancy/export/', views.occupancy_drillthrough_export, name='occupancy_drillthrough_export'),

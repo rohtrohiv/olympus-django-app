@@ -50,11 +50,25 @@
           </thead>
           <tbody>
             {% for row in table_rows %}
-              <tr>
-                {% for value in row %}
-                  <td>{{ value }}</td>
-                {% endfor %}
-              </tr>
+              {% with row.values as cells %}
+                {% if cells %}
+                  {% with row.detail_url as detail_url %}
+                    <tr{% if detail_url %} data-detail-url="{{ detail_url }}"{% endif %}>
+                      {% for value in cells %}
+                        <td>{{ value }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endwith %}
+                {% else %}
+                  {% with row as cells %}
+                    <tr>
+                      {% for value in cells %}
+                        <td>{{ value }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endwith %}
+                {% endif %}
+              {% endwith %}
             {% endfor %}
           </tbody>
         </table>
