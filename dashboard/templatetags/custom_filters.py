@@ -36,3 +36,21 @@ def add_filter(value, arg):
             return value + arg
         except:
             return ''
+
+
+@register.filter
+def metric_label(value):
+    if value is None:
+        return ''
+    raw = str(value)
+    mapping = {
+        'latest_trade_out': 'Latest Trade Out',
+        'new_leases_total': 'New Leases Total',
+        'renewal_total': 'Renewal Total',
+        'availability_as_of': 'Availability As Of',
+        'average_occupancy': 'Average Occupancy',
+        'beds_baths': 'Beds / Baths',
+    }
+    if raw in mapping:
+        return mapping[raw]
+    return raw.replace('_', ' ').title()
