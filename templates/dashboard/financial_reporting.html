@@ -6,8 +6,8 @@
 {% block title %}Financial Reporting - Olympus{% endblock %}
 
 {% block period_indicator %}
-{% if period_labels %}
-<div class="period-indicator" title="Currently viewing financial data for these periods">
+{% if period_indicator %}
+<div class="period-indicator" title="{{ period_indicator_title }}">
     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
         <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -15,7 +15,7 @@
         <line x1="3" y1="10" x2="21" y2="10"></line>
     </svg>
     <span class="label">Periods:</span>
-    <span class="value">{{ period_labels|join:", " }}</span>
+    <span class="value">{{ period_indicator }}</span>
 </div>
 {% endif %}
 {% endblock %}
@@ -311,15 +311,16 @@
         border-radius: 16px;
         box-shadow: 0 4px 16px rgba(0,0,0,0.08);
         border: 1px solid #E5E7EB;
-        overflow: hidden;
+        overflow-x: auto;
         will-change: scroll-position;
         transform: translateZ(0);
     }
 
     .financial-table {
-        width: 100%;
+        min-width: 100%;
+        white-space: nowrap;
         border-collapse: collapse;
-        table-layout: fixed;
+        table-layout: auto;
     }
 
     .financial-table thead th {
@@ -793,7 +794,7 @@ function loadBreakdownData(nestedRow) {
     const contentDiv = nestedRow.querySelector('.breakdown-content');
     
     // Generate breakdown HTML
-    let html = '<table class="breakdown-table" style="width: 100%; border-collapse: collapse; table-layout: fixed;">';
+    let html = '<table class="breakdown-table" style="width: 100%; border-collapse: collapse; table-layout: auto;">';
     
     // Get first period data to build structure
     const firstPeriodLabel = periodLabels[0];
@@ -805,6 +806,25 @@ function loadBreakdownData(nestedRow) {
         return;
     }
     
+    // Add a header row that labels each period (so expanded rows align to period columns)
+    html += '<thead>';
+    html += `<tr style="background:#0E555A; color:white;">
+                <th style="padding:10px 12px; text-align:left; border-right:1px solid #dee2e6; min-width:200px;">Category</th>`;
+    periodLabels.forEach(periodLabel => {
+        html += `<th colspan="3" style="text-align:center; padding:8px; border-right:1px solid #dee2e6;">${periodLabel}</th>`;
+    });
+    html += '</tr>';
+    // Sub-header for Actual / Period % Var / Per Unit under each period
+    html += '<tr style="background:#f3f6f8; color:#1F2937;">';
+    html += '<th style="padding:6px 12px; text-align:left; border-right:1px solid #dee2e6;"> </th>';
+    periodLabels.forEach(() => {
+        html += '<th style="text-align:center; padding:6px; min-width:120px;">Actual</th>';
+        html += '<th style="text-align:center; padding:6px; min-width:100px;">Period % Var</th>';
+        html += '<th style="text-align:center; padding:6px; min-width:90px;">Per Unit</th>';
+    });
+    html += '</tr>';
+    html += '</thead><tbody>';
+
     // Iterate through breakdown array (not object)
     firstPeriodData.breakdown.forEach((parentItem, parentIndex) => {
         const parentName = parentItem.parent;

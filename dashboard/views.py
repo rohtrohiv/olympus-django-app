@@ -102,6 +102,52 @@ def financial_reporting(request):
 				'month': prev_date.month,
 				'label': f"_prev_{prev_label}"  # Internal label
 			}
+
+	# Handle explicit month selections (e.g., 'Jan-2026') — add to target dates
+	if selected_months:
+		for m in selected_months:
+			try:
+				dt = datetime.strptime(m, '%b-%Y')
+				target_dates.append({'year': dt.year, 'month': dt.month, 'label': m})
+				# avoid duplicate labels
+				if m not in period_labels:
+					period_labels.append(m)
+			except Exception:
+				print(f"financial_reporting: failed parsing month '{m}'")
+
+	# Handle quarter selections (e.g., 'Q1-2025' or 'Q1 2025') — expand to months
+	if selected_quarters:
+		for q in selected_quarters:
+			m = re.match(r'Q([1-4])[-\s/_]?(\d{4})', q, re.I)
+			if m:
+				qnum = int(m.group(1))
+				year = int(m.group(2))
+				months_map = {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}
+				for month in months_map[qnum]:
+					label = datetime(year, month, 1).strftime('%b-%Y')
+					entry = {'year': year, 'month': month, 'label': label}
+					if entry not in target_dates:
+						target_dates.append(entry)
+					if label not in period_labels:
+						period_labels.append(label)
+			else:
+				print(f"financial_reporting: failed parsing quarter '{q}'")
+
+	# If previous_period_info wasn't set earlier (because months/quarters were added), compute it now
+	if not previous_period_info and target_dates and period_labels:
+		first_target = target_dates[0]
+		first_date = datetime(first_target['year'], first_target['month'], 1)
+		prev_date = first_date - relativedelta(months=1)
+		prev_label = prev_date.strftime('%b-%Y')
+		previous_period_info = {
+			'year': prev_date.year,
+			'month': prev_date.month,
+			'label': f"_prev_{prev_label}"
+		}
+
+	# Debug: show selected periods and parsed targets
+	print(f"financial_reporting: selected_months={selected_months}, selected_years={selected_years}, selected_quarters={selected_quarters}")
+	print(f"financial_reporting: period_labels={period_labels}, target_dates={target_dates}, previous_period_info={previous_period_info}")
 	
 	# Build optimized query with select_related to reduce database hits
 	queryset = CardDrillthrough.objects.all()
@@ -140,6 +186,8 @@ def financial_reporting(request):
 		'category_name', 'parent_category_name', 'sub_category_name', 'sub_sub_category_name',
 		'income_values', 'income_values_per_unit_all'
 	))
+	# Debug: log number of fetched records
+	print(f"financial_reporting: fetched {len(all_records)} records from CardDrillthrough")
 	
 	# Group by community and period in Python
 	community_map = {}
@@ -424,6 +472,9 @@ def financial_reporting(request):
 	# Sort by first period's actual amount descending
 	if period_labels:
 		community_data.sort(key=lambda x: abs(x['periods'][period_labels[0]]['actual']), reverse=True)
+
+	# Debug: log built community count
+	print(f"financial_reporting: built community_data count={len(community_data)}")
 	
 	# Get filter options - Optimize with caching and limits
 	# Cache dropdown options for 1 hour to reduce database load
@@ -483,6 +534,27 @@ def financial_reporting(request):
 			}
 		cache.set(cache_key, period_options, 3600)  # Cache for 1 hour
 	
+	# Build a concise period indicator for the header (prefer years if selected)
+	if selected_years:
+		display_labels = selected_years
+	elif selected_quarters:
+		display_labels = selected_quarters
+	elif selected_months:
+		display_labels = selected_months
+	else:
+		display_labels = period_labels
+
+	# Normalize to strings and truncate if too long
+	display_labels = [str(x) for x in display_labels]
+	max_show = 10
+	if len(display_labels) > max_show:
+		period_indicator = ', '.join(display_labels[:max_show]) + f', +{len(display_labels)-max_show} more'
+	else:
+		period_indicator = ', '.join(display_labels)
+
+	# Tooltip/title should show the full list
+	period_indicator_title = 'Currently viewing financial data for these periods: ' + (', '.join(display_labels) if display_labels else '')
+
 	context = {
 		'page_title': 'Financial Reporting',
 		'communities': community_data,  # Show all communities
@@ -501,6 +573,8 @@ def financial_reporting(request):
 		'period_mode': period_mode,
 		'total_communities': len(community_data),
 		'period_labels': period_labels,  # List of period labels for table headers (e.g., ['Q1-2025', 'Q2-2025'])
+		'period_indicator': period_indicator,
+		'period_indicator_title': period_indicator_title,
 	}
 	
 	return render(request, 'dashboard/financial_reporting.html', context)
@@ -1736,7 +1810,7 @@ TOTAL_UNIT_FILTER_FIELDS = [
 	{'key': 'regional_vp', 'label': 'Regional VP | Sr. VP', 'keywords': ['regional', 'vp']},
 	{'key': 'regional_manager', 'label': 'Regional Manager', 'keywords': ['regional', 'manager']},
 	{'key': 'investor', 'label': 'Investor', 'keywords': ['investor']},
-	{'key': 'unit', 'label': 'Unit', 'keywords': ['unit']},
+	{'key': 'unit', 'label': 'Unit', 'exact': 'unit', 'keywords': ['unit']},
 ]
 
 TOTAL_UNIT_TABLE_FIELDS = [
@@ -3649,7 +3723,7 @@ OCCUPANCY_FILTER_FIELDS = [
 OCCUPANCY_TABLE_FIELDS = [
 	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
 	{'key': 'unit_condition', 'label': 'Unit Condition', 'keywords': ['unit', 'condition']},
-	{'key': 'unit', 'label': 'Unit', 'keywords': ['unit']},
+	{'key': 'unit', 'label': 'Unit', 'exact': 'unit', 'keywords': ['unit']},
 	{'key': 'floor_plan', 'label': 'Floor Plan', 'keywords': ['floor', 'plan']},
 	{'key': 'beds_baths', 'label': 'Beds / Baths', 'keywords': ['bed', 'bath']},
 	{'key': 'floor_level', 'label': 'Floor Level', 'keywords': ['floor', 'level']},
@@ -7147,7 +7221,7 @@ AVG_TURN_TIME_FILTER_FIELDS = [
 AVG_TURN_TIME_TABLE_FIELDS = [
 	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
 	{'key': 'community', 'label': 'Community', 'keywords': ['community']},
-	{'key': 'unit', 'label': 'Unit', 'keywords': ['unit']},
+	{'key': 'unit', 'label': 'Unit', 'exact': 'unit', 'keywords': ['unit']},
 	{'key': 'floor_plan', 'label': 'Floor Plan', 'exact': 'Floor Plan'},
 	{'key': 'previous_lease_move_out', 'label': 'Previous Move Out', 'exact': 'Previous Lease Move Out'},
 	{'key': 'make_ready_date', 'label': 'Make Ready Date', 'exact': 'Make Ready Date'},
@@ -7263,14 +7337,14 @@ def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns, dedup_s
 
 	# Apartment homes count should be calculated across the entire materialized view
 	# Build apartment_homes count using all active filters EXCEPT the date
-	# range filter. We detect the Make Ready Date column and exclude any
+	# range filter. We detect the Previous Lease Move Out column and exclude any
 	# clauses that reference it so date-range filtering does not affect this
 	# metric while other filter panel selections still apply.
 	apartment_homes = 0
 	try:
-		# identify the make ready date column (used for date filters)
-		make_ready_col = _find_exact_column(columns, 'Make Ready Date')
-		q_make_ready = _quote_ident(make_ready_col) if make_ready_col else None
+		# identify the previous lease move out column (used for date filters)
+		move_out_col = _find_exact_column(columns, 'Previous Lease Move Out')
+		q_move_out = _quote_ident(move_out_col) if move_out_col else None
 
 		non_date_clauses = []
 		non_date_params = []
@@ -7284,8 +7358,8 @@ def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns, dedup_s
 					chunk.append(next(params_iter))
 				except StopIteration:
 					break
-			# skip clauses that reference the make ready/date column
-			if q_make_ready and q_make_ready in clause:
+			# skip clauses that reference the previous move-out date column
+			if q_move_out and q_move_out in clause:
 				continue
 			non_date_clauses.append(clause)
 			non_date_params.extend(chunk)
@@ -7319,10 +7393,10 @@ def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns, dedup_s
 	if one_site_col and one_site_col not in dedup_seen:
 		dedup_columns.append(one_site_col)
 		dedup_seen.add(one_site_col)
-	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
-	if make_ready_col and make_ready_col not in dedup_seen:
-		dedup_columns.append(make_ready_col)
-		dedup_seen.add(make_ready_col)
+	move_out_col = _find_exact_column(columns, 'Previous Lease Move Out')
+	if move_out_col and move_out_col not in dedup_seen:
+		dedup_columns.append(move_out_col)
+		dedup_seen.add(move_out_col)
 
 	sql_parts = [
 		'COUNT(*) as total_turns',
@@ -7408,16 +7482,16 @@ def _fetch_avg_turn_time_chart_data(columns, filter_clauses, filter_params, dedu
 	rehab_series = []
 	percent_series = []
 
-	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
+	move_out_col = _find_exact_column(columns, 'Previous Lease Move Out')
 	standard_col = _find_column_by_keywords(columns, ['standard', 'expense'])
 	capx_col = _find_column_by_keywords(columns, ['capx', 'expense'])
 	rehab_col = _find_column_by_keywords(columns, ['rehab', 'expense'])
 	turn_time_col = _find_column_by_keywords(columns, ['turn', 'time', 'measure'])
 
-	if not (make_ready_col and standard_col and capx_col and rehab_col and turn_time_col):
+	if not (move_out_col and standard_col and capx_col and rehab_col and turn_time_col):
 		return json.dumps(chart_payload), False
 
-	date_ident = _quote_ident(make_ready_col)
+	date_ident = _quote_ident(move_out_col)
 	base_sql = dedup_source_sql
 	if not base_sql:
 		base_sql = f"SELECT * FROM {AVG_TURN_TIME_DRILL_VIEW}"
@@ -7544,7 +7618,7 @@ def _prepare_avg_turn_time_drill_query(request):
 		}
 
 	# Determine columns used for deduplication to avoid duplicate rows in downstream queries
-	make_ready_col = _find_exact_column(columns, 'Make Ready Date')
+	move_out_col = _find_exact_column(columns, 'Previous Lease Move Out')
 	turn_time_col = _find_column_by_keywords(columns, ['turn', 'time', 'measure'])
 	capx_col = _find_column_by_keywords(columns, ['capx', 'expense'])
 	rehab_col = _find_column_by_keywords(columns, ['rehab', 'expense'])
@@ -7559,7 +7633,7 @@ def _prepare_avg_turn_time_drill_query(request):
 			dedup_columns.append(src)
 			dedup_seen.add(src)
 
-	for extra in [make_ready_col, turn_time_col, capx_col, rehab_col, standard_col, one_site_col]:
+	for extra in [move_out_col, turn_time_col, capx_col, rehab_col, standard_col, one_site_col]:
 		if extra and extra not in dedup_seen:
 			dedup_columns.append(extra)
 			dedup_seen.add(extra)
@@ -7575,18 +7649,19 @@ def _prepare_avg_turn_time_drill_query(request):
 		filter_clauses.append(f"({investor_ident} IS NULL OR ({investor_ident}::text NOT ILIKE %s AND {investor_ident}::text NOT ILIKE %s))")
 		filter_params.extend(['%BLACKSTONE/LIVCOR%', '%LIVCOR%'])
 
-	# Handle date range filters (Make Ready Date)
+	# Handle date range filters (Previous Lease Move Out)
 	start_date = request.GET.get('start_date', '').strip()
 	end_date = request.GET.get('end_date', '').strip()
 
-	if make_ready_col:
+	if move_out_col:
+		column_ident = _quote_ident(move_out_col)
 		# If no dates provided, default to current month's data up to latest available date
 		if not start_date and not end_date:
 			from datetime import date as _date
 			today = _date.today()
 			first_of_month = _date(today.year, today.month, 1)
 			# Query the latest available date for this column within current month
-			max_sql = f"SELECT MAX({_quote_ident(make_ready_col)}) FROM {AVG_TURN_TIME_DRILL_VIEW} WHERE {_quote_ident(make_ready_col)} >= %s"
+			max_sql = f"SELECT MAX({column_ident}) FROM {AVG_TURN_TIME_DRILL_VIEW} WHERE {column_ident} >= %s"
 			try:
 				with connection.cursor() as cur:
 					cur.execute(max_sql, [first_of_month])
@@ -7609,19 +7684,19 @@ def _prepare_avg_turn_time_drill_query(request):
 			# Format as ISO date strings
 			start_date = first_of_month.isoformat()
 			end_date = end_date_eff.isoformat()
-			filter_clauses.append(f"{_quote_ident(make_ready_col)} >= %s")
+			filter_clauses.append(f"{column_ident} >= %s")
 			filter_params.append(start_date)
 			active_filters['start_date'] = start_date
-			filter_clauses.append(f"{_quote_ident(make_ready_col)} <= %s")
+			filter_clauses.append(f"{column_ident} <= %s")
 			filter_params.append(end_date)
 			active_filters['end_date'] = end_date
 		else:
 			if start_date:
-				filter_clauses.append(f"{_quote_ident(make_ready_col)} >= %s")
+				filter_clauses.append(f"{column_ident} >= %s")
 				filter_params.append(start_date)
 				active_filters['start_date'] = start_date
 			if end_date:
-				filter_clauses.append(f"{_quote_ident(make_ready_col)} <= %s")
+				filter_clauses.append(f"{column_ident} <= %s")
 				filter_params.append(end_date)
 				active_filters['end_date'] = end_date
 
@@ -7725,7 +7800,7 @@ def _build_avg_turn_time_drill_context(request):
 		page = 1
 	offset = (page - 1) * page_size if total_records else 0
 
-	order_alias = 'make_ready_date' if 'make_ready_date' in alias_order else (alias_order[0] if alias_order else None)
+	order_alias = 'previous_lease_move_out' if 'previous_lease_move_out' in alias_order else ('make_ready_date' if 'make_ready_date' in alias_order else (alias_order[0] if alias_order else None))
 	data_sql = f"SELECT {', '.join(select_parts)} FROM ({dedup_source_sql}) distinct_rows"
 	if order_alias:
 		data_sql += f" ORDER BY {order_alias} DESC NULLS LAST"
@@ -8921,15 +8996,8 @@ def dashboard(request):
 			print(f"Result (del_num/del_den) * 100: {kpi_overrides['delinquency']}")
 			print(f"{'*'*60}\n")
 		
-		# FIX: Calculate avg_turn_time from unit-level drill-through data instead of
-		# property-level aggregates which have data quality issues.
-		# Convert selected_months to date objects for the drill-through query
-		month_starts = _resolve_selected_month_starts(request, params, svc_ctx)
-		avg_turn_from_drill = _calculate_avg_turn_time_from_drill_through(request, params, month_starts)
-		if avg_turn_from_drill is not None:
-			kpi_overrides['avg_turn_time'] = avg_turn_from_drill
-		elif turn_den:
-			# Fallback to old calculation if drill-through data not available
+		# Calculate avg_turn_time from OlympusLeaseKpisTrendMonthly aggregated data
+		if turn_den:
 			kpi_overrides['avg_turn_time'] = round(turn_num / turn_den, 1)
 		
 		if rc_den:
