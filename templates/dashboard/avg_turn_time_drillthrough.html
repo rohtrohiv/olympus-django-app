@@ -102,6 +102,8 @@ document.addEventListener('DOMContentLoaded', function(){
   var costCtx = document.getElementById('turnCostChart');
   var costData = payload.turn_costs || {};
   if(costCtx && Array.isArray(costData.labels) && costData.labels.length){
+    var costSinglePoint = costData.labels.length === 1;
+    var costSingleLabel = costSinglePoint ? (costData.labels[0] || '') : '';
     var baseStyles = {
       'Total Turns': {color: '#06b6d4', background: 'rgba(6,182,212,0.18)', axis: 'yCount'},
       'Standard Expense': {color: '#facc15', background: 'rgba(250,204,21,0.22)', axis: 'yCurrency'},
@@ -115,7 +117,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
     var datasets = (costData.datasets || []).map(function(ds){
       var style = baseStyles[ds.label] || fallback[ds.series_type] || fallback.currency;
-      return {
+      var config = {
         label: ds.label,
         data: Array.isArray(ds.data) ? ds.data : [],
         borderColor: style.color,
@@ -128,118 +130,192 @@ document.addEventListener('DOMContentLoaded', function(){
         pointBorderWidth: 2,
         yAxisID: style.axis
       };
+      if(costSinglePoint){
+        var val = 0;
+        if(Array.isArray(ds.data) && ds.data.length){
+          val = Number(ds.data[0]) || 0;
+        }
+        config.data = [{x: 0, y: val}];
+        config.showLine = false;
+        config.pointRadius = 6;
+        config.pointHoverRadius = 7;
+        config.tension = 0;
+        config.parsing = false;
+      }
+      return config;
     });
 
-    new Chart(costCtx, {
-      type: 'line',
-      data: {
-        labels: costData.labels,
-        datasets: datasets
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          yCurrency: {
-            type: 'linear',
-            position: 'left',
-            beginAtZero: true,
-            ticks: {
-              callback: function(value){
-                return '$' + formatCurrency(value);
-              }
-            }
-          },
-          yCount: {
-            type: 'linear',
-            position: 'right',
-            beginAtZero: true,
-            grid: {
-              drawOnChartArea: false
-            },
-            ticks: {
-              callback: function(value){
-                var v = Number(value) || 0;
-                return v.toLocaleString();
-              }
+    var costOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        yCurrency: {
+          type: 'linear',
+          position: 'left',
+          beginAtZero: true,
+          ticks: {
+            callback: function(value){
+              return '$' + formatCurrency(value);
             }
           }
         },
-        interaction: {
-          mode: 'index',
-          intersect: false
-        },
-        plugins: {
-          legend: {
-            display: true,
-            position: 'bottom'
+        yCount: {
+          type: 'linear',
+          position: 'right',
+          beginAtZero: true,
+          grid: {
+            drawOnChartArea: false
           },
-          tooltip: {
-            callbacks: {
-              label: function(context){
-                var label = context.dataset.label || '';
-                var val = Number(context.parsed.y || 0);
-                if(context.dataset.yAxisID === 'yCurrency'){
-                  return label + ': $' + val.toLocaleString();
-                }
-                return label + ': ' + val.toLocaleString();
+          ticks: {
+            callback: function(value){
+              var v = Number(value) || 0;
+              return v.toLocaleString();
+            }
+          }
+        }
+      },
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom'
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context){
+              var label = context.dataset.label || '';
+              var val = Number(context.parsed.y || 0);
+              if(context.dataset.yAxisID === 'yCurrency'){
+                return label + ': $' + val.toLocaleString();
               }
+              return label + ': ' + val.toLocaleString();
             }
           }
         }
       }
+    };
+
+    if(costSinglePoint){
+      costOptions.scales.x = {
+        type: 'linear',
+        min: -0.5,
+        max: 0.5,
+        grid: {
+          display: false
+        },
+        ticks: {
+          callback: function(value){
+            return value === 0 ? costSingleLabel : '';
+          }
+        }
+      };
+      costOptions.plugins.tooltip.intersect = true;
+      costOptions.plugins.tooltip.callbacks.title = function(){
+        return costSingleLabel;
+      };
+    }
+
+    new Chart(costCtx, {
+      type: 'line',
+      data: {
+        labels: costSinglePoint ? [] : costData.labels,
+        datasets: datasets
+      },
+      options: costOptions
     });
   }
 
   var completionCtx = document.getElementById('turnCompletionChart');
   var completionData = payload.completion || {};
   if(completionCtx && Array.isArray(completionData.labels) && completionData.labels.length){
-    new Chart(completionCtx, {
-      type: 'line',
-      data: {
-        labels: completionData.labels,
-        datasets: [{
-          label: '% of Turns <=7 Days',
-          data: Array.isArray(completionData.percentages) ? completionData.percentages : [],
-          borderColor: '#14b8a6',
-          backgroundColor: 'rgba(20,184,166,0.20)',
-          tension: 0.35,
-          fill: false,
-          pointRadius: 4,
-          pointBackgroundColor: '#14b8a6',
-          pointBorderColor: '#ffffff',
-          pointBorderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: true,
-            suggestedMax: 100,
-            ticks: {
-              callback: function(value){
-                var v = Number(value) || 0;
-                return v + '%';
-              }
+    var completionSinglePoint = completionData.labels.length === 1;
+    var completionSingleLabel = completionSinglePoint ? (completionData.labels[0] || '') : '';
+    var completionDataset = {
+      label: '% of Turns <=7 Days',
+      data: Array.isArray(completionData.percentages) ? completionData.percentages : [],
+      borderColor: '#14b8a6',
+      backgroundColor: 'rgba(20,184,166,0.20)',
+      tension: 0.35,
+      fill: false,
+      pointRadius: 4,
+      pointBackgroundColor: '#14b8a6',
+      pointBorderColor: '#ffffff',
+      pointBorderWidth: 2
+    };
+
+    if(completionSinglePoint){
+      var pctVal = 0;
+      if(Array.isArray(completionData.percentages) && completionData.percentages.length){
+        pctVal = Number(completionData.percentages[0]) || 0;
+      }
+      completionDataset.data = [{x: 0, y: pctVal}];
+      completionDataset.showLine = false;
+      completionDataset.pointRadius = 6;
+      completionDataset.pointHoverRadius = 7;
+      completionDataset.tension = 0;
+      completionDataset.parsing = false;
+    }
+
+    var completionOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          suggestedMax: 100,
+          ticks: {
+            callback: function(value){
+              var v = Number(value) || 0;
+              return v + '%';
             }
           }
+        }
+      },
+      plugins: {
+        legend: {
+          display: false
         },
-        plugins: {
-          legend: {
-            display: false
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context){
-                var val = Number(context.parsed.y || 0);
-                return val.toFixed(2) + '%';
-              }
+        tooltip: {
+          callbacks: {
+            label: function(context){
+              var val = Number(context.parsed.y || 0);
+              return val.toFixed(2) + '%';
             }
           }
         }
       }
+    };
+
+    if(completionSinglePoint){
+      completionOptions.scales.x = {
+        type: 'linear',
+        min: -0.5,
+        max: 0.5,
+        grid: {
+          display: false
+        },
+        ticks: {
+          callback: function(value){
+            return value === 0 ? completionSingleLabel : '';
+          }
+        }
+      };
+      completionOptions.plugins.tooltip.intersect = true;
+      completionOptions.plugins.tooltip.callbacks.title = function(){
+        return completionSingleLabel;
+      };
+    }
+
+    new Chart(completionCtx, {
+      type: 'line',
+      data: {
+        labels: completionSinglePoint ? [] : completionData.labels,
+        datasets: [completionDataset]
+      },
+      options: completionOptions
     });
   }
 });

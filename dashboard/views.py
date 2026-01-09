@@ -7448,9 +7448,33 @@ def _fetch_avg_turn_time_summary(filter_clauses, filter_params, columns, dedup_s
 			non_date_clauses.append(clause)
 			non_date_params.extend(chunk)
 
-		apt_sql = f'SELECT COUNT(DISTINCT "OneSiteID-Property-Unit") FROM {AVG_TURN_TIME_DRILL_VIEW}'
-		if non_date_clauses:
-			apt_sql += ' WHERE ' + ' AND '.join(non_date_clauses)
+		# Prefer counting distinct OneSite identifier (OneSiteID-Property-Unit)
+		# to match expected apartment/home counts. Fall back to `unit` if
+		# OneSite id is unavailable.
+		one_site_col = _find_exact_column(columns, 'OneSiteID-Property-Unit')
+		unit_col_exact = _find_exact_column(columns, 'unit')
+		unit_col_kw = _find_column_by_keywords(columns, ['unit'])
+		unit_col = unit_col_exact or unit_col_kw
+		prop_col = _find_exact_column(columns, 'property_name') or _find_column_by_keywords(columns, ['property', 'name'])
+		investor_col = _find_column_by_keywords(columns, ['investor'])
+		if one_site_col:
+			apt_sql = f'SELECT COUNT(DISTINCT {_quote_ident(one_site_col)}) FROM {AVG_TURN_TIME_DRILL_VIEW}'
+		elif unit_col:
+			apt_sql = f'SELECT COUNT(DISTINCT {_quote_ident(unit_col)}) FROM {AVG_TURN_TIME_DRILL_VIEW}'
+		else:
+			apt_sql = f'SELECT COUNT(DISTINCT "OneSiteID-Property-Unit") FROM {AVG_TURN_TIME_DRILL_VIEW}'
+		# Only apply non-date filters (e.g., investor). Do not enforce
+		# property/unit NOT NULL filters so the count matches the DB query
+		# that excludes only the investor (Livcor) rows.
+		all_clauses = list(non_date_clauses) if non_date_clauses else []
+		# Ensure investor rows matching 'livcor' are excluded (keep only investor filter)
+		if investor_col:
+			# use a normalized check to exclude any investor containing 'livcor'
+			all_clauses.append(f"LOWER(TRIM({_quote_ident(investor_col)}::text)) NOT LIKE %s")
+			non_date_params.append('%livcor%')
+
+		if all_clauses:
+			apt_sql += ' WHERE ' + ' AND '.join(all_clauses)
 		with connection.cursor() as cur:
 			cur.execute(apt_sql, non_date_params)
 			row = cur.fetchone()
