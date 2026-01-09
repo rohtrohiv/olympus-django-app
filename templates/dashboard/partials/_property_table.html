@@ -23,6 +23,9 @@
                 overflow-x:auto;
                 max-height: calc(100vh - var(--topbar-h) - 200px);
                 -webkit-overflow-scrolling: touch;
+                /* Reserve scrollbar space to avoid layout shifts/flicker on hover */
+                scrollbar-gutter: stable;
+                -ms-overflow-style: auto;
                 border-radius:12px;
                 border:1px solid #E5E7EB;
             }
@@ -56,7 +59,8 @@
             }
             #property-table thead th:hover { 
                 background: linear-gradient(135deg, #115E64 0%, #0D4248 100%);
-                transform: translateY(-1px);
+                /* Avoid translate to prevent sub-pixel layout shifts that can re-trigger repaints */
+                transform: none;
             }
             #property-table thead th[aria-sort="ascending"],
             #property-table thead th[aria-sort="descending"] { 
@@ -85,12 +89,14 @@
                 transition: background-color 0.15s ease;
             }
             #property-table tbody tr {
-                transition: all 0.2s ease;
+                transition: background-color 0.12s ease;
+                will-change: background-color;
             }
             #property-table tbody tr:hover {
                 background: linear-gradient(90deg, rgba(89,230,246,0.08) 0%, rgba(14,85,90,0.05) 100%);
-                transform: scale(1.002);
-                box-shadow: 0 2px 8px rgba(14,85,90,0.08);
+                /* Avoid transform/box-shadow to prevent layout shifts during scrollbar hover which caused flicker */
+                transform: none;
+                box-shadow: none;
             }
             #property-table tbody tr:nth-child(even) {
                 background: #FAFBFC;

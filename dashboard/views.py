@@ -5063,6 +5063,7 @@ def _fetch_exposure_summary(filter_clauses, filter_params, columns):
 		'exposure_8_weeks': None,
 		'forecasted_occupancy_8_weeks': None,
 		'current_occupancy': None,
+		'exposure_units': None,
 	}
 
 	# Find relevant columns
@@ -5074,8 +5075,12 @@ def _fetch_exposure_summary(filter_clauses, filter_params, columns):
 	# Calculate TOTAL unit count (all units in view)
 	try:
 		count_sql = f"SELECT COUNT(*) FROM {EXPOSURE_DRILL_VIEW}"
+		# Exclude rows with null/empty property_name from the total unit count
 		if filter_clauses:
 			count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+			count_sql += " AND property_name IS NOT NULL AND TRIM(property_name::text) <> ''"
+		else:
+			count_sql += " WHERE property_name IS NOT NULL AND TRIM(property_name::text) <> ''"
 		
 		with connection.cursor() as cur:
 			cur.execute(count_sql, filter_params)
@@ -5086,14 +5091,52 @@ def _fetch_exposure_summary(filter_clauses, filter_params, columns):
 		import traceback
 		traceback.print_exc()
 		summary['unit_count'] = 0
+
+	# Prepare for DAX-style exposure calculation (vacant/NTV within 8 weeks)
+	exposure_units = None
+	exposure_ratio = None
+	unit_type_candidates = [
+		_find_exact_column(columns, 'unit_type'),
+		_find_exact_column(columns, 'type'),
+		_find_exact_column(columns, 'Unit Type'),
+		_find_exact_column(columns, 'Vacant Status'),
+		_find_column_by_keywords(columns, ['vacant', 'status']),
+		_find_column_by_keywords(columns, ['unit', 'type'])
+	]
+	move_out_candidates = [
+		_find_exact_column(columns, 'move_out_date'),
+		_find_exact_column(columns, 'move_out'),
+		_find_column_by_keywords(columns, ['move', 'out'])
+	]
+	unit_type_col = next((col for col in unit_type_candidates if col), None)
+	move_out_col = next((col for col in move_out_candidates if col), None)
+	if total_units and unit_type_col and move_out_col:
+		metric_columns = {
+			'unit_type': unit_type_col,
+			'move_out_date': move_out_col,
+		}
+		exposure_units, exposure_ratio = _compute_exposure_8_weeks(filter_clauses, filter_params, metric_columns, total_units)
+		if exposure_units is not None:
+			summary['exposure_units'] = exposure_units
 	
 	# Build metrics query
 	sql_parts = []
 	
 	# Units Not Leased: COUNT(DISTINCT unit) WHERE "Leased/Not Leased" = 'Not Leased'
-	if leased_col and unit_col:
+	# Prefer counting non-null `Unit Condition` values (Power BI: COUNT(fact_availability_history[Unit Condition])
+	# filtered by [Leased/Not Leased] = 'Not Leased'. Fall back to counting distinct `unit` if Unit Condition not present.
+	unit_condition_col = _find_exact_column(columns, 'Unit Condition') or _find_column_by_keywords(columns, ['unit', 'condition'])
+	if leased_col and unit_condition_col:
+		leased_ident = _quote_ident(leased_col)
+		uc_ident = _quote_ident(unit_condition_col)
+		# Count the Unit Condition values (no DISTINCT) where Leased/Not Leased = 'Not Leased'
+		sql_parts.append(
+			f"COUNT({uc_ident}) FILTER (WHERE {leased_ident}::text = 'Not Leased') AS units_not_leased"
+		)
+	elif leased_col and unit_col:
 		leased_ident = _quote_ident(leased_col)
 		unit_ident = _quote_ident(unit_col)
+		# Fallback: previous behavior (count distinct unit identifiers)
 		sql_parts.append(
 			f"COUNT(DISTINCT {unit_ident}) FILTER (WHERE {leased_ident}::text = 'Not Leased') AS units_not_leased"
 		)
@@ -5132,28 +5175,69 @@ def _fetch_exposure_summary(filter_clauses, filter_params, columns):
 	
 	summary['units_not_leased'] = units_not_leased
 	
-	# Calculate Exposure 8 Weeks percentage
-	if avg_exposure_8_weeks is not None:
+	# Calculate Exposure 8 Weeks percentage using DAX-style ratio if available
+	if exposure_ratio is not None:
 		try:
-			exposure_pct = float(avg_exposure_8_weeks)
+			exposure_pct = max(min(exposure_ratio * 100.0, 100.0), 0.0)
 			summary['exposure_8_weeks'] = f"{exposure_pct:.2f}%"
-			# Forecasted Occupancy 8 Weeks = 100% - Exposure 8 Weeks
-			forecasted_pct = 100.0 - exposure_pct
+			forecasted_ratio = 1.0 - exposure_ratio
+			forecasted_pct = max(min(forecasted_ratio * 100.0, 100.0), 0.0)
 			summary['forecasted_occupancy_8_weeks'] = f"{forecasted_pct:.2f}%"
 		except Exception:
-			summary['exposure_8_weeks'] = '--'
-			summary['forecasted_occupancy_8_weeks'] = '--'
+			summary['exposure_8_weeks'] = 'N/A'
+			summary['forecasted_occupancy_8_weeks'] = 'N/A'
 	else:
-		summary['exposure_8_weeks'] = '--'
-		summary['forecasted_occupancy_8_weeks'] = '--'
+		# Fallback to average column if ratio not available
+		if avg_exposure_8_weeks is not None:
+			try:
+				exposure_pct = float(avg_exposure_8_weeks)
+				summary['exposure_8_weeks'] = f"{exposure_pct:.2f}%"
+				forecasted_pct = 100.0 - exposure_pct
+				summary['forecasted_occupancy_8_weeks'] = f"{forecasted_pct:.2f}%"
+			except Exception:
+				summary['exposure_8_weeks'] = '--'
+				summary['forecasted_occupancy_8_weeks'] = '--'
+		else:
+			if total_units == 0:
+				summary['exposure_8_weeks'] = 'N/A'
+				summary['forecasted_occupancy_8_weeks'] = 'N/A'
+			else:
+				summary['exposure_8_weeks'] = '--'
+				summary['forecasted_occupancy_8_weeks'] = '--'
 	
 	# Calculate Current Occupancy
+	# Power BI logic: count non-null Status (type column) rows excluding "NTV Leased" and "NTV Not Leased"
+	# These are nonoccupiable units. Occupancy = (total_units - nonoccupiable_units) / total_units * 100
 	if total_units > 0:
 		try:
-			occupied_units = total_units - units_not_leased
-			current_occupancy_pct = (occupied_units / total_units) * 100.0
-			summary['current_occupancy'] = f"{current_occupancy_pct:.2f}%"
-		except Exception:
+			# Find the status/type column
+			status_col = unit_type_col  # Already resolved earlier as 'type' column
+			if status_col:
+				status_ident = _quote_ident(status_col)
+				# Count rows where status IS NOT NULL and status NOT IN ('NTV Leased', 'NTV Not Leased')
+				nonoccupiable_sql = f"""
+					SELECT COUNT(*) 
+					FROM {EXPOSURE_DRILL_VIEW}
+					WHERE {status_ident} IS NOT NULL
+					  AND {status_ident}::text NOT IN ('NTV Leased', 'NTV Not Leased')
+				"""
+				if filter_clauses:
+					nonoccupiable_sql += ' AND ' + ' AND '.join(filter_clauses)
+				
+				with connection.cursor() as cur:
+					cur.execute(nonoccupiable_sql, filter_params)
+					nonoccupiable_units = cur.fetchone()[0] or 0
+				
+				# Calculate occupancy
+				current_occupancy_pct = ((total_units - nonoccupiable_units) / total_units) * 100.0
+				summary['current_occupancy'] = f"{current_occupancy_pct:.2f}%"
+			else:
+				# Fallback: use previous logic (total_units - units_not_leased)
+				occupied_units = total_units - units_not_leased
+				current_occupancy_pct = (occupied_units / total_units) * 100.0
+				summary['current_occupancy'] = f"{current_occupancy_pct:.2f}%"
+		except Exception as exc:
+			print('Current Occupancy calculation failed:', exc)
 			summary['current_occupancy'] = '--'
 	else:
 		summary['current_occupancy'] = '--'
