@@ -170,3 +170,5 @@ CACHES = {
         }
     }
 }
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  # This will be the folder for collectstatic
