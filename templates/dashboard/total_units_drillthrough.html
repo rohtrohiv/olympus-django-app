@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Total Unit Drill-Through · Olympus{% endblock %}
+{% load humanize %}
 {% block extra_head %}
 <style>
 .drill-page{display:flex;flex-direction:column;gap:24px;padding-bottom:48px}
@@ -73,13 +74,13 @@
   <section class="metrics-grid" style="margin-top:8px;">
     <article class="metric-card">
       <span>Unit Count</span>
-      <strong>{{ metrics.unit_count|default:'--' }}</strong>
+      <strong>{{ metrics.unit_count|default:'--'|intcomma }}</strong>
       <small>
         {% if metrics.unit_count %}
           {% if pagination.start_index and pagination.end_index %}
-            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }}
+            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count|intcomma }}
           {% else %}
-            {{ metrics.unit_count }} total units
+            {{ metrics.unit_count|intcomma }} total units
           {% endif %}
         {% else %}
           No matching units
@@ -128,11 +129,11 @@
 
   <section class="table-card">
     <header>
-      <div class="header-left">
+          <div class="header-left">
         <div>All Unit Details</div>
         <span>
           {% if metrics.unit_count %}
-            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units{% if pagination.total_pages > 1 %} · Page {{ pagination.page }} of {{ pagination.total_pages }}{% endif %}
+            Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count|intcomma }} units{% if pagination.total_pages > 1 %} · Page {{ pagination.page }} of {{ pagination.total_pages }}{% endif %}
           {% else %}
             No units found
           {% endif %}
@@ -145,7 +146,7 @@
     {% if pagination.total_pages > 1 and metrics.unit_count %}
       <footer style="border-bottom:1px solid #e5e9f0;border-top:none;">
         <span>
-          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units
+          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count|intcomma }} units
         </span>
         <div class="pager">
           {% if pagination.has_prev %}
@@ -188,8 +189,8 @@
     </div>
     {% if pagination.total_pages > 1 and metrics.unit_count %}
       <footer>
-        <span>
-          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count }} units
+          <span>
+          Showing {{ pagination.start_index }}–{{ pagination.end_index }} of {{ metrics.unit_count|intcomma }} units
         </span>
         <div class="pager">
           {% if pagination.has_prev %}

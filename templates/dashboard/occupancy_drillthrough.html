@@ -1,11 +1,12 @@
 {% extends "dashboard/drillthrough_base.html" %}
+{% load humanize %}
 {% block drillthrough_title %}Occupancy Drill-Through{% endblock %}
 
 {% block metric_cards %}
   <article class="metric-card">
     <span>Unit Count</span>
-    <strong>{{ metrics.unit_count|default:'--' }}</strong>
-    <small>Total units</small>
+    <strong>{{ metrics.unit_count|default:'--'|intcomma }}</strong>
+    <small>{{ metrics.unit_count|intcomma }} total units</small>
   </article>
   <article class="metric-card">
     <span>Available as Of</span>

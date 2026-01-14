@@ -2016,7 +2016,15 @@ def _fetch_total_unit_summary(filter_clauses, filter_params, metric_columns):
 		'exposure_units': None,
 	}
 
-	sql_parts = ["COUNT(*) AS total_units"]
+	# Prefer counting distinct site/unit identifier to avoid duplicate rows
+	# and to match dashboard KPI expectations. Fall back to COUNT(DISTINCT unit)
+	# when no site identifier column is available.
+	cols_for_count = _get_total_unit_drill_columns()
+	site_id_col = _find_exact_column(cols_for_count, 'site_id_property_unit_number') or _find_exact_column(cols_for_count, 'OneSiteID-Property-Unit') or _find_column_by_keywords(cols_for_count, ['site', 'unit', 'id'])
+	if site_id_col:
+		sql_parts = [f"COUNT(DISTINCT {_quote_ident(site_id_col)}) AS total_units"]
+	else:
+		sql_parts = ["COUNT(DISTINCT unit) AS total_units"]
 	resident_col = metric_columns.get('resident_name')
 	if resident_col:
 		ident = _quote_ident(resident_col)
@@ -2037,12 +2045,23 @@ def _fetch_total_unit_summary(filter_clauses, filter_params, metric_columns):
 		sql_parts.append(f"AVG({_clean_numeric_expr(exposure_col)}) AS exposure_8_weeks")
 
 	sql = f"SELECT {', '.join(sql_parts)} FROM {TOTAL_UNIT_DRILL_VIEW}"
-	if filter_clauses:
-		sql += ' WHERE ' + ' AND '.join(filter_clauses)
+	# Always exclude Livcor properties from the Unit Count to be consistent
+	# with dashboard KPI expectations. Add the investor exclusion clause
+	# in a normalized (lower/trim) form.
+	cols_for_count2 = cols_for_count
+	inv_col = _find_column_by_keywords(cols_for_count2, ['investor'])
+	local_clauses = list(filter_clauses) if filter_clauses else []
+	local_params = list(filter_params) if filter_params else []
+	if inv_col:
+		inv_ident = _quote_ident(inv_col)
+		local_clauses.append(f"LOWER(TRIM({inv_ident}::text)) NOT LIKE %s")
+		local_params.append('%livcor%')
+	if local_clauses:
+		sql += ' WHERE ' + ' AND '.join(local_clauses)
 
 	try:
 		with connection.cursor() as cur:
-			cur.execute(sql, filter_params)
+			cur.execute(sql, local_params)
 			row = cur.fetchone()
 			col_names = [desc[0] for desc in cur.description]
 			data = dict(zip(col_names, row if row else []))
@@ -3884,32 +3903,49 @@ def _fetch_occupancy_summary(filter_clauses, filter_params, columns):
 	days_vacant_col = _find_column_by_keywords(columns, ['days', 'until', 'vacant'])
 	date_available_col = _find_column_by_keywords(columns, ['date', 'available', 'unit'])
 	
-	# Calculate TOTAL unit count WITHOUT the base unit_condition IS NOT NULL filter
-	# This gives the actual total units in the view (matching main dashboard behavior)
+	# Calculate TOTAL unit count excluding the base unit_condition IS NOT NULL filter
+	# but keeping user-selected filters (community, investor, etc.)
+	# This matches total_units behavior: filtered by user selections, not by data completeness
 	try:
-		# Identify and exclude the base unit_condition filter
-		# The base filter is: "unit_condition" IS NOT NULL AND TRIM("unit_condition"::text) <> ''
+		# Strip out the automatic unit_condition IS NOT NULL filter that's added in _prepare_occupancy_drill_query
+		# but keep all user-selected filters
 		user_filter_clauses = []
 		user_filter_params = []
 		
 		param_idx = 0
 		for clause in filter_clauses:
-			# Skip the base unit_condition filter
-			if '"unit_condition"' in clause and 'IS NOT NULL' in clause and 'TRIM' in clause:
+			# Skip the base unit_condition IS NOT NULL filter (no params, just a null check)
+			if 'IS NOT NULL' in clause and clause.count('%s') == 0:
 				continue
-			# Keep other filters
+			# Keep other filters (user selections)
 			user_filter_clauses.append(clause)
 			# Count params needed for this clause
 			param_count = clause.count('%s')
 			user_filter_params.extend(filter_params[param_idx:param_idx + param_count])
 			param_idx += param_count
 		
-		count_sql = f"SELECT COUNT(*) FROM {OCCUPANCY_DRILL_VIEW}"
-		if user_filter_clauses:
-			count_sql += ' WHERE ' + ' AND '.join(user_filter_clauses)
+		# Prefer counting distinct site/unit identifier for total units
+		cols = _get_occupancy_drill_columns()
+		site_id_col = _find_exact_column(cols, 'site_id_property_unit_number') or _find_exact_column(cols, 'OneSiteID-Property-Unit') or _find_column_by_keywords(cols, ['site', 'unit', 'id'])
+		if site_id_col:
+			count_sql = f"SELECT COUNT(DISTINCT {_quote_ident(site_id_col)}) FROM {OCCUPANCY_DRILL_VIEW}"
+		else:
+			count_sql = f"SELECT COUNT(DISTINCT unit) FROM {OCCUPANCY_DRILL_VIEW}"
+		
+		# Apply user filters AND exclude Livcor
+		inv_col = _find_column_by_keywords(cols, ['investor'])
+		local_clauses = list(user_filter_clauses)
+		local_params = list(user_filter_params)
+		if inv_col:
+			inv_ident = _quote_ident(inv_col)
+			local_clauses.append(f"LOWER(TRIM({inv_ident}::text)) NOT LIKE %s")
+			local_params.append('%livcor%')
+		
+		if local_clauses:
+			count_sql += ' WHERE ' + ' AND '.join(local_clauses)
 		
 		with connection.cursor() as cur:
-			cur.execute(count_sql, user_filter_params)
+			cur.execute(count_sql, local_params)
 			total_units = cur.fetchone()[0] or 0
 			summary['unit_count'] = total_units
 	except Exception as exc:
@@ -4140,7 +4176,28 @@ def _build_occupancy_drill_context(request):
 	detail_aliases = query_info.get('detail_aliases') or {}
 
 	summary = _fetch_occupancy_summary(filter_clauses, filter_params, columns)
-	total_units = summary.get('unit_count') or 0
+	
+	# Calculate FILTERED count for table pagination (includes ALL filters including unit_condition)
+	# This is separate from the metric card unit_count which shows overall total
+	filtered_count = 0
+	try:
+		cols = _get_occupancy_drill_columns()
+		site_id_col = _find_exact_column(cols, 'site_id_property_unit_number') or _find_exact_column(cols, 'OneSiteID-Property-Unit') or _find_column_by_keywords(cols, ['site', 'unit', 'id'])
+		if site_id_col:
+			count_sql = f"SELECT COUNT(DISTINCT {_quote_ident(site_id_col)}) FROM {OCCUPANCY_DRILL_VIEW}"
+		else:
+			count_sql = f"SELECT COUNT(DISTINCT unit) FROM {OCCUPANCY_DRILL_VIEW}"
+		
+		# Use ALL filters (including unit_condition) for table pagination
+		if filter_clauses:
+			count_sql += ' WHERE ' + ' AND '.join(filter_clauses)
+		
+		with connection.cursor() as cur:
+			cur.execute(count_sql, filter_params)
+			filtered_count = cur.fetchone()[0] or 0
+	except Exception as exc:
+		print('Occupancy filtered count query failed:', exc)
+		filtered_count = 0
 	
 	page_size = OCCUPANCY_DRILL_PAGE_SIZE
 	page_param = request.GET.get('page') if hasattr(request, 'GET') else None
@@ -4150,13 +4207,13 @@ def _build_occupancy_drill_context(request):
 		requested_page = 1
 	if requested_page < 1:
 		requested_page = 1
-	if total_units:
-		total_pages = (total_units + page_size - 1) // page_size
+	if filtered_count:
+		total_pages = (filtered_count + page_size - 1) // page_size
 		page = min(requested_page, total_pages)
 	else:
 		total_pages = 1
 		page = 1
-	offset = (page - 1) * page_size if total_units else 0
+	offset = (page - 1) * page_size if filtered_count else 0
 
 	where_sql = ' WHERE ' + ' AND '.join(filter_clauses) if filter_clauses else ''
 	order_alias = 'property_name' if 'property_name' in alias_order else (alias_order[0] if alias_order else None)
@@ -4260,10 +4317,10 @@ def _build_occupancy_drill_context(request):
 					detail_url = detail_path
 		rows.append({'values': ordered_values, 'detail_url': detail_url})
 
-	start_index = offset + 1 if total_units and rows else 0
+	start_index = offset + 1 if filtered_count and rows else 0
 	end_index = offset + len(rows)
-	if total_units and end_index > total_units:
-		end_index = total_units
+	if filtered_count and end_index > filtered_count:
+		end_index = filtered_count
 
 	base_query_pairs = []
 	if hasattr(request.GET, 'lists'):
@@ -4288,13 +4345,13 @@ def _build_occupancy_drill_context(request):
 		'page_size': page_size,
 		'total_pages': total_pages,
 		'has_prev': page > 1,
-		'has_next': bool(total_units and page < total_pages),
+		'has_next': bool(filtered_count and page < total_pages),
 		'prev_url': _build_page_url(page - 1) if page > 1 else '',
-		'next_url': _build_page_url(page + 1) if total_units and page < total_pages else '',
+		'next_url': _build_page_url(page + 1) if filtered_count and page < total_pages else '',
 		'start_index': start_index,
 		'end_index': end_index,
-		'total_results': total_units,
-		'total_count': total_units,
+		'total_results': filtered_count,
+		'total_count': filtered_count,
 	}
 
 	export_pairs = [(k, v) for (k, v) in base_query_pairs if k != 'return_url']
