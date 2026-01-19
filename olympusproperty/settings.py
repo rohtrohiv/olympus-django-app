@@ -24,9 +24,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-u8=4#!bs2r+%#9vrh62(r*+752+g=-^q!-6)jk7_#m0s^3vsd&'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+#DEBUG = True
 
-ALLOWED_HOSTS = ['*','olympusproperty.ai','www.olympusproperty.ai']
+DEBUG = False
+
+
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+
+
+#ALLOWED_HOSTS = ['*','olympusproperty.ai','www.olympusproperty.ai']
+ALLOWED_HOSTS = [
+    "olympusproperty.ai",
+    "www.olympusproperty.ai",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://olympusproperty.ai",
+    "https://www.olympusproperty.ai",
+]
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 
 
 # Application definition
