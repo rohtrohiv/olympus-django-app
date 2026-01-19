@@ -33,11 +33,8 @@ CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
 
-#ALLOWED_HOSTS = ['*','olympusproperty.ai','www.olympusproperty.ai']
-ALLOWED_HOSTS = [
-    "olympusproperty.ai",
-    "www.olympusproperty.ai",
-]
+ALLOWED_HOSTS = ['*','olympusproperty.ai','www.olympusproperty.ai']
+#ALLOWED_HOSTS = ["olympusproperty.ai","www.olympusproperty.ai",]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://olympusproperty.ai",
