@@ -4535,10 +4535,24 @@ def move_out_reasons_drillthrough(request):
 	Queries the materialized view `web_ai.move_out_reasons_drill_through` and
 	returns context in the standardized drill-through format (table_columns,
 	table_rows, pagination, filters, filter_blocks, export_url).
+	
+	Defaults to showing the latest month of move-out data if no dates are specified.
 	"""
 	from django.db import connection
-	from datetime import datetime
+	from datetime import datetime, date
 	from decimal import Decimal
+	from dateutil.relativedelta import relativedelta
+
+	# Get latest available move-out date to default to latest month
+	latest_move_out = None
+	try:
+		with connection.cursor() as cursor:
+			cursor.execute('SELECT MAX("Move-Out Date") FROM "web_ai"."move_out_reasons_drill_through" WHERE "Move-Out Date" IS NOT NULL')
+			result = cursor.fetchone()
+			if result and result[0]:
+				latest_move_out = result[0]
+	except Exception:
+		pass
 
 	# Read filters from request
 	community = request.GET.get('community', '')
@@ -4546,6 +4560,15 @@ def move_out_reasons_drillthrough(request):
 	regional_manager = request.GET.get('regional_manager', '')
 	start_date = request.GET.get('start_date', '')
 	end_date = request.GET.get('end_date', '')
+
+	# Default to latest month if no dates specified
+	if not start_date and not end_date and latest_move_out:
+		# Set to first and last day of the latest month
+		if isinstance(latest_move_out, str):
+			latest_move_out = datetime.strptime(latest_move_out, '%Y-%m-%d').date()
+		end_date = latest_move_out.strftime('%Y-%m-%d')
+		first_day_of_month = latest_move_out.replace(day=1)
+		start_date = first_day_of_month.strftime('%Y-%m-%d')
 
 	filter_clauses = []
 	params = []
@@ -4596,6 +4619,56 @@ def move_out_reasons_drillthrough(request):
 			total_records = cursor.fetchone()[0] or 0
 		except Exception:
 			total_records = 0
+
+		# Calculate metrics for executive summary
+		metrics = {
+			'total_move_outs': total_records,
+			'date_range': f"{start_date} to {end_date}" if start_date and end_date else 'All dates',
+			'category_breakdown': [],
+		}
+		
+		# Get category and reason breakdown for expandable table
+		try:
+			cursor.execute(f'''
+				SELECT 
+					"Move-Out Category",
+					"Move-Out Reason",
+					COUNT(*) as cnt
+				FROM "web_ai"."move_out_reasons_drill_through" 
+				{where_sql}
+				GROUP BY "Move-Out Category", "Move-Out Reason"
+				ORDER BY "Move-Out Category", cnt DESC
+			''', params)
+			results = cursor.fetchall()
+			
+			# Organize by category with nested reasons
+			category_dict = {}
+			for row in results:
+				category = row[0] or 'Unknown'
+				reason = row[1] or 'Not specified'
+				count = row[2]
+				
+				if category not in category_dict:
+					category_dict[category] = {
+						'name': category,
+						'count': 0,
+						'reasons': []
+					}
+				
+				category_dict[category]['count'] += count
+				category_dict[category]['reasons'].append({
+					'name': reason,
+					'count': count
+				})
+			
+			# Convert to list and sort by total count
+			metrics['category_breakdown'] = sorted(
+				category_dict.values(),
+				key=lambda x: x['count'],
+				reverse=True
+			)
+		except Exception as exc:
+			print(f'Move-out category breakdown query failed: {exc}')
 
 		page_size = 100
 		try:
@@ -4739,7 +4812,7 @@ def move_out_reasons_drillthrough(request):
 		'table_columns': table_columns,
 		'table_rows': table_rows,
 		'pagination': pagination,
-		'metrics': {},
+		'metrics': metrics,
 		'filters': {
 			'community': community,
 			'regional_vp': regional_vp,
@@ -9948,5 +10021,326 @@ def occupancy_eom_drillthrough_csv(request):
 		]
 		row.extend([data['periods'].get(p, '') for p in sorted_periods])
 		writer.writerow(row)
+	
+	return response
+
+
+@login_required
+def demographics_analytics(request):
+	"""Demographics analytics page with professional insights.
+	
+	Analyzes resident demographic data from web_ai.demographics materialized view
+	including age distribution, gender, employment, income levels, and residency patterns.
+	"""
+	from dashboard.models import Demographics
+	from django.db.models import Avg, Count, Q, Max, Min, Sum, Case, When, IntegerField
+	import json
+	
+	# Get filter parameters
+	property_filter = request.GET.getlist('property') if request.GET.getlist('property') else None
+	status_filter = request.GET.get('status', 'all')  # all, current, former
+	
+	# Base queryset
+	queryset = Demographics.objects.all()
+	
+	# Apply property filter
+	if property_filter:
+		queryset = queryset.filter(property_name__in=property_filter)
+	
+	# Apply status filter
+	if status_filter == 'current':
+		queryset = queryset.filter(lease_level_occupancy_status__icontains='Current')
+	elif status_filter == 'former':
+		queryset = queryset.filter(lease_level_occupancy_status__icontains='Former')
+	
+	# Get distinct properties for filter dropdown
+	all_properties = Demographics.objects.values_list('property_name', flat=True).distinct().order_by('property_name')
+	
+	# Calculate key metrics
+	total_residents = queryset.count()
+	
+	# Age statistics (age is now IntegerField)
+	age_stats = queryset.filter(age__isnull=False).aggregate(
+		avg_age=Avg('age'),
+		min_age=Min('age'),
+		max_age=Max('age')
+	)
+	
+	# Income statistics (now DecimalField - can aggregate directly)
+	income_stats = queryset.filter(
+		current_employment_estimated_annual_income__isnull=False
+	).aggregate(
+		avg_income=Avg('current_employment_estimated_annual_income'),
+		min_income=Min('current_employment_estimated_annual_income'),
+		max_income=Max('current_employment_estimated_annual_income'),
+		total_estimated_income=Sum('current_employment_estimated_annual_income')
+	)
+	
+	# Gender distribution
+	gender_dist = queryset.filter(
+		gender__isnull=False
+	).exclude(gender='').values('gender').annotate(
+		count=Count('site_id_property_unit_number')
+	).order_by('-count')
+	
+	# Age distribution (buckets) - age is now integer
+	age_buckets = {}
+	try:
+		qs_with_age = queryset.filter(age__isnull=False)
+		age_buckets = {
+			'18-25': qs_with_age.filter(age__gte=18, age__lte=25).count(),
+			'26-35': qs_with_age.filter(age__gte=26, age__lte=35).count(),
+			'36-45': qs_with_age.filter(age__gte=36, age__lte=45).count(),
+			'46-55': qs_with_age.filter(age__gte=46, age__lte=55).count(),
+			'56-65': qs_with_age.filter(age__gte=56, age__lte=65).count(),
+			'66+': qs_with_age.filter(age__gte=66).count(),
+		}
+	except Exception:
+		age_buckets = {'18-25': 0, '26-35': 0, '36-45': 0, '46-55': 0, '56-65': 0, '66+': 0}
+	
+	# Employment status
+	employment_data = {
+		'employed': queryset.filter(current_employment_name__isnull=False).exclude(current_employment_name='').count(),
+		'income_reported': queryset.filter(current_employment_estimated_annual_income__isnull=False).count(),
+	}
+	
+	# Marital status distribution
+	marital_dist = queryset.filter(
+		marital_status__isnull=False
+	).exclude(marital_status='').values('marital_status').annotate(
+		count=Count('site_id_property_unit_number')
+	).order_by('-count')
+	
+	# Ethnicity distribution
+	ethnicity_dist = queryset.filter(
+		ethnicity__isnull=False
+	).exclude(ethnicity='').values('ethnicity').annotate(
+		count=Count('site_id_property_unit_number')
+	).order_by('-count')
+	
+	# Income ranges (income is now DecimalField)
+	income_ranges = {}
+	try:
+		qs_with_income = queryset.filter(current_employment_estimated_annual_income__isnull=False)
+		income_ranges = {
+			'<30k': qs_with_income.filter(current_employment_estimated_annual_income__lt=30000).count(),
+			'30k-50k': qs_with_income.filter(current_employment_estimated_annual_income__gte=30000, current_employment_estimated_annual_income__lt=50000).count(),
+			'50k-75k': qs_with_income.filter(current_employment_estimated_annual_income__gte=50000, current_employment_estimated_annual_income__lt=75000).count(),
+			'75k-100k': qs_with_income.filter(current_employment_estimated_annual_income__gte=75000, current_employment_estimated_annual_income__lt=100000).count(),
+			'100k+': qs_with_income.filter(current_employment_estimated_annual_income__gte=100000).count(),
+		}
+	except Exception:
+		income_ranges = {'<30k': 0, '30k-50k': 0, '50k-75k': 0, '75k-100k': 0, '100k+': 0}
+	
+	# Lease signer vs occupant
+	resident_types = {
+		'lease_signers': queryset.filter(lease_signer='Yes').count(),
+		'occupants': queryset.filter(occupant='Yes').count(),
+		'co_signers': queryset.filter(co_signer='Yes').count(),
+		'guarantors': queryset.filter(guarantor='Yes').count(),
+	}
+	
+	# Screening history
+	screening_stats = {
+		'criminal_history': queryset.filter(criminal_history='Yes').count(),
+		'evicted': queryset.filter(has_been_evicted='Yes').count(),
+		'sued_rent': queryset.filter(has_been_sued_for_rent='Yes').count(),
+		'broken_lease': queryset.filter(has_broken_lease='Yes').count(),
+	}
+	
+	# Top properties by resident count
+	top_properties = queryset.values('property_name').annotate(
+		resident_count=Count('site_id_property_unit_number')
+	).order_by('-resident_count')[:10]
+	
+	# Average ledger balance (now DecimalField)
+	avg_balance = queryset.filter(
+		ledger_balance__isnull=False
+	).aggregate(
+		avg_balance=Avg('ledger_balance')
+	)
+	
+	# Prepare chart data
+	age_chart_data = {
+		'labels': list(age_buckets.keys()),
+		'datasets': [{
+			'label': 'Residents by Age Group',
+			'data': list(age_buckets.values()),
+			'backgroundColor': '#59E6F6',
+			'borderColor': '#0E555A',
+			'borderWidth': 2
+		}]
+	}
+	
+	gender_chart_data = {
+		'labels': [g['gender'] for g in gender_dist],
+		'datasets': [{
+			'label': 'Gender Distribution',
+			'data': [g['count'] for g in gender_dist],
+			'backgroundColor': ['#59E6F6', '#C69A58', '#0E555A', '#95A3B3'],
+			'borderWidth': 2
+		}]
+	}
+	
+	income_chart_data = {
+		'labels': list(income_ranges.keys()),
+		'datasets': [{
+			'label': 'Income Distribution',
+			'data': list(income_ranges.values()),
+			'backgroundColor': '#C69A58',
+			'borderColor': '#0E555A',
+			'borderWidth': 2
+		}]
+	}
+	
+	# Prepare chart data
+	age_chart_data = {
+		'labels': list(age_buckets.keys()),
+		'datasets': [{
+			'label': 'Residents by Age Group',
+			'data': list(age_buckets.values()),
+			'backgroundColor': '#59E6F6',
+			'borderColor': '#0E555A',
+			'borderWidth': 2
+		}]
+	}
+	
+	gender_chart_data = {
+		'labels': [g['gender'] for g in gender_dist],
+		'datasets': [{
+			'label': 'Gender Distribution',
+			'data': [g['count'] for g in gender_dist],
+			'backgroundColor': ['#59E6F6', '#C69A58', '#0E555A', '#95A3B3'],
+			'borderWidth': 2
+		}]
+	}
+	
+	income_chart_data = {
+		'labels': list(income_ranges.keys()),
+		'datasets': [{
+			'label': 'Income Distribution',
+			'data': list(income_ranges.values()),
+			'backgroundColor': '#C69A58',
+			'borderColor': '#0E555A',
+			'borderWidth': 2
+		}]
+	}
+	
+	# Get resident data for table (limit to 100 records for performance)
+	resident_data = queryset.select_related().only(
+		'property_name', 'first_name', 'last_name', 'age', 'gender',
+		'marital_status', 'ethnicity', 'current_employment_name',
+		'current_employment_estimated_annual_income', 'lease_level_occupancy_status',
+		'lease_start_date', 'lease_end_date', 'ledger_balance',
+		'lease_signer', 'occupant'
+	)[:100]
+	
+	context = {
+		'total_residents': total_residents,
+		'age_stats': age_stats,
+		'income_stats': income_stats,
+		'gender_dist': gender_dist,
+		'marital_dist': marital_dist,
+		'ethnicity_dist': ethnicity_dist,
+		'employment_data': employment_data,
+		'resident_types': resident_types,
+		'screening_stats': screening_stats,
+		'top_properties': top_properties,
+		'avg_balance': avg_balance,
+		'age_chart_json': json.dumps(age_chart_data),
+		'gender_chart_json': json.dumps(gender_chart_data),
+		'income_chart_json': json.dumps(income_chart_data),
+		'all_properties': all_properties,
+		'selected_properties': property_filter or [],
+		'status_filter': status_filter,
+		'resident_data': resident_data,
+	}
+	
+	return render(request, 'dashboard/demographics.html', context)
+
+
+@login_required
+def demographics_export_csv(request):
+	"""Export filtered demographics data to CSV."""
+	from dashboard.models import Demographics
+	import csv
+	from django.http import HttpResponse
+	from datetime import datetime
+	
+	# Get filter parameters (same as main view)
+	property_filter = request.GET.getlist('property') if request.GET.getlist('property') else None
+	status_filter = request.GET.get('status', 'all')
+	
+	# Base queryset
+	queryset = Demographics.objects.all()
+	
+	# Apply property filter
+	if property_filter:
+		queryset = queryset.filter(property_name__in=property_filter)
+	
+	# Apply status filter
+	if status_filter == 'current':
+		queryset = queryset.filter(lease_level_occupancy_status__icontains='Current')
+	elif status_filter == 'former':
+		queryset = queryset.filter(lease_level_occupancy_status__icontains='Former')
+	
+	# Create CSV response
+	response = HttpResponse(content_type='text/csv')
+	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+	filename = f'demographics_export_{timestamp}.csv'
+	response['Content-Disposition'] = f'attachment; filename="{filename}"'
+	
+	writer = csv.writer(response)
+	
+	# Write header
+	writer.writerow([
+		'Property Name',
+		'Site ID',
+		'Unit Number',
+		'First Name',
+		'Last Name',
+		'Age',
+		'Gender',
+		'Marital Status',
+		'Ethnicity',
+		'Employment Name',
+		'Annual Income',
+		'Lease Signer',
+		'Occupant',
+		'Lease Start Date',
+		'Lease End Date',
+		'Occupancy Status',
+		'Ledger Balance',
+		'Criminal History',
+		'Evicted',
+		'Sued for Rent',
+		'Broken Lease'
+	])
+	
+	# Write data rows
+	for record in queryset.select_related():
+		writer.writerow([
+			record.property_name or '',
+			record.site_id_property_unit_number or '',
+			record.unit_number or '',
+			record.first_name or '',
+			record.last_name or '',
+			record.age or '',
+			record.gender or '',
+			record.marital_status or '',
+			record.ethnicity or '',
+			record.current_employment_name or '',
+			record.current_employment_estimated_annual_income or '',
+			record.lease_signer or '',
+			record.occupant or '',
+			record.lease_start_date or '',
+			record.lease_end_date or '',
+			record.lease_level_occupancy_status or '',
+			record.ledger_balance or '',
+			record.criminal_history or '',
+			record.has_been_evicted or '',
+			record.has_been_sued_for_rent or '',
+			record.has_broken_lease or ''
+		])
 	
 	return response

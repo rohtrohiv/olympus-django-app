@@ -543,3 +543,118 @@ class MoveOutReasonsDrillThrough(models.Model):
 	class Meta:
 		managed = False
 		db_table = '"web_ai"."move_out_reasons_drill_through"'
+
+
+class Demographics(models.Model):
+	"""Unmanaged model for web_ai.demographics materialized view.
+	
+	Contains resident demographic and employment data across properties.
+	Useful for demographic analysis, resident profiling, and market insights.
+	
+	Data types updated from actual database schema inspection (2026-01-19).
+	
+	Note: Uses site_id_property_unit_number as primary key since materialized view
+	doesn't have an auto-incrementing id column.
+	"""
+	property_name = models.CharField(max_length=100, blank=True, null=True)
+	site_id_property_unit_number = models.CharField(max_length=100, primary_key=True)
+	resident_member_id = models.IntegerField(blank=True, null=True)
+	unit_number = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Employment information - numeric fields are numeric(30,4) in DB
+	current_employment_additional_annual_income = models.CharField(max_length=100, blank=True, null=True)
+	current_employment_address = models.CharField(max_length=1000, blank=True, null=True)
+	current_employment_estimated_annual_income = models.DecimalField(max_digits=30, decimal_places=4, blank=True, null=True)
+	current_employment_job_title = models.CharField(max_length=100, blank=True, null=True)
+	current_employment_job_type = models.CharField(max_length=100, blank=True, null=True)
+	current_employment_length_of_employment = models.CharField(max_length=100, blank=True, null=True)
+	current_employment_miles_to_work = models.DecimalField(max_digits=30, decimal_places=4, blank=True, null=True)
+	current_employment_name = models.CharField(max_length=100, blank=True, null=True)
+	current_employment_start_date = models.DateField(blank=True, null=True)
+	
+	# Demographics - age is integer in DB
+	age = models.IntegerField(blank=True, null=True)
+	citizenship = models.CharField(max_length=100, blank=True, null=True)
+	contact_primary_language = models.CharField(max_length=100, blank=True, null=True)
+	ethnicity = models.CharField(max_length=100, blank=True, null=True)
+	gender = models.CharField(max_length=1000, blank=True, null=True)
+	marital_status = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Resident flags
+	co_signer = models.CharField(max_length=100, blank=True, null=True)
+	criminal_history = models.CharField(max_length=100, blank=True, null=True)
+	email = models.CharField(max_length=100, blank=True, null=True)
+	employee = models.CharField(max_length=100, blank=True, null=True)
+	
+	# Personal info
+	first_name = models.CharField(max_length=100, blank=True, null=True)
+	middle_name = models.CharField(max_length=100, blank=True, null=True)
+	last_name = models.CharField(max_length=100, blank=True, null=True)
+	forwarding_address = models.CharField(max_length=1000, blank=True, null=True)
+	guarantor = models.CharField(max_length=1000, blank=True, null=True)
+	home_phone = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Lease info
+	lease_signer = models.CharField(max_length=1000, blank=True, null=True)
+	length_of_stay = models.CharField(max_length=1000, blank=True, null=True)
+	occupant = models.CharField(max_length=1000, blank=True, null=True)
+	opt_in_for_email_notifications = models.CharField(max_length=1000, blank=True, null=True)
+	relationship_household_status = models.CharField(max_length=1000, blank=True, null=True)
+	resident_since = models.DateField(blank=True, null=True)
+	applied_date = models.DateField(blank=True, null=True)
+	contact_level_status = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Payment info
+	custom_payment_plan_name = models.CharField(max_length=1000, blank=True, null=True)
+	household_language = models.CharField(max_length=1000, blank=True, null=True)
+	household_name = models.CharField(max_length=1000, blank=True, null=True)
+	lease_start_date = models.DateField(blank=True, null=True)
+	lease_end_date = models.DateField(blank=True, null=True)
+	lease_level_occupancy_status = models.CharField(max_length=1000, blank=True, null=True)
+	ledger_balance = models.DecimalField(max_digits=30, decimal_places=4, blank=True, null=True)
+	payment_plan_name = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Screening
+	screening_current_historical = models.CharField(max_length=1000, blank=True, null=True)
+	screening_decision = models.CharField(max_length=1000, blank=True, null=True)
+	screening_submission_date = models.DateField(blank=True, null=True)
+	screening_decision_by = models.CharField(max_length=1000, blank=True, null=True)
+	screening_decision_date = models.DateField(blank=True, null=True)
+	screening_override_decision = models.CharField(max_length=1000, blank=True, null=True)
+	screening_override_decision_factors = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Previous residence (rent amounts are numeric)
+	other_previous_residence_address = models.CharField(max_length=1000, blank=True, null=True)
+	other_previous_residence_length_of_residency = models.CharField(max_length=1000, blank=True, null=True)
+	other_previous_residence_reason_for_leaving = models.CharField(max_length=1000, blank=True, null=True)
+	other_previous_residence_rent_amount = models.DecimalField(max_digits=30, decimal_places=4, blank=True, null=True)
+	other_previous_residence_rent_own_na = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Previous employment (income is numeric)
+	previous_employer_address = models.CharField(max_length=1000, blank=True, null=True)
+	previous_employer_name = models.CharField(max_length=1000, blank=True, null=True)
+	previous_employment_estimated_annual_income = models.DecimalField(max_digits=30, decimal_places=4, blank=True, null=True)
+	previous_employment_job_title = models.CharField(max_length=1000, blank=True, null=True)
+	previous_employment_job_type = models.CharField(max_length=1000, blank=True, null=True)
+	previous_employment_length_of_employment = models.CharField(max_length=1000, blank=True, null=True)
+	
+	previous_residence_address = models.CharField(max_length=1000, blank=True, null=True)
+	previous_residence_length_of_residency = models.CharField(max_length=1000, blank=True, null=True)
+	previous_residence_reason_for_leaving = models.CharField(max_length=1000, blank=True, null=True)
+	previous_residence_rent_amount = models.DecimalField(max_digits=30, decimal_places=4, blank=True, null=True)
+	previous_residence_rent_own_na = models.CharField(max_length=1000, blank=True, null=True)
+	previous_residence_residence_name = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# History flags
+	has_been_evicted = models.CharField(max_length=1000, blank=True, null=True)
+	has_been_sued_for_property_damages = models.CharField(max_length=1000, blank=True, null=True)
+	has_been_sued_for_rent = models.CharField(max_length=1000, blank=True, null=True)
+	has_broken_lease = models.CharField(max_length=1000, blank=True, null=True)
+	
+	# Metadata
+	insert_date = models.DateTimeField(blank=True, null=True)
+	update_date = models.DateTimeField(blank=True, null=True)
+	
+	class Meta:
+		managed = False
+		db_table = '"web_ai"."demographics"'

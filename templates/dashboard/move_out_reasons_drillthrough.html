@@ -1,15 +1,131 @@
 {% extends "dashboard/drillthrough_base.html" %}
+{% load humanize %}
 {% block drillthrough_title %}Move-Out Reasons Drill-Through{% endblock %}
 
 {% block metric_cards %}
-<!-- No top KPI cards for this drill; keep empty or add metrics later -->
+<!-- Metrics integrated with date filter - no cards here -->
+{% endblock %}
+
+{% block extra_filters %}
+<!-- Combined Date Range Filter and Metrics -->
+<section style="margin-top:16px;">
+  <div style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:start">
+    <!-- Date Range Filter -->
+    <form method="get" id="dateRangeForm" style="background:#fff;padding:20px 24px;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.08)">
+      <input type="hidden" name="return_url" value="{{ dashboard_return_url }}">
+      <input type="hidden" name="community" value="{{ filters.community }}">
+      <input type="hidden" name="regional_vp" value="{{ filters.regional_vp }}">
+      <input type="hidden" name="regional_manager" value="{{ filters.regional_manager }}">
+      <input type="hidden" name="page" value="1">
+      
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <label style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+          <span style="font-size:12px;font-weight:600;color:#425466;text-transform:uppercase;letter-spacing:.05em">Move-Out Date From</span>
+          <input type="date" name="start_date" value="{{ filters.start_date }}" style="padding:10px 12px;border:1px solid #d7dde5;border-radius:10px;font-size:14px;background:#fdfefe;min-width:160px">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+          <span style="font-size:12px;font-weight:600;color:#425466;text-transform:uppercase;letter-spacing:.05em">Move-Out Date To</span>
+          <input type="date" name="end_date" value="{{ filters.end_date }}" style="padding:10px 12px;border:1px solid #d7dde5;border-radius:10px;font-size:14px;background:#fdfefe;min-width:160px">
+        </label>
+      </div>
+    </form>
+    
+    <!-- Metric Cards -->
+    <article class="metric-card" style="margin:0">
+      <span>Date Range</span>
+      <strong style="font-size:16px">{{ metrics.date_range }}</strong>
+      <small>Move-out period selected</small>
+    </article>
+    <article class="metric-card" style="margin:0">
+      <span>Total Move-Outs</span>
+      <strong>{{ metrics.total_move_outs|default:'0'|intcomma }}</strong>
+      <small>Residents moved out</small>
+    </article>
+  </div>
+</section>
+
+<!-- Move-Out Reason Summary Table -->
+<section style="margin-top:24px;">
+  <div style="background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);overflow:hidden">
+    <header style="padding:20px 24px;border-bottom:1px solid #e5e9f0;font-weight:600;color:#0f172a">
+      Move-Out Reason Analysis
+    </header>
+    <div style="padding:0">
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <thead>
+          <tr style="background:#f8fafc;border-bottom:1px solid #e2e8f0">
+            <th style="text-align:left;padding:12px 24px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#41506b">Move-Out Reason</th>
+            <th style="text-align:right;padding:12px 24px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#41506b;width:100px">Count</th>
+          </tr>
+        </thead>
+        <tbody id="moveOutReasonTable">
+          {% for category in metrics.category_breakdown %}
+            <tr class="category-row" data-category="{{ forloop.counter }}" style="cursor:pointer;background:#fff;border-bottom:1px solid #f0f4f8">
+              <td style="padding:14px 24px;font-weight:600;color:#0f172a">
+                <span class="expand-icon" style="display:inline-block;width:16px;margin-right:8px">▶</span>
+                {{ category.name }}
+              </td>
+              <td style="padding:14px 24px;text-align:right;font-weight:600;color:#0f172a">{{ category.count }}</td>
+            </tr>
+            {% for reason in category.reasons %}
+              <tr class="reason-row category-{{ forloop.parentloop.counter }}" style="display:none;background:#fcfeff;border-bottom:1px solid #f0f4f8">
+                <td style="padding:12px 24px 12px 56px;color:#475569">{{ reason.name }}</td>
+                <td style="padding:12px 24px;text-align:right;color:#475569">{{ reason.count }}</td>
+              </tr>
+            {% endfor %}
+          {% empty %}
+            <tr>
+              <td colspan="2" style="padding:20px 24px;text-align:center;color:#6b7280">No move-out data available for the selected period.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
 {% endblock %}
 
 {% block table_title %}Move-Out Reason Details{% endblock %}
 {% block empty_message %}No move-out records were returned for the selected filters.{% endblock %}
 
-{% block extra_filters %}{% endblock %}
-
 {% block extra_drillthrough_styles %}{% endblock %}
 
-{% block extra_drillthrough_scripts %}{% endblock %}
+{% block extra_drillthrough_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // Auto-submit date range form when dates change
+  var dateForm = document.getElementById('dateRangeForm');
+  if(dateForm){
+    var dateInputs = dateForm.querySelectorAll('input[type="date"]');
+    dateInputs.forEach(function(input){
+      input.addEventListener('change', function(){
+        if(typeof dateForm.requestSubmit === 'function'){
+          dateForm.requestSubmit();
+        }else{
+          dateForm.submit();
+        }
+      });
+    });
+  }
+  
+  // Expand/collapse category rows
+  var categoryRows = document.querySelectorAll('.category-row');
+  categoryRows.forEach(function(row){
+    row.addEventListener('click', function(){
+      var categoryId = this.getAttribute('data-category');
+      var reasonRows = document.querySelectorAll('.reason-row.category-' + categoryId);
+      var icon = this.querySelector('.expand-icon');
+      var isExpanded = reasonRows[0] && reasonRows[0].style.display !== 'none';
+      
+      reasonRows.forEach(function(reasonRow){
+        reasonRow.style.display = isExpanded ? 'none' : 'table-row';
+      });
+      
+      if(icon){
+        icon.textContent = isExpanded ? '▶' : '▼';
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

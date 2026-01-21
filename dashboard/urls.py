@@ -29,4 +29,6 @@ urlpatterns = [
     path('drillthrough/move-out-reasons/', views.move_out_reasons_drillthrough, name='move_out_reasons_drillthrough'),
     path('drillthrough/move-out-reasons/export/', views.move_out_reasons_drillthrough_export, name='move_out_reasons_drillthrough_export'),
     path('sample/', views.sample_page, name='sample_page'),
+    path('demographics/', views.demographics_analytics, name='demographics_analytics'),
+    path('demographics/export/', views.demographics_export_csv, name='demographics_export_csv'),
 ]
