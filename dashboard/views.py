@@ -1,12 +1,12 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.db import connection
-from django.db.models import Max, Sum, Avg, Count, Q, F
+from django.db.models import Max, Sum, Avg, Count, Q, F, DateField
 from django.urls import reverse
 from .models import (OlympusLeaseTrendAnalysis, OlympusLeaseKpisTrendMonthly, 
-					 FinanceKpiScorecard, DelinquencyDrillThrough, UnitLevelDrillThrough)
+					 FinanceKpiScorecard, DelinquencyDrillThrough, UnitLevelDrillThrough, CardTransactions)
 from datetime import datetime, date, timedelta
-from django.db.models.functions import ExtractYear, ExtractMonth
+from django.db.models.functions import ExtractYear, ExtractMonth, TruncMonth, Coalesce
 from .services import DashboardService
 from .dashboard_service import DashboardPageService
 from django.core.cache import cache
@@ -2778,6 +2778,199 @@ def total_units_drillthrough_export(request):
 		writer.writerow([_format_total_unit_value(alias, row_dict.get(alias)) for alias in alias_order])
 
 	return response
+
+
+@login_required
+def card_transactions_analytics(request):
+	"""Interactive analytics for corporate card spend."""
+	from decimal import Decimal
+	import json
+
+	date_format = '%Y-%m-%d'
+	default_end = timezone.now().date()
+	default_start = default_end - timedelta(days=180)
+
+	def parse_date(value, fallback):
+		try:
+			return datetime.strptime(value, date_format).date()
+		except (TypeError, ValueError):
+			return fallback
+
+	start_date = parse_date(request.GET.get('start'), default_start)
+	end_date = parse_date(request.GET.get('end'), default_end)
+
+	if start_date and end_date and start_date > end_date:
+		start_date, end_date = end_date, start_date
+
+	transactions = CardTransactions.objects.annotate(
+		effective_date=Coalesce('transaction_date', 'transaction_date_clean', 'post_date', output_field=DateField())
+	)
+
+	if start_date:
+		transactions = transactions.filter(effective_date__gte=start_date)
+	if end_date:
+		transactions = transactions.filter(effective_date__lte=end_date)
+
+	metrics = transactions.aggregate(
+		total_spend=Coalesce(Sum('transaction_amount'), Decimal('0')),
+		total_sales_tax=Coalesce(Sum('sales_tax'), Decimal('0')),
+		avg_ticket=Avg('transaction_amount'),
+		txn_count=Count('row_hash_key', distinct=True)
+	)
+
+	total_spend = metrics.get('total_spend') or Decimal('0')
+	avg_ticket = metrics.get('avg_ticket') or Decimal('0')
+	total_transactions = metrics.get('txn_count') or 0
+	sales_tax_total = metrics.get('total_sales_tax') or Decimal('0')
+
+	unique_merchants = transactions.filter(merchant_name__isnull=False).exclude(merchant_name='').values('merchant_name').distinct().count()
+	unique_cardholders = transactions.filter(cardholder__isnull=False).exclude(cardholder='').values('cardholder').distinct().count()
+
+	top_merchants_qs = transactions.filter(transaction_amount__isnull=False).values('merchant_name').annotate(
+		total_spend=Sum('transaction_amount'),
+		txn_count=Count('row_hash_key', distinct=True)
+	).order_by('-total_spend')[:10]
+
+	top_merchants = []
+	for row in top_merchants_qs:
+		merchant_name = row['merchant_name'] or 'Unspecified'
+		merchant_total = row['total_spend'] or Decimal('0')
+		share = float(merchant_total / total_spend * 100) if total_spend else 0
+		top_merchants.append({
+			'name': merchant_name,
+			'total_spend': merchant_total,
+			'txn_count': row['txn_count'],
+			'share': share
+		})
+
+	top_cardholders_qs = transactions.filter(transaction_amount__isnull=False).values('cardholder').annotate(
+		total_spend=Sum('transaction_amount'),
+		txn_count=Count('row_hash_key', distinct=True)
+	).order_by('-total_spend')[:10]
+
+	top_cardholders = []
+	for row in top_cardholders_qs:
+		name = row['cardholder'] or 'Unspecified'
+		spend = row['total_spend'] or Decimal('0')
+		share = float(spend / total_spend * 100) if total_spend else 0
+		top_cardholders.append({
+			'name': name,
+			'total_spend': spend,
+			'txn_count': row['txn_count'],
+			'share': share
+		})
+
+	category_spend_qs = transactions.filter(
+		transaction_amount__isnull=False,
+		mcc_description__isnull=False
+	).exclude(mcc_description='').values('mcc_description').annotate(
+		total_spend=Sum('transaction_amount')
+	).order_by('-total_spend')[:8]
+
+	category_spend = [{
+		'label': row['mcc_description'],
+		'value': round(float(row['total_spend'] or 0), 2)
+	} for row in category_spend_qs]
+
+	state_spend = [{
+		'state': row['merchant_state_province'],
+		'total_spend': row['total_spend']
+	} for row in transactions.filter(merchant_state_province__isnull=False)
+	.exclude(merchant_state_province='')
+	.values('merchant_state_province')
+	.annotate(total_spend=Sum('transaction_amount'))
+	.order_by('-total_spend')[:8]]
+
+	monthly_trend_qs = transactions.filter(effective_date__isnull=False).annotate(
+		month=TruncMonth('effective_date')
+	).values('month').annotate(
+		total_spend=Sum('transaction_amount')
+	).order_by('month')
+
+	monthly_labels = []
+	monthly_values = []
+	for row in monthly_trend_qs:
+		month = row['month']
+		monthly_labels.append(month.strftime('%b %Y') if month else 'Unspecified')
+		monthly_values.append(round(float(row['total_spend'] or 0), 2))
+
+	merchant_chart_labels = [m['name'] for m in top_merchants[:5]]
+	merchant_chart_values = [round(float(m['total_spend'] or 0), 2) for m in top_merchants[:5]]
+
+	category_labels = [c['label'] for c in category_spend]
+	category_values = [c['value'] for c in category_spend]
+
+	monthly_chart = {
+		'labels': monthly_labels,
+		'datasets': [{
+			'label': 'Total Spend',
+			'data': monthly_values,
+			'borderColor': '#0E555A',
+			'backgroundColor': 'rgba(89, 230, 246, 0.35)',
+			'tension': 0.35,
+			'fill': True,
+		}]
+	}
+
+	merchant_chart = {
+		'labels': merchant_chart_labels,
+		'datasets': [{
+			'label': 'Top Merchants',
+			'data': merchant_chart_values,
+			'backgroundColor': '#59E6F6',
+			'borderColor': '#0E555A',
+			'borderWidth': 1.5,
+		}]
+	}
+
+	category_chart = {
+		'labels': category_labels,
+		'datasets': [{
+			'label': 'Spend by Category',
+			'data': category_values,
+			'backgroundColor': ['#59E6F6', '#C69A58', '#0E555A', '#95A3B3', '#7BD3EA', '#4F46E5', '#F59E0B', '#0EA5E9'][:len(category_values)],
+		}]
+	}
+
+	transactions_table = list(
+		transactions.order_by('-effective_date', '-transaction_amount')
+		.values('effective_date', 'transaction_id', 'merchant_name', 'transaction_amount', 'cardholder', 'merchant_city', 'transaction_type')[:25]
+	)
+
+	range_days = max((end_date - start_date).days + 1, 1)
+	daily_average = total_spend / range_days if range_days else Decimal('0')
+	merchant_surcharge_total = transactions.aggregate(total=Coalesce(Sum('merchant_surcharge'), Decimal('0')))['total'] or Decimal('0')
+	dispute_count = transactions.filter(dispute_indicator__iexact='Y').count()
+	pending_approvals = transactions.filter(transaction_approval_status__iexact='Pending').count()
+	international_total = transactions.exclude(merchant_country__in=['US', 'USA', 'United States', '', None]).aggregate(
+		total=Coalesce(Sum('transaction_amount'), Decimal('0'))
+	)['total'] or Decimal('0')
+
+	context = {
+		'total_spend': total_spend,
+		'total_transactions': total_transactions,
+		'avg_ticket': avg_ticket,
+		'sales_tax_total': sales_tax_total,
+		'unique_merchants': unique_merchants,
+		'unique_cardholders': unique_cardholders,
+		'top_merchants': top_merchants,
+		'top_cardholders': top_cardholders,
+		'category_spend': category_spend,
+		'state_spend': state_spend,
+		'monthly_chart_json': json.dumps(monthly_chart),
+		'merchant_chart_json': json.dumps(merchant_chart),
+		'category_chart_json': json.dumps(category_chart),
+		'transactions_table': transactions_table,
+		'start_date': start_date.strftime(date_format) if start_date else '',
+		'end_date': end_date.strftime(date_format) if end_date else '',
+		'daily_average': daily_average,
+		'merchant_surcharge_total': merchant_surcharge_total,
+		'dispute_count': dispute_count,
+		'pending_approvals': pending_approvals,
+		'international_total': international_total,
+	}
+
+	return render(request, 'dashboard/card_transactions.html', context)
 
 
 @login_required
