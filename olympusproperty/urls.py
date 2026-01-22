@@ -16,6 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 #from dashboard import views as dashboard_views
 
 urlpatterns = [
@@ -25,3 +27,7 @@ urlpatterns = [
     # Alias so /dashboard/sample/ also works (maps to sample_page)
     #path('dashboard/sample/', dashboard_views.sample_page, name='dashboard_sample'),
 ]
+
+# Serve static files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT or settings.BASE_DIR / 'static')
