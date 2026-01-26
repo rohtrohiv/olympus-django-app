@@ -1826,6 +1826,7 @@ TOTAL_UNIT_TABLE_FIELDS = [
 	{'key': 'resident_name', 'label': 'Resident Name', 'keywords': ['resident', 'name']},
 	{'key': 'effective_rent', 'label': 'Effective Rent', 'keywords': ['effective', 'rent']},
 	{'key': 'market_rent', 'label': 'Market Rent', 'keywords': ['market', 'rent']},
+	{'key': 'type', 'label': 'Type', 'keywords': ['type']},
 	{'key': 'site_unit_id', 'label': 'Site / Unit Id', 'keywords': ['site', 'unit', 'id']},
 ]
 
@@ -1835,7 +1836,7 @@ TOTAL_UNIT_METRIC_HINTS = {
 	'exposure_8_weeks': ['exposure', '8'],
 	'unit_type': ['type'],
 	'move_out_date': ['move', 'out'],
-	'scheduled_move_in': ['move', 'in'],
+	'scheduled_move_in': ['scheduled', 'move', 'in'],
 }
 
 VACANT_NOT_LEASED_STATUSES = (
@@ -3935,6 +3936,7 @@ OCCUPANCY_FILTER_FIELDS = [
 OCCUPANCY_TABLE_FIELDS = [
 	{'key': 'property_name', 'label': 'Property Name', 'keywords': ['property', 'name']},
 	{'key': 'unit_condition', 'label': 'Unit Condition', 'keywords': ['unit', 'condition']},
+	{'key': 'type', 'label': 'Type', 'keywords': ['type']},
 	{'key': 'unit', 'label': 'Unit', 'exact': 'unit', 'keywords': ['unit']},
 	{'key': 'floor_plan', 'label': 'Floor Plan', 'keywords': ['floor', 'plan']},
 	{'key': 'beds_baths', 'label': 'Beds / Baths', 'keywords': ['bed', 'bath']},
@@ -4150,16 +4152,26 @@ def _fetch_occupancy_summary(filter_clauses, filter_params, columns):
 	# For other metrics, use the FULL filter (including unit_condition)
 	sql_parts = []
 	
-	# Units Available: COUNT(DISTINCT unit) WHERE "Leased/Not Leased" = 'Not Leased'
-	# This shows units that are available (not currently leased)
+	# Units Available: COUNT distinct unit identifier WHERE "Leased/Not Leased" = 'Not Leased'
+	# Prefer the canonical site/unit identifier to avoid duplicates between similarly named units.
 	leased_col = _find_exact_column(columns, 'Leased/Not Leased')
 	unit_col = _find_exact_column(columns, 'unit')
-	
-	if leased_col and unit_col:
+	unit_ident_expr = None
+	if leased_col:
+		site_id_col = (
+			_find_exact_column(columns, 'site_id_property_unit_number')
+			or _find_exact_column(columns, 'OneSiteID-Property-Unit')
+			or _find_column_by_keywords(columns, ['site', 'unit', 'id'])
+		)
+		if site_id_col:
+			unit_ident_expr = _quote_ident(site_id_col)
+		elif unit_col:
+			unit_ident_expr = _quote_ident(unit_col)
+
+	if leased_col and unit_ident_expr:
 		leased_ident = _quote_ident(leased_col)
-		unit_ident = _quote_ident(unit_col)
 		sql_parts.append(
-			f"COUNT(DISTINCT {unit_ident}) FILTER (WHERE {leased_ident}::text = 'Not Leased') AS units_available"
+			f"COUNT(DISTINCT {unit_ident_expr}) FILTER (WHERE LOWER(TRIM({leased_ident}::text)) = 'not leased') AS units_available"
 		)
 	elif condition_col:
 		# Fallback to old logic if Leased/Not Leased column not found
