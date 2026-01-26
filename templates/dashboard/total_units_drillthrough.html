@@ -19,6 +19,10 @@
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
 .metric-card{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 10px 26px rgba(15,23,42,.07);display:flex;flex-direction:column;gap:6px}
 .metric-card span{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#7b8794}
+.metric-card .label{display:flex;align-items:center;gap:6px}
+.metric-card .info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#127c8a;color:#fff;font-size:11px;font-weight:700;cursor:default;outline:none}
+.metric-card .info-tooltip{position:absolute;top:calc(100% + 10px);left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#fff;padding:10px 14px;border-radius:6px;font-size:11px;line-height:1.45;max-width:360px;min-width:240px;box-shadow:0 6px 16px rgba(15,23,42,.2);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:20;white-space:normal;text-transform:none;text-align:left}
+.metric-card .info:hover .info-tooltip,.metric-card .info:focus .info-tooltip{opacity:1}
 .metric-card strong{font-size:28px;font-weight:600;color:#0f172a}
 .metric-card small{color:#6b7280}
 .table-card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.08);overflow:hidden}
@@ -73,7 +77,13 @@
 
   <section class="metrics-grid" style="margin-top:8px;">
     <article class="metric-card">
-      <span>Unit Count</span>
+      <span class="label">
+        Unit Count
+        <span class="info" tabindex="0" aria-label="Unit count definition">
+          i
+          <span class="info-tooltip">Distinct units returned after filters, excluding Livcor investor properties.</span>
+        </span>
+      </span>
       <strong>{{ metrics.unit_count|default:'--'|intcomma }}</strong>
       <small>
         {% if metrics.unit_count %}
@@ -88,7 +98,13 @@
       </small>
     </article>
     <article class="metric-card">
-      <span>Occupancy</span>
+      <span class="label">
+        Occupancy
+        <span class="info" tabindex="0" aria-label="Occupancy definition">
+          i
+          <span class="info-tooltip">Percent occupied based on resident presence: (total units minus vacant units) divided by total units.</span>
+        </span>
+      </span>
       <strong>
         {% if metrics.occupancy_pct %}
           {{ metrics.occupancy_pct }}%
@@ -99,7 +115,13 @@
       <small>Derived from resident presence</small>
     </article>
     <article class="metric-card">
-      <span>Exposure · 8 Weeks</span>
+      <span class="label">
+        Exposure · 8 Weeks
+        <span class="info" tabindex="0" aria-label="Exposure definition">
+          i
+          <span class="info-tooltip">Share of units that are Vacant Not Leased or NTV with move-outs scheduled inside the next 56 days.</span>
+        </span>
+      </span>
       <strong>
         {% if metrics.exposure_8_weeks is not None %}
           {{ metrics.exposure_8_weeks|floatformat:2 }}%
@@ -116,14 +138,26 @@
       </small>
     </article>
     <article class="metric-card">
-      <span>Vacant Units</span>
+      <span class="label">
+        Vacant Units
+        <span class="info" tabindex="0" aria-label="Vacant units definition">
+          i
+          <span class="info-tooltip">Vacant when type is Vacant Not Leased (Ready or Not Ready); also counts Vacant Leased (Ready or Not Ready) units where scheduled move-in is today or later.</span>
+        </span>
+      </span>
       <strong>{{ metrics.vacant_units|default:'--' }}</strong>
-      <small>Count of units without an active resident</small>
+      <small>Vacant not leased and vacant leased units with future move-ins</small>
     </article>
     <article class="metric-card">
-      <span>NTV</span>
+      <span class="label">
+        NTV
+        <span class="info" tabindex="0" aria-label="Notice to vacate definition">
+          i
+          <span class="info-tooltip">Counts units flagged Notice to Vacate in either NTV Leased or NTV Not Leased status.</span>
+        </span>
+      </span>
       <strong>{{ metrics.ntv_units|default:'--' }}</strong>
-      <small>Notice-to-vacate records detected</small>
+      <small>Includes NTV leased and not leased statuses</small>
     </article>
   </section>
 
