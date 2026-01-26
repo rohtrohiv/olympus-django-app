@@ -6173,7 +6173,7 @@ def _fetch_delinquency_summary(filter_clauses, filter_params, columns):
 		# Convert value to text, remove non-numeric characters except . and -,
 		# NULLIF empty string to avoid cast errors, then cast to numeric
 		ident = _quote_ident(col_name)
-		return f"SUM( (NULLIF(regexp_replace({ident}::text, '[^0-9.\-]', '', 'g'), ''))::numeric )"
+		return f"SUM( (NULLIF(regexp_replace({ident}::text, '[^0-9.-]', '', 'g'), ''))::numeric )"
 
 	if total_delinquent_col:
 		sql_parts.append(f"{cleaned_sum_expr(total_delinquent_col)} AS total_delinquent")
