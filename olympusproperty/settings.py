@@ -39,7 +39,6 @@ ALLOWED_HOSTS = ['olympusproperty.ai','www.olympusproperty.ai','10.200.155.11','
 CSRF_TRUSTED_ORIGINS = [
     "https://olympusproperty.ai",
     "https://www.olympusproperty.ai",
-    "http://10.200.155.15",
 ]
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
