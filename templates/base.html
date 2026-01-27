@@ -204,12 +204,6 @@
     border-right: 4px solid transparent;
     border-top: 4px solid currentColor;
   }
-
-  .breadcrumbs{margin:12px 0 20px;padding-left:56px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;color:#0f172a;font-weight:500}
-  .breadcrumbs a{color:#0b6972;text-decoration:none;font-weight:600}
-  .breadcrumbs a:hover{text-decoration:underline}
-  .breadcrumbs .separator{color:rgba(15,23,42,0.4);font-weight:400}
-  .breadcrumbs .current{font-weight:700;color:#0f172a}
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -252,9 +246,9 @@
                   </div>
                 </div>
                 <a href="/financial-reporting/" class="topbar-link">Financial Reporting</a>
-                <!-- <a href="#" class="topbar-link">Shout Outs</a> -->
-                <!-- <a href="#" class="topbar-link">Reports</a> -->
-                <!-- <a href="#" class="topbar-link">Settings</a> -->
+                <a href="#" class="topbar-link">Shout Outs</a>
+                <a href="#" class="topbar-link">Reports</a>
+                <a href="#" class="topbar-link">Settings</a>
                 <!-- Sign Out link removed: logout button already present in topbar -->
             </nav>
 
@@ -298,18 +292,6 @@
   </div>
 
   <main class="container">
-    {% if breadcrumbs and breadcrumbs|length > 1 %}
-      <nav class="breadcrumbs" aria-label="Breadcrumb">
-        {% for crumb in breadcrumbs %}
-          {% if not forloop.first %}<span class="separator">/</span>{% endif %}
-          {% if forloop.last %}
-            <span class="current">{{ crumb.label }}</span>
-          {% else %}
-            <a href="{{ crumb.url }}">{{ crumb.label }}</a>
-          {% endif %}
-        {% endfor %}
-      </nav>
-    {% endif %}
     {% block content %}{% endblock %}
   </main>
 
