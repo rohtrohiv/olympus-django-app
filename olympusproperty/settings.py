@@ -11,6 +11,8 @@ load_dotenv(BASE_DIR / ".env")
 # CORE SETTINGS
 # ======================
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY is not set")
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
@@ -18,16 +20,24 @@ ENV = os.getenv("DJANGO_ENV", "production")
 
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
 
-CSRF_TRUSTED_ORIGINS = os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+# CSRF_TRUSTED_ORIGINS = os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
 
-CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "True") == "True"
-SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "True") == "True"
+CSRF_TRUSTED_ORIGINS = [
+    origin for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin
+]
 
-if os.getenv("SECURE_PROXY_SSL_HEADER") == "True":
+
+if ENV == "production":
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-
-USE_X_FORWARDED_HOST = True
-
+    USE_X_FORWARDED_HOST = True
+else:
+    # test / local
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+    SECURE_PROXY_SSL_HEADER = None
+    USE_X_FORWARDED_HOST = False
 # ======================
 # APPLICATIONS
 # ======================
