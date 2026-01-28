@@ -111,6 +111,13 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # ======================
+# AUTHENTICATION
+# ======================
+LOGIN_URL = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+# ======================
 # I18N
 # ======================
 LANGUAGE_CODE = 'en-us'
