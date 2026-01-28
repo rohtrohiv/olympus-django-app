@@ -10549,3 +10549,17 @@ def demographics_export_csv(request):
 		])
 	
 	return response
+
+
+def sso_login(request):
+	"""
+	SSO login placeholder view.
+	Redirect to Azure AD or other SSO provider login.
+	"""
+	from django.contrib import messages
+	from django.shortcuts import redirect
+	
+	# For now, redirect back to login with a message
+	# In production, this would redirect to Azure AD OAuth2 endpoint
+	messages.info(request, 'SSO login is not yet configured. Please use username/password.')
+	return redirect('login')

@@ -32,4 +32,5 @@ urlpatterns = [
     path('demographics/', views.demographics_analytics, name='demographics_analytics'),
     path('demographics/export/', views.demographics_export_csv, name='demographics_export_csv'),
     path('card-transactions/', views.card_transactions_analytics, name='card_transactions_analytics'),
+    path('sso/login/', views.sso_login, name='sso_login'),
 ]

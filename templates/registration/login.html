@@ -7,5 +7,12 @@
     {{ form.as_p }}
     <button type="submit" style="width:100%;background:#3FE0F0;color:#0B3A3F;border:none;border-radius:6px;padding:12px 0;font-weight:800;text-transform:uppercase;letter-spacing:.08em;cursor:pointer;">Login</button>
   </form>
+  
+  <div style="margin:24px 0;text-align:center;position:relative;">
+    <div style="border-top:1px solid #e0e0e0;"></div>
+    <span style="position:relative;top:-12px;background:#fff;padding:0 12px;color:#888;font-size:14px;">OR</span>
+  </div>
+  
+  <a href="{% url 'sso_login' %}" style="display:block;width:100%;background:#0B3A3F;color:#fff;border:none;border-radius:6px;padding:12px 0;font-weight:800;text-transform:uppercase;letter-spacing:.08em;cursor:pointer;text-decoration:none;text-align:center;box-sizing:border-box;">Login with SSO</a>
 </div>
 {% endblock %}
