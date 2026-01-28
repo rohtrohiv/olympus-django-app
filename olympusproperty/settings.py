@@ -18,7 +18,7 @@ DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
 ENV = os.getenv("DJANGO_ENV", "production")
 
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = [host for host in os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if host]
 
 # CSRF_TRUSTED_ORIGINS = os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
 
@@ -38,6 +38,25 @@ else:
     SESSION_COOKIE_SECURE = False
     SECURE_PROXY_SSL_HEADER = None
     USE_X_FORWARDED_HOST = False
+
+# ======================
+# AZURE AD SSO
+# ======================
+AZURE_AD_TENANT_ID = os.getenv("AZURE_AD_TENANT_ID")
+AZURE_AD_CLIENT_ID = os.getenv("AZURE_AD_CLIENT_ID")
+AZURE_AD_CLIENT_SECRET = os.getenv("AZURE_AD_CLIENT_SECRET")
+AZURE_AD_REDIRECT_URI = os.getenv("AZURE_AD_REDIRECT_URI")
+print(f"REDIRECT URI: {AZURE_AD_REDIRECT_URI}")
+AZURE_AD_AUDIENCE = os.getenv("AZURE_AD_AUDIENCE", AZURE_AD_CLIENT_ID)
+AZURE_AD_MIRROR_GROUPS = os.getenv("AZURE_AD_MIRROR_GROUPS", "False").lower() in {"1", "true", "t", "yes", "on"}
+AZURE_AD_USERNAME_CLAIM = os.getenv("AZURE_AD_USERNAME_CLAIM", "upn")
+AZURE_AD_CLAIM_FIRST_NAME = os.getenv("AZURE_AD_CLAIM_FIRST_NAME", "given_name")
+AZURE_AD_CLAIM_LAST_NAME = os.getenv("AZURE_AD_CLAIM_LAST_NAME", "family_name")
+AZURE_AD_CLAIM_EMAIL = os.getenv("AZURE_AD_CLAIM_EMAIL", "email")
+AZURE_AD_AUTHORITY = os.getenv("AZURE_AD_AUTHORITY") or (
+    f"https://login.microsoftonline.com/{AZURE_AD_TENANT_ID}" if AZURE_AD_TENANT_ID else None
+)
+ENABLE_AZURE_SSO = bool(AZURE_AD_TENANT_ID and AZURE_AD_CLIENT_ID)
 # ======================
 # APPLICATIONS
 # ======================
@@ -51,6 +70,50 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
     'dashboard',
 ]
+
+if ENABLE_AZURE_SSO:
+    INSTALLED_APPS.append('django_auth_adfs')
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+if ENABLE_AZURE_SSO:
+    AUTHENTICATION_BACKENDS.insert(0, 'django_auth_adfs.backend.AdfsAuthCodeBackend')
+
+if ENABLE_AZURE_SSO:
+    AUTH_ADFS = {
+        # REQUIRED
+        # "SERVER": "login.microsoftonline.com",
+        "TENANT_ID": AZURE_AD_TENANT_ID,
+
+        # Azure App Registration
+        "CLIENT_ID": AZURE_AD_CLIENT_ID,
+        "CLIENT_SECRET": AZURE_AD_CLIENT_SECRET,
+
+        # REQUIRED (fixes your original error)
+        "RELYING_PARTY_ID": AZURE_AD_CLIENT_ID,
+        "AUDIENCE": AZURE_AD_AUDIENCE,
+
+        "MIRROR_GROUPS": AZURE_AD_MIRROR_GROUPS,
+        "USERNAME_CLAIM": AZURE_AD_USERNAME_CLAIM,
+
+        "CLAIM_MAPPING": {
+            "first_name": AZURE_AD_CLAIM_FIRST_NAME,
+            "last_name": AZURE_AD_CLAIM_LAST_NAME,
+            "email": AZURE_AD_CLAIM_EMAIL,
+        },
+    }
+
+    # if AZURE_AD_REDIRECT_URI:
+    #     AUTH_ADFS["REDIRECT_URI"] = AZURE_AD_REDIRECT_URI
+else:
+    AUTH_ADFS = {}
+
+
+LOGIN_URL = 'django_auth_adfs:login' if ENABLE_AZURE_SSO else 'login'
+LOGIN_REDIRECT_URL = os.getenv('DJANGO_LOGIN_REDIRECT_URL', '/')
+LOGOUT_REDIRECT_URL = os.getenv('DJANGO_LOGOUT_REDIRECT_URL', '/')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -75,6 +138,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'dashboard.context_processors.auth_settings',
             ],
         },
     },

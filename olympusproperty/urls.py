@@ -18,15 +18,30 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic.base import RedirectView
 #from dashboard import views as dashboard_views
 
-urlpatterns = [
+urlpatterns = []
+
+if getattr(settings, 'ENABLE_AZURE_SSO', False):
+    urlpatterns.append(
+        path(
+            'accounts/login/',
+            RedirectView.as_view(pattern_name='django_auth_adfs:login', permanent=False),
+            name='login',
+        )
+    )
+
+urlpatterns += [
     path('admin/', admin.site.urls),
     path('accounts/', include('django.contrib.auth.urls')),
     path('', include('dashboard.urls')),
     # Alias so /dashboard/sample/ also works (maps to sample_page)
     #path('dashboard/sample/', dashboard_views.sample_page, name='dashboard_sample'),
 ]
+
+if getattr(settings, 'ENABLE_AZURE_SSO', False):
+    urlpatterns.append(path('auth/', include('django_auth_adfs.urls')))
 
 # Serve static files in development
 if settings.DEBUG:

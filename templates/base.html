@@ -261,10 +261,14 @@
                     {{ user.first_name|default:user.username|slice:":1"|upper }}
                 </div>
                 <span class="profile-name">{{ user.get_full_name|default:user.username }}</span>
-                <form method="post" action="{% url 'logout' %}" id="logoutForm" style="display:inline;">
+                {% if ENABLE_AZURE_SSO %}
+                  <a href="{% url AZURE_LOGOUT_URL_NAME %}" class="logout-btn" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">Logout</a>
+                {% else %}
+                  <form method="post" action="{% url AZURE_LOGOUT_URL_NAME %}" id="logoutForm" style="display:inline;">
                     {% csrf_token %}
                     <button class="logout-btn" type="submit">Logout</button>
-                </form>
+                  </form>
+                {% endif %}
             </div>
     </div>
   </header>
