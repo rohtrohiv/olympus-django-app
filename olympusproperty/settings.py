@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.humanize',
     'dashboard',
+    'django_extensions',
 ]
 
 MIDDLEWARE = [
