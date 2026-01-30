@@ -1,3 +1,7 @@
+import logging
+from typing import Dict, List
+import requests
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.db import connection
@@ -24,6 +28,46 @@ import csv
 from urllib.parse import urlencode
 from django.utils.safestring import mark_safe
 from collections import OrderedDict
+from django_auth_adfs.backend import AdfsBaseBackend
+
+
+logger = logging.getLogger(__name__)
+
+GRAPH_GROUP_ENDPOINT = "https://graph.microsoft.com/v1.0/groups/{group_id}?$select=id,displayName"
+GRAPH_GROUP_CACHE_PREFIX = "graph_group_name:"
+GRAPH_GROUP_CACHE_SECONDS = 3600
+
+
+def _fetch_graph_group_names(graph_token: str, group_ids: List[str]) -> Dict[str, str]:
+	if not graph_token or not group_ids:
+		return {}
+	headers = {
+		"Authorization": f"Bearer {graph_token}",
+		"Accept": "application/json",
+	}
+	resolved = {}
+	for group_id in group_ids:
+		if not group_id:
+			continue
+		cache_key = f"{GRAPH_GROUP_CACHE_PREFIX}{group_id}"
+		cached = cache.get(cache_key)
+		if cached is not None:
+			resolved[group_id] = cached
+			continue
+		url = GRAPH_GROUP_ENDPOINT.format(group_id=group_id)
+		try:
+			resp = requests.get(url, headers=headers, timeout=8)
+		except requests.RequestException as exc:
+			logger.warning("Graph lookup failed for %s due to network error: %s", group_id, exc)
+			continue
+		if resp.status_code == 200:
+			payload = resp.json()
+			display_name = payload.get("displayName")
+			resolved[group_id] = display_name
+			cache.set(cache_key, display_name, GRAPH_GROUP_CACHE_SECONDS)
+		else:
+			logger.warning("Graph lookup failed for %s | status=%s | body=%s", group_id, resp.status_code, resp.text)
+	return resolved
 
 
 def sample_page(request):
@@ -8986,6 +9030,48 @@ def _calculate_avg_turn_time_from_drill_through(request, params, selected_months
 @login_required
 def dashboard(request):
 	user = request.user
+	sso_claims = request.session.get('sso_claims') or {}
+	sso_groups = sso_claims.get('groups') or []
+	if isinstance(sso_groups, str):
+		sso_groups = [sso_groups]
+	sso_profile = {
+		'object_id': sso_claims.get('oid'),
+		'tenant_id': sso_claims.get('tid'),
+		'upn': sso_claims.get('upn') or sso_claims.get('unique_name'),
+		'email': sso_claims.get('email') or sso_claims.get('preferred_username') or sso_claims.get('upn'),
+		'name': sso_claims.get('name'),
+		'given_name': sso_claims.get('given_name'),
+		'family_name': sso_claims.get('family_name'),
+		'groups': sso_groups,
+	}
+	request.sso_claims = sso_claims
+	request.sso_groups = sso_groups
+	request.sso_profile = sso_profile
+	logger.info(
+		"SSO profile resolved | user=%s | upn=%s | email=%s | groups=%s",
+		getattr(user, 'username', None),
+		sso_profile.get('upn'),
+		sso_profile.get('email'),
+		sso_groups,
+	)
+	logger.debug("SSO raw claims for user %s: %s", getattr(user, 'username', None), sso_claims)
+	group_names = {}
+	adfs_session = request.session.get('sso_adfs') or {}
+	access_token = adfs_session.get('access_token')
+	if access_token and sso_groups:
+		try:
+			backend = AdfsBaseBackend()
+			graph_token = backend.get_obo_access_token(access_token)
+			group_names = _fetch_graph_group_names(graph_token, sso_groups)
+			logger.info("Resolved %s group display names via Microsoft Graph", len(group_names))
+		except PermissionDenied:
+			logger.warning("Graph access denied for user %s when resolving groups", getattr(user, 'username', None))
+		except Exception:
+			logger.exception("Unexpected error resolving Graph group names for user %s", getattr(user, 'username', None))
+	request.sso_group_names = group_names
+	print("group names:------", group_names)
+	print("sso profile-------",sso_profile)
+
 	# If the user didn't supply any period-related parameters, default to the
 	# PREVIOUS month (server-side) to ensure complete data is shown.
 	# Current month data may be incomplete since it's still being collected.
@@ -9791,6 +9877,10 @@ def dashboard(request):
 		'properties': svc_ctx.get('properties_page'),
 		'kpi': svc_ctx.get('kpi'),
 		'finance_kpi': finance_kpi_display,
+		'sso_claims': sso_claims,
+		'sso_profile': sso_profile,
+		'sso_groups': sso_groups,
+		'sso_group_names': request.sso_group_names,
 	'period_options': svc_ctx.get('periods'),
 	# Ensure templates see a concrete selected_period so client UI (filter pane)
 	# can initialize correctly. Prefer svc_ctx.selected_period, otherwise

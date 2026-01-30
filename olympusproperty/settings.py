@@ -113,9 +113,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # ======================
 # AUTHENTICATION
 # ======================
-LOGIN_URL = '/accounts/login/'
+# LOGIN_URL = '/accounts/login/'
+LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
-LOGOUT_REDIRECT_URL = '/accounts/login/'
+LOGOUT_REDIRECT_URL = '/login/'
 
 # ======================
 # I18N
@@ -145,3 +146,49 @@ CACHES = {
         'OPTIONS': {'MAX_ENTRIES': 1000}
     }
 }
+
+AUTHENTICATION_BACKENDS = [
+    "django_auth_adfs.backend.AdfsAuthCodeBackend",
+    "django.contrib.auth.backends.ModelBackend",
+    'django_auth_adfs.backend.AdfsAccessTokenBackend',
+]
+
+client_id = os.getenv("client_id")
+client_secret = os.getenv("client_secret")
+tenant_id = os.getenv("tenant_id")
+ 
+ 
+AUTH_ADFS = {
+    'AUDIENCE': client_id,
+    'CLIENT_ID': client_id,
+    'CLIENT_SECRET': client_secret,
+    'CLAIM_MAPPING': {'first_name': 'given_name',
+                      'last_name': 'family_name',
+                      'email': 'upn'},
+    'USERNAME_CLAIM': 'unique_name',
+    'GROUPS_CLAIM': 'groups',
+    'MIRROR_GROUPS': True,
+    # 'USERNAME_CLAIM': 'upn',
+    'TENANT_ID': tenant_id,
+    'RELYING_PARTY_ID': client_id,
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "loggers": {
+        "django_auth_adfs": {
+            "handlers": ["console"],
+            "level": "DEBUG",   # <-- already prints debug logs
+            "propagate": True,
+        },
+        "adfs_groups": {   # optional custom logger for group IDs
+            "handlers": ["console"],
+            "level": "DEBUG",
+        },
+    },
+}
+

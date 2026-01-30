@@ -45,6 +45,16 @@
   .profile-pic{width:32px;height:32px;border-radius:50%;background:var(--aqua);display:flex;align-items:center;justify-content:center;color:#053033;font-weight:700;font-size:14px}
   .profile-name{margin-left:6px;color:var(--nav-text);font-weight:600;font-size:12px}
   .user-profile{display:flex;align-items:center;gap:8px}
+  .user-profile{position:relative;cursor:pointer}
+  .profile-panel{position:absolute;right:0;top:calc(100% + 8px);background:#fff;color:#0f172a;border-radius:10px;min-width:220px;max-width:360px;width:max-content;box-shadow:0 12px 24px rgba(15,23,42,0.18);padding:16px;display:none;z-index:1200;border:1px solid rgba(15,23,42,0.08)}
+  .profile-panel.open{display:block}
+  .profile-panel h4{margin:0 0 8px 0;font-size:16px;color:#0b3a3f}
+  .profile-panel .profile-email{font-size:13px;color:#334155;margin:0 0 12px 0;word-break:break-all}
+  .profile-panel .profile-section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px}
+  .profile-panel ul{list-style:none;padding:0;margin:0;max-height:160px;overflow:auto}
+  .profile-panel li{font-size:13px;padding:4px 0;color:#0f172a;border-bottom:1px solid rgba(15,23,42,0.06)}
+  .profile-panel li:last-child{border-bottom:none}
+  .profile-panel-empty{font-size:12px;color:#94a3b8}
 
     /* LOGOUT BUTTON: matching dashboard styles */
     .logout-btn{
@@ -256,16 +266,42 @@
             {% block period_indicator %}{% endblock %}
 
             <!-- User profile and logout -->
-            <div class="user-profile">
-                <div class="profile-pic" title="{{ user.get_full_name|default:user.username }}">
-                    {{ user.first_name|default:user.username|slice:":1"|upper }}
+            {% if user.is_authenticated %}
+              <div class="user-profile" id="userProfileToggle" aria-haspopup="true" aria-expanded="false">
+                <div class="profile-pic" title="{{ sso_profile.name|default:user.get_full_name|default:user.username }}">
+                  {{ user.first_name|default:user.username|slice:":1"|upper }}
                 </div>
-                <span class="profile-name">{{ user.get_full_name|default:user.username }}</span>
+                <span class="profile-name">{{ sso_profile.name|default:user.get_full_name|default:user.username }}</span>
                 <form method="post" action="{% url 'logout' %}" id="logoutForm" style="display:inline;">
-                    {% csrf_token %}
-                    <button class="logout-btn" type="submit">Logout</button>
+                  {% csrf_token %}
+                  <button class="logout-btn" type="submit">Logout</button>
                 </form>
-            </div>
+                <div class="profile-panel" id="profilePanel" role="dialog" aria-label="User profile details">
+                  <h4>{{ sso_profile.name|default:user.get_full_name|default:user.username }}</h4>
+                  <p class="profile-email">{{ sso_profile.email|default:user.email|default:"No email available" }}</p>
+                  <div>
+                    <div class="profile-section-label">Groups</div>
+                    {% if sso_group_names %}
+                      <ul>
+                      {% for gid, gname in sso_group_names.items %}
+                        <li>{{ gname|default:gid }}</li>
+                      {% endfor %}
+                      </ul>
+                    {% elif sso_profile.groups %}
+                      <ul>
+                      {% for gid in sso_profile.groups %}
+                        <li>{{ gid }}</li>
+                      {% endfor %}
+                      </ul>
+                    {% else %}
+                      <div class="profile-panel-empty">No group memberships</div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            {% else %}
+              <a class="topbar-link" href="{% url 'login' %}">Login</a>
+            {% endif %}
     </div>
   </header>
     <!-- Global loading overlay (shows during cross-page navigation) -->
@@ -346,6 +382,36 @@
         overlay.addEventListener('click', e=>{ if(e.target===overlay) setMenu(false); });
       }
       document.addEventListener('keydown', e=>{ if(e.key==='Escape') setMenu(false); });
+    })();
+
+    // Profile panel toggle with outside click close
+    (function(){
+      const toggle = document.getElementById('userProfileToggle');
+      const panel = document.getElementById('profilePanel');
+      if(!toggle || !panel) return;
+      function closePanel(){
+        panel.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+      toggle.addEventListener('click', function(e){
+        // Prevent form submit when clicking avatar/name
+        if(e.target.closest('form')) return;
+        e.stopPropagation();
+        const willOpen = !panel.classList.contains('open');
+        if(willOpen){
+          panel.classList.add('open');
+          toggle.setAttribute('aria-expanded', 'true');
+        } else {
+          closePanel();
+        }
+      });
+      document.addEventListener('click', function(e){
+        if(!panel.classList.contains('open')) return;
+        if(!toggle.contains(e.target)) closePanel();
+      });
+      document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape') closePanel();
+      });
     })();
     
     // Show global loading overlay immediately on topbar navigation clicks so
